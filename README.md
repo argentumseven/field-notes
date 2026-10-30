@@ -10,6 +10,18 @@ Compose**, replacing Flutter. A signed, sideloadable arm64 debug APK is built at
 report. The Rust server and web interface are retained. See the current
 [validation record](docs/VALIDATION.md) for tested behavior and practical limits.
 
+## Screenshots and walkthrough
+
+[See the complete Android, browser, and server management walkthrough](docs/WALKTHROUGH.md).
+The Android app uses sample data and a test connection for these captures.
+Browser images come from a disposable Rust server.
+
+| Android app | Task details |
+| --- | --- |
+| <a href="docs/screenshots/android/03-matrix.png"><img src="docs/screenshots/android/03-matrix.png" width="280" alt="Native Android task Matrix"></a> | <a href="docs/screenshots/android/08-task-notes.png"><img src="docs/screenshots/android/08-task-notes.png" width="280" alt="Native Android task title, notes and due date"></a> |
+
+![Server management: roles, people, sessions, backups, server status and administrative activity](docs/screenshots/web/08-administration.png)
+
 ## Features
 
 - Projects, matrix/board/list task views, notes, comments, due dates, and images.

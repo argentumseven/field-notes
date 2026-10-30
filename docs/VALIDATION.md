@@ -60,6 +60,15 @@ arm64 APK in `dist/android/`, with checksum and public signer report.
 
 ## Build and test commands
 
+The [screenshot walkthrough](WALKTHROUGH.md) has a separate capture workflow.
+Chromium captures the running Rust-backed site. Android captures the actual
+MainActivity/Compose UI using an opt-in, test-only fixture connection, an
+authorized synthetic server snapshot/image, and the real Keystore/cache/outbox.
+These captures are visual documentation, not additional live transport evidence.
+Live tunnel login could not be completed in this later software-emulated capture
+session; fixture networking was used explicitly rather than changing TLS or
+production networking behavior. The distributed arm64 APK remains unchanged.
+
 ```sh
 bash scripts/setup/cloud.sh --android
 bash scripts/check.sh
