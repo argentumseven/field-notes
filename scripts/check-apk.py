@@ -4,8 +4,9 @@ import os,pathlib,struct,subprocess,sys,tempfile,zipfile
 apk=pathlib.Path(sys.argv[1]); tools=pathlib.Path(os.environ.get('FIELD_NOTES_TOOLS','/workspace/.cache/field-notes'))
 aapt=tools/'android-sdk/build-tools/35.0.0/aapt'
 manifest=subprocess.check_output([str(aapt),'dump','xmltree',str(apk),'AndroidManifest.xml'],text=True)
-for forbidden in ['android.permission.BIND_VPN_SERVICE','VpnService','android.permission.ACCESS_FINE_LOCATION','com.google.android.gms','com.google.firebase']:
+for forbidden in ['android.permission.BIND_VPN_SERVICE','VpnService','android.permission.ACCESS_FINE_LOCATION','com.google.android.gms','com.google.firebase','android.permission.READ_CALENDAR','android.permission.WRITE_CALENDAR']:
  assert forbidden not in manifest, f'Unexpected manifest entry: {forbidden}'
+assert 'org.fieldnotes.app.PlannerWidget' in manifest and 'android.appwidget.provider' in manifest
 assert 'org.fieldnotes.app.MainActivity' in manifest and 'org.fieldnotes.app.FieldNotesApplication' in manifest
 assert 'usesCleartextTraffic' in manifest and 'dataExtractionRules' in manifest
 with zipfile.ZipFile(apk) as archive:

@@ -1,6 +1,10 @@
 package org.fieldnotes.app
 
 import android.graphics.Bitmap
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.ui.unit.dp
 import android.view.WindowManager
 import android.util.Base64
 import android.view.accessibility.AccessibilityNodeInfo
@@ -70,7 +74,9 @@ class GalleryDeviceTest {
         val app = instrumentation.targetContext.applicationContext as FieldNotesApplication
         runBlocking { app.initialized.await() }
         val original = app.model
-        val fixture = WireJson.parseToJsonElement(Base64.decode(checkNotNull(args.getString("fieldNotesFixture")), Base64.NO_WRAP).decodeToString()).jsonObject
+        val fixtureFile = File(app.filesDir, "gallery-fixture.json")
+        check(fixtureFile.length() in 1..8*1024*1024)
+        val fixture = WireJson.parseToJsonElement(fixtureFile.readText()).jsonObject
         val seed = WireJson.decodeFromJsonElement<Snapshot>(fixture.getValue("snapshot"))
         val transport = GalleryTransport(seed, original.state.value.cache.keys!!, fixture.getValue("stale_error").jsonObject)
         val model = Workspace(transport, app.vault, { UUID.randomUUID().toString() }, app.scope)
@@ -103,96 +109,46 @@ class GalleryDeviceTest {
                 image.recycle()
                 println("Captured android/$name")
             }
+            fun widgetPreview() {
+                scenario.onActivity { activity -> activity.setContent { androidx.compose.material3.MaterialTheme { androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xff171b1b)).padding(start=24.dp,end=24.dp,top=56.dp,bottom=24.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
+                    androidx.compose.material3.Text("Home widget · private default", color=androidx.compose.ui.graphics.Color.White)
+                    androidx.compose.ui.viewinterop.AndroidView(factory = { context -> PlannerWidget.views(context, model.state.value.cache, true).apply(context, android.widget.FrameLayout(context)) }, modifier=androidx.compose.ui.Modifier.fillMaxWidth().height(250.dp))
+                    androidx.compose.material3.Text("Home widget · titles enabled", color=androidx.compose.ui.graphics.Color.White)
+                    androidx.compose.ui.viewinterop.AndroidView(factory = { context -> PlannerWidget.views(context, model.state.value.cache.copy(preferences=Preferences(widgetTitles=true)), true).apply(context, android.widget.FrameLayout(context)) }, modifier=androidx.compose.ui.Modifier.fillMaxWidth().height(280.dp))
+                } } } }
+                shot("11-widget")
+            }
             try {
-                if (args.getString("galleryMode") in setOf("light", "image")) {
-                    awaitText("Make room for what matters.")
-                    runBlocking { model.sync() }
-                    if (args.getString("galleryMode") == "image") {
-                        text("List").performClick()
-                        search().performTextInput("shelves")
-                        text("Plan the kitchen shelves").performClick()
-                        scrollTo("Attach image")
-                        compose.waitUntil(90_000) { compose.onAllNodesWithContentDescription("Kitchen shelf sketch.png").fetchSemanticsNodes().isNotEmpty() }
-                        shot("09-task-image")
-                    } else shot("16-matrix-light")
-                    return
+                fun widgetSettings() {
+                    compose.onNodeWithContentDescription("Workspace menu").performClick(); text("Settings & widgets").performClick(); awaitText("Settings")
+                    text("Settings").performTouchInput { swipe(center, center.copy(y=center.y-600f),600) }
+                    text("Add the Field Notes widget from your launcher's widget picker. It opens this locked app and refreshes from the encrypted local cache.").performScrollTo()
+                    shot("09-settings-widgets"); text("Close").performClick()
                 }
-                awaitText("Bring your workspace home.")
-                shot("01-pairing")
+                if (args.getString("galleryMode") == "details") { compose.onNodeWithTag("nav-focus").assertExists(); widgetSettings(); widgetPreview(); return }
+                if (args.getString("galleryMode") == "light") { compose.onNodeWithTag("nav-focus").assertExists(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
+                awaitText("Enroll this phone"); shot("01-enroll")
                 val config = WireJson.parseToJsonElement(Base64.decode(checkNotNull(args.getString("fieldNotesConfig")), Base64.NO_WRAP).decodeToString()).jsonObject
-                runBlocking { model.pair(config.toString()) }
-                awaitText("Welcome home.")
-                shot("02-sign-in")
-                runBlocking { model.login("owner", "household-test-password-only"); model.sync() }
+                runBlocking { model.beginEnrollment(Invitation(1,"https://192.168.1.10:9443/api/enrollment",config.text("ca_pem"),"a".repeat(64),"owner","owner",kotlinx.datetime.Clock.System.now().epochSeconds+600), "My GrapheneOS phone"); model.advanceEnrollment() }
+                awaitText("1234 ABCD"); shot("02-phone-confirmation")
+                runBlocking { model.cancelEnrollment(); model.pair(config.toString()); model.login("owner", "household-test-password-only"); model.sync() }
                 val image = seed.records.single { it.kind == "image" }
                 val imageScope = MessageDigest.getInstance("SHA-256").digest("${config.text("server_key")}:${seed.actor.user_id}".toByteArray()).joinToString("") { "%02x".format(it) }
                 runBlocking { app.vault.saveImage(imageScope, image.id, Base64.decode(fixture.text("image"), Base64.NO_WRAP)) }
-                awaitText("Make room for what matters.")
-                shot("03-matrix")
-                scrollTo("DELEGATE")
-                shot("04-matrix-collections")
-                text("Board").performClick()
-                scrollTo("TO DO")
-                shot("05-board")
-                scrollTo("IN PROGRESS")
-                shot("06-board-claims")
-                text("List").performClick()
-                shot("07-list")
-                search().performTextInput("shelves")
-                text("Plan the kitchen shelves").performClick()
-                awaitText("Task details")
-                shot("08-task-notes")
-                scrollTo("Attach image")
-                compose.waitUntil(90_000) {
-                    compose.onAllNodesWithContentDescription("Kitchen shelf sketch.png").fetchSemanticsNodes().isNotEmpty()
-                }
-                shot("09-task-image")
-                scrollTo("Post comment")
-                shot("10-task-conversation")
-                scrollTo("Delete"); text("Delete").performClick()
-                awaitText("Delete this task?")
-                shot("11-delete-confirmation")
-                text("Cancel").performClick()
-                compose.onNodeWithContentDescription("Back").performClick()
-                search().performTextClearance()
-                text("Add task").performClick()
-                field("What would you like to do?").performTextInput("Hang the hallway print")
-                shot("12-new-task")
-                text("Cancel").performClick()
-                compose.onNodeWithContentDescription("Workspace menu").performClick()
-                text("Notifications & connection").performClick()
-                awaitText("Private, on your terms.")
-                shot("13-notifications-connection")
-                text("Edit server endpoint").performClick()
-                awaitText("Update server endpoint")
-                shot("14-server-endpoint")
-                text("Cancel").performClick()
-                text("Close").performClick()
-                val task = model.state.value.cache.snapshot!!.records.first { it.kind == "task" && it.data.text("title") == "Plan the kitchen shelves" }
-                runBlocking {
-                    // The fixture replays the real server's stale-command response.
-                    model.enqueue("task.update", task.id, obj("title" to "Plan the kitchen shelves".j(), "notes" to "Bring the drill on Sunday.".j(), "quadrant" to "decide".j(), "due" to "2026-11-08".j()), 0)
-                    model.sync()
-                }
-                assertTrue(model.state.value.cache.conflicts.isNotEmpty())
-                compose.onNodeWithContentDescription("Workspace menu").performClick()
-                text("Retained changes (1)").performClick()
-                awaitText("Retained changes")
-                shot("15-retained-conflict")
-                text("Close").performClick()
-                runBlocking {
-                    model.resolve(model.state.value.cache.conflicts.single().command.operation_id, false)
-                    transport.stop()
-                    model.enqueue("task.create", model.newId(), obj("title" to "Pick up picture hooks".j(), "project_id" to task.data.getValue("project_id")), null)
-                    model.sync()
-                }
-                search().performTextInput("picture hooks")
-                compose.waitUntil(30_000) {
-                    compose.onAllNodesWithText("The private connection is unavailable. Your changes stay on this phone.").fetchSemanticsNodes().isEmpty()
-                }
-                assertTrue(model.state.value.cache.outbox.size == 1)
-                shot("17-offline-queue")
-                runBlocking { transport.configure(model.state.value.cache.config!!); model.sync() }
+                compose.onNodeWithTag("nav-focus").assertExists(); shot("03-focus")
+                compose.onNodeWithTag("nav-tasks").performClick(); shot("04-tasks")
+                compose.onNodeWithTag("nav-calendar").performClick(); shot("05-calendar")
+                compose.onNodeWithContentDescription("Add").performClick(); awaitText("New calendar event"); shot("06-new-event"); text("Close").performClick()
+                compose.onNodeWithTag("nav-tasks").performClick(); search().performTextInput("shelves"); text("Plan the kitchen shelves").performClick(); awaitText("Task details"); shot("07-task-planning")
+                scrollTo("Post comment"); shot("08-comments-attachments")
+                compose.onNodeWithContentDescription("Back").performClick(); widgetSettings()
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); shot("12-workspace-navigation")
+                compose.onNodeWithTag("drawer-notes").performClick(); awaitText("Household reference"); shot("13-notes")
+                text("Household reference").performClick(); awaitText("Shared note"); shot("14-shared-note"); compose.onNodeWithContentDescription("Back").performClick()
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-collections").performClick(); awaitText("Groceries"); shot("16-collections")
+                compose.onNodeWithTag("nav-focus").performClick()
+                widgetPreview()
             } finally {
                 scenario.onActivity {
                     it.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -211,6 +167,11 @@ private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: J
     override suspend fun keys() = deviceKeys
     override suspend fun configure(configuration: JsonObject) { connected = true }
     override suspend fun stop() { connected = false }
+    override suspend fun bootstrap(url: String, ca: String, path: String, body: JsonObject): Reply = when(path) {
+        "/claim" -> Reply(200, """{"id":"11111111-1111-1111-1111-111111111111","state":"pending_approval","verification":"1234ABCD"}""")
+        "/status" -> Reply(200, """{"id":"11111111-1111-1111-1111-111111111111","state":"pending_approval","verification":"1234ABCD","user":"owner","role":"owner"}""")
+        else -> Reply(200, "{}")
+    }
     override suspend fun exchange(path: String, token: String?, body: JsonObject?, serverKey: String?): Reply {
         check(connected) { "The private connection is unavailable. Your changes stay on this phone." }
         return when (path) {

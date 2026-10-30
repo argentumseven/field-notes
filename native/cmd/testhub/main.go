@@ -38,6 +38,7 @@ func main() {
 	backend := flag.String("backend", "", "loopback device backend")
 	peerFile := flag.String("peer-file", "", "local test phone public key")
 	configFile := flag.String("config-file", "", "public connection JSON destination")
+	peerAckFile := flag.String("peer-ack-file", "", "optional installed test-peer acknowledgement")
 	flag.Parse()
 	target, e := url.Parse(*backend)
 	if e != nil || target.Scheme != "http" || target.Hostname() != "127.0.0.1" || *peerFile == "" || *configFile == "" {
@@ -126,6 +127,11 @@ func main() {
 			}
 			if e = wg.IpcSet("public_key=" + hex.EncodeToString(public) + "\nallowed_ip=10.82.0.2/32\n"); e == nil {
 				last = encoded
+				if *peerAckFile != "" {
+					if e = os.WriteFile(*peerAckFile, []byte(encoded), 0600); e != nil {
+						panic(e)
+					}
+				}
 			}
 		}
 	}

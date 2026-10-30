@@ -25,9 +25,9 @@ class EditorDeviceTest {
         app.model=fixture
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
-                compose.waitUntil(60_000){compose.onAllNodesWithText("Make room for what matters.").fetchSemanticsNodes().isNotEmpty()}
-                compose.onNodeWithText("Add task", useUnmergedTree = true).performClick()
-                compose.onNodeWithText("What would you like to do?").performTextInput("Buy flowers")
+                compose.waitUntil(60_000){compose.onAllNodesWithText("Focus").fetchSemanticsNodes().isNotEmpty()}
+                compose.onNodeWithContentDescription("Add").performClick()
+                compose.onNodeWithText("Task title · dates optional").performTextInput("Buy flowers")
                 compose.onNodeWithText("Create").performClick()
                 compose.waitUntil(30_000){compose.onAllNodesWithText("Disk is full").fetchSemanticsNodes().isNotEmpty()}
                 compose.onNodeWithText("Buy flowers").assertIsDisplayed()

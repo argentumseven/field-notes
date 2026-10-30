@@ -49,6 +49,17 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun reenrollmentCannotOverwriteOfflineChanges() = runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();m.enqueue("task.update","task",obj("notes" to "Retain me".j()),1)
+        assertFailsWith<IllegalStateException> { m.resetConnection() };assertNotNull(v.value.config);assertEquals(1,v.value.outbox.size)
+        m.discardRetainedChanges();m.resetConnection();assertNull(v.value.config);assertNull(v.value.snapshot);assertNull(v.value.token)
+    }
+    @Test fun standaloneNoteDraftsRemainNotesAcrossOfflineRestartAndAcknowledgement() = runTest {
+        val n=Record("reference","note",1,obj("title" to "Household reference".j(),"body" to "Before".j()))
+        val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(n))));val t=FakeTransport(v.value.snapshot!!);var m=model(v,t,backgroundScope);m.initialize()
+        m.saveDraft(n.id,1,obj("body" to "Offline reference".j()),action="note.update");m.submitDraft(n.id);t.networkFailure=true;m.sync();assertEquals("Offline reference",projectRecords(m.state.value.cache).single().record.data.text("body"))
+        m=model(v,t,backgroundScope);m.initialize();t.networkFailure=false;m.sync();assertEquals("note.update",t.sent.single().action);assertEquals("note",v.value.snapshot!!.records.single().kind);assertEquals("Offline reference",v.value.snapshot!!.records.single().data.text("body"))
+    }
     @Test fun diskFailureDoesNotPublishAnUnsavedCommand() = runTest {
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();v.failing=true
         assertFailsWith<IllegalStateException> { m.enqueue("task.start","task",obj(),1) }

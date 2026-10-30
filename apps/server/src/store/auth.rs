@@ -33,7 +33,7 @@ impl Store {
             .map_err(|_| Fault(409, "User already exists".into()))?;
         Ok(uid)
     }
-    fn budget(&self, key: &str, limit: i64) -> Result<()> {
+    pub(crate) fn budget(&self, key: &str, limit: i64) -> Result<()> {
         self.db
             .execute("DELETE FROM login_limits WHERE until_time<?", [now()])?;
         let n: i64 = self.db.query_row(
@@ -105,7 +105,7 @@ impl Store {
             return fail(401, "Sign in required");
         }
         let sid = crypto::digest(token.as_bytes());
-        self.db.query_row("SELECT u.id,u.name,u.role,s.elevated FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND s.expires>? AND u.active=1",params![sid,now()],|r|Ok(Actor{user_id:r.get(0)?,name:r.get(1)?,role:r.get(2)?,session_id:sid.clone(),elevated:r.get::<_,i64>(3)?>now()})).optional()?.ok_or(Fault(401,"Session expired or revoked".into()))
+        self.db.query_row("SELECT u.id,u.name,u.role,s.elevated FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN device_sessions ds ON ds.session_id=s.id LEFT JOIN devices d ON d.id=ds.device_id WHERE s.id=? AND s.expires>? AND u.active=1 AND (ds.session_id IS NULL OR d.state='active')",params![sid,now()],|r|Ok(Actor{user_id:r.get(0)?,name:r.get(1)?,role:r.get(2)?,session_id:sid.clone(),elevated:r.get::<_,i64>(3)?>now()})).optional()?.ok_or(Fault(401,"Session expired or revoked".into()))
     }
     pub fn reauthenticate(&self, actor: &Actor, password: &str) -> Result<()> {
         self.budget(&format!("reauth:{}", actor.user_id), 5)?;

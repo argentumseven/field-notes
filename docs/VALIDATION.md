@@ -1,112 +1,90 @@
 # Implementation and validation record
 
-Field Notes 0.1.0 is a development implementation, not an independently audited
-production release. Android now uses Kotlin Multiplatform/Compose; Flutter has
-been removed from the active source/build. iOS and native desktop targets are
-deferred at the user's request.
+Field Notes **0.2.0**, protocol 1, database schema 2, Android version code 2.
+This is a development implementation without an independent security audit.
+Server-readable encryption is intentional. Android/Kotlin Multiplatform is the
+active native target; iOS and native desktop packages are deferred.
 
-## Android implementation
+## Executed host, API and build checks
 
-- Shared Kotlin models, Compose matrix/board/list UI, task notes/comments/images,
-  durable offline outbox, provisional state, and retained conflicts.
-- Immutable operation IDs across retries; causal revision updates only through
-  accepted local predecessors. Old editor/photo-picker workspace versions are
-  preserved across reset/restore instead of silently retagging old work.
-- Android Keystore/AES-GCM local encryption and atomic files. Missing keys or
-  failed authentication never create empty replacement workspaces. Image cache
-  encryption is scoped to server/account and image identity.
-- Original Go userspace WireGuard/HTTPS stack and UTF-8-safe JNI adapter. No
-  VpnService, OS routes, Google Play services, FCM, analytics, or public fallback.
-  The adapter verifies the expected server identity before sending credentials.
-- Device-credential UI lock when the phone has a secure screen lock, screenshot
-  protection, disabled OS backups, scoped photo picker, sensitive clipboard hint.
-- Optional WorkManager background catch-up and generic notifications, plus local
-  due-date reminders after 09:00 device-local time with persisted deduplication.
-  These are scheduled/best-effort, not instant push or exact alarms. Idle peers
-  do not send a permanent 25-second NAT keepalive.
-- Editable endpoint for switching between trusted home-LAN and remote routes,
-  preserving server key/CA, device identity, queued commands and local content.
-
-## Executed checks
-
-| Check | Result / practical limit |
+| Check | Result and practical scope |
 | --- | --- |
-| Kotlin shared-domain tests | 14 passed: failed persistence, process restart, ambiguous commit/replay, dependent edits, rejected predecessors, reset/restore fences, expired sessions, viewer role, atomic drafts, reminders, captured editor versions, owned acknowledgements, endpoint changes |
-| Actual Android/JVM JNI adapter integration | Passed against real Go WireGuard peers, HTTPS and a Rust server; Unicode, server claim authority, wrong-server and admin-path rejection exercised |
-| Android emulator Keystore tests | 4 passed: encrypted reopen/no plaintext, tampering, missing key without replacement, account/image AAD binding |
-| Android emulator Compose UI | 2 passed: first launch/public key/explicit trust, and a task title remains visible after a failed durable save |
-| Android emulator native/manifest integration | 2 passed: real Android JNI/WireGuard/TLS/Rust round trip and installed no-VPN/no-location/no-device-admin manifest contract |
-| Android build and lint | APK assembled; lint has no errors (one arm64-only/ChromeOS support warning) |
-| APK inspection | Signature and SHA-256 produced; ZIP and ELF native LOAD alignment verified at 16 KiB; merged manifest and native libraries inspected; no Flutter runtime |
-| Rust cryptography unit test | 1 passed; ciphertext tampering and record/AAD substitution rejected |
-| API integration suite | 13 passed with real processes/database: concurrent claims, restart/replay, roles, images, rollback injection, calendar validation, reset, backup/restore |
-| Chromium workflow | 1 passed; projects/tasks/notes/comments/claim/admin, desktop/mobile layout, no third-party page requests |
-| Installer plan/validation | 6 passed; no privileged production-host installation performed |
-| Native Go transport | 2 passed under race detection; real peers/TLS, request bounds, wrong CA, stopped/invalid transport |
-| Linux server and HTTPS template | Optimized x86_64 binary built and API-tested; official-checksum-verified Caddy validates template |
+| Kotlin shared-domain tests | 23 passed: durable outbox/drafts, ambiguous commit/restart, causal revisions, reset fences, roles, reminders, endpoint changes; strict invitation parser, lost enrollment/activation replies and restart, failed claim persistence, re-enrollment cannot erase pending work, widget opt-in; typed workspace views and standalone note drafts across restart; ranking goldens, stable ordering and calendar/DST |
+| Shared ranking contract | 16 golden cases independently checked in Kotlin and JavaScript, including priorities without dates, blocked/other-claimed/future work, waiting cap and continuing own work |
+| Rust tests | 3 passed: authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation |
+| Node real-process API/planning/enrollment/organization | 17 passed against both debug and optimized server: roles/CSRF, simultaneous claim winner, persistence/replay/restart, stale timestamps/revisions, normalized images, injected rollback, clear/restore, optional planning fields, calendar intervals and two-client calendar visibility/update/deletion with author enforcement; typed Inbox/List/Project/Note moves, revisions and deletion fences; LAN enrollment with mocked root acknowledgement |
+| Chromium workflow | 1 passed: actual login/project/list/Inbox task/shared note/comment/claim, task moves, priority with cleared date, calendar event, board, management, responsive layout, no third-party page requests |
+| Linux installer/helper/TLS | 12 passed: plan/destination refusal/direct-listener contract; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected |
+| Go transport under race detection | 3 passed: real userspace WireGuard peers and HTTPS, boundary paths/CA/stop/bounds; identical command replay after an ambiguous response through trusted alternate endpoint; pinned LAN bootstrap rejects redirects, public/escaped origins, wrong host and oversized replies |
+| Actual JVM/Android JNI adapter on Linux | 1 passed through real Go WireGuard peers → pinned HTTPS → Rust API: Unicode, claim authority, stale server identity and admin-path refusal. This uses the explicit legacy-development fixture, not production enrollment/kernel provisioning |
+| Android arm64 build | Signed sideloadable development APK built; strict lock/verification metadata, host tests and lint passed (0 errors, 9 warnings) |
+| APK inspection | Signature/signer report and SHA-256; 16 KiB ZIP/ELF native alignment; actual manifest includes widget and excludes VPN/Calendar/location/GMS/FCM requirements; no Flutter runtime |
+| Linux optimized server | Built and API-tested on x86_64; direct Rust TLS with no proxy. Fresh bundle staging prevents stale proxy files from earlier builds |
 
-The emulator is AOSP Android 15/API 35 x86_64, without Play services. This host
-has no KVM. An initial software-emulation run aborted before tests during app
-startup while Android system services were also crashing. The final run with
-software GLES rendering and AOT-prepared APKs passed all eight device checks.
-Assertions, app permissions, TLS verification and encryption checks stayed
-active. Emulator results do not establish physical GrapheneOS, ARM execution,
-hardware-backed Keystore, battery use or VPN coexistence.
+The nine lint warnings concern optional API-31 widget sizing hints, arm64-only
+ChromeOS coverage, an obsolete SDK condition, layout overdraw, icon analysis and
+hardcoded demo/widget resource text. They do not disable lint or verification.
+The development APK retains the previous development signer for in-place updates;
+operator release signing is separate and was not claimed as executed.
 
-Device results are in `dist/android-test-results/vault-ui.txt` and `native.txt`;
-JNI host integration XML is `jni-integration.xml`. Host test XML is under
-`apps/mobile/build/test-results/hostTest/`. The phone artifact is the separate
-arm64 APK in `dist/android/`, with checksum and public signer report.
+## Android runtime and screenshots
 
-## Build and test commands
+Current 0.2.0 runtime checks passed in two batches: four Keystore tests, two
+Compose UI tests, one RemoteViews widget privacy test, and two native/manifest
+tests (**9 total**). The native round trip preserves Unicode and checks claim
+authority/server identity through actual Android JNI, userspace WireGuard, TLS
+and the Rust API. It uses the legacy development fixture, not kernel enrollment.
 
-The [screenshot walkthrough](WALKTHROUGH.md) has a separate capture workflow.
-Chromium captures the running Rust-backed site. Android captures the actual
-MainActivity/Compose UI using an opt-in, test-only fixture connection, an
-authorized synthetic server snapshot/image, and the real Keystore/cache/outbox.
-These captures are visual documentation, not additional live transport evidence.
-Live tunnel login could not be completed in this later software-emulated capture
-session; fixture networking was used explicitly rather than changing TLS or
-production networking behavior. The distributed arm64 APK remains unchanged.
+Initial native attempts failed while the AVD had no connected Wi-Fi/IPv4 route.
+After connecting its emulated AndroidWifi, both native tests passed. The harness
+now checks for that route and waits for the hub to acknowledge the same test
+peer key before the first handshake. TLS and endpoint restrictions stay enabled.
 
-```sh
-bash scripts/setup/cloud.sh --android
-bash scripts/check.sh
-bash scripts/android.sh hostTest lintDebug
-bash scripts/build/android.sh debug
-```
+The gallery contains **24 browser captures and 17 Android captures**, including
+the actual installed launcher icon. The dark/paper Compose capture runs and
+targeted expanded-settings/widget recapture passed. Widget privacy checks cover
+private defaults, title opt-in, locking, and exclusion of notes/credentials.
 
-Native JNI integration additionally builds the Linux Go library, its JNI C
-wrapper and `native/cmd/testhub`, then runs `node scripts/test-native-client.mjs`.
-The dedicated AOSP emulator fixture is `scripts/test-android-emulator.mjs`; it
-requires the x86_64 companion APK/test APK and the `field-notes-test` AVD. It
-verifies that AVD before clearing app data, AOT-prepares only the fixture's APKs,
-and never operates on a physical phone. Neither test hub nor its synthetic
-credentials are shipped in the installed server or phone APK.
+The dedicated emulator is AOSP Android 15/API 35 x86_64 without Play services,
+on a host without KVM. Software emulation can cause slow boots and Android system
+watchdog/launcher timeouts; this does not establish physical-phone reliability.
+The test APK is separate from the arm64 distribution artifact.
 
-## Remaining checks and scope
+[WALKTHROUGH.md](WALKTHROUGH.md) describes the screenshot evidence. Browser
+captures run the actual Rust server. Android captures use actual MainActivity,
+Compose, Keystore/cache and the production RemoteViews renderer with an explicit
+synthetic transport fixture. Their enrollment status is simulated for display;
+backend enrollment/source authorization is tested separately. Widget captures
+render the real RemoteViews in the test activity, not a third-party launcher.
+Production screenshot protection stays enabled; only the synthetic test window
+is permitted to capture. No active household invites/data/keys are published.
 
-- Physical GrapheneOS install/upgrade, Bungee plus a system VPN/lockdown, real
-  Wi-Fi/cellular roaming, reboot/force-stop behavior and battery consumption.
-- Background delivery/Doze timing and local reminders on a real phone. The
-  reminder policy is unit-tested; no instant-delivery guarantee is claimed.
-- Home installer `--apply`, real interface/firewall isolation, certificate trust
-  and renewal, router forwarding, CGNAT and IPv6 deployment behavior.
-- Operator-managed production APK signing; the provided APK uses a persistent
-  development signer. Changing signers can require uninstalling/re-pairing.
-- Web-managed/QR peer enrollment, per-project ACLs, passkeys/MFA, automatic server
-  upgrades/rollback, scheduled server backups, key rotation, trash restore,
-  standalone notes/canvas/calendar/AI/plugins remain future work.
-- iOS/native desktop packages and their platform adapters are not implemented.
+Reports are generated under `dist/android-test-results/` and
+`apps/mobile/build/test-results/`. Host build/check logs and private tool caches
+are outside Git. See build commands in [RUNNING.md](RUNNING.md).
 
-Native sync uses full authorized snapshots rather than an incremental event
-stream. Bounds remain 10,000 server records/tombstones, 8 MiB metadata, 128 MiB
-images and 32 MiB retained receipts. Client state is capped at 32 MiB with bounded
-pending/conflict queues. Receipt history is not pruned in a way that allows replay.
+## Implemented behavior and remaining deployment gates
 
-Server-readable at-rest encryption uses a versioned master key with fresh nonces
-and record-bound AAD. Per-object wrapping/key rotation from the original proposal
-is future work. Usernames, roles, object IDs/kinds/relationships, revisions,
-event metadata, counts and sizes remain plaintext database metadata. Protect the
-host/key source, WAL, logs and backups. The web UI retains drafts in the current
-tab; it does not implement an encrypted offline browser vault.
+Implemented: Inbox tasks without a project, typed Lists/Projects with safe moves,
+shared standalone Notes, Unscheduled/Waiting/Completed views, optional dates and
+priority/plan/effort/pin/block fields, explained
+Focus ordering, shared calendar, author/admin event edits, notes/comments/images,
+encrypted offline work/conflicts, scoped QR plus phone-code approval, constrained
+host peer provisioning with acknowledgement, source-bound phone sessions,
+immediate application revocation and tracked peer removal, local certificate
+renewal, LAN administration and redacted-by-default Android home widget.
+
+Not executed on a real home server/phone: privileged Debian/Ubuntu installation,
+actual kernel WireGuard/nftables isolation against a hostile peer, off-LAN/DDNS/
+hairpin routing, physical GrapheneOS and simultaneous VPN/lockdown behavior,
+camera optics/permission lifecycle on that hardware, launcher widget lifecycle,
+hardware-backed Keystore, Doze/battery/roaming/reboot behavior, and independent
+security review. Helper/API mocks and userspace test peers do not replace these.
+Certificate issuance/renewal is tested; the periodic live TLS reload is implemented
+but was not separately exercised over its full production reload interval.
+
+Notifications are optional scheduled catch-up and cached local reminders,
+without FCM. Instant background push, exact delivery, per-project ACLs, automatic
+upgrades, automatic CA rotation and native iOS/desktop builds remain future work.
+Widget titles disclose cached copies to the launcher only after opt-in; instant
+lock redaction and erasure of launcher copies cannot be guaranteed.

@@ -27,6 +27,8 @@ pub struct App {
     pub device: bool,
     pub gate: Arc<Semaphore>,
     pub requests: Arc<Semaphore>,
+    pub admin_allow: Vec<ipnet::IpNet>,
+    pub bind_devices: bool,
 }
 impl IntoResponse for Fault {
     fn into_response(self) -> Response {
@@ -79,6 +81,49 @@ fn csrf(token: &str) -> String {
     crypto::digest(format!("csrf:{token}").as_bytes())
 }
 async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> Response {
+    let path = request.uri().path();
+    let bootstrap = matches!(
+        path,
+        "/api/enrollment/claim" | "/api/enrollment/status" | "/api/enrollment/cancel"
+    );
+    if bootstrap
+        && (request.headers().contains_key("cookie") || request.headers().contains_key("origin"))
+    {
+        return Fault(
+            403,
+            "Enrollment must be initiated by the phone through its pinned LAN connection".into(),
+        )
+        .into_response();
+    }
+    if app.device
+        && app.bind_devices
+        && !matches!(path, "/health" | "/api/login" | "/api/device/activate")
+    {
+        let peer = match request.extensions().get::<ConnectInfo<SocketAddr>>() {
+            Some(c) => c.0.ip(),
+            None => return Fault(403, "Direct device connection required".into()).into_response(),
+        };
+        let token = match credential(request.headers(), true) {
+            Ok(t) => t,
+            Err(e) => return e.into_response(),
+        };
+        if let Err(e) = blocking(app.clone(), move |s| s.authorize_device(&token, peer)).await {
+            return e.into_response();
+        }
+    }
+    if !app.device && !app.dev {
+        let remote = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|c| c.0.ip());
+        if !remote.is_some_and(|ip| app.admin_allow.iter().any(|network| network.contains(&ip))) {
+            return Fault(
+                403,
+                "Management access is restricted to the configured LAN".into(),
+            )
+            .into_response();
+        }
+    }
     let _request_slot = match app.requests.clone().try_acquire_owned() {
         Ok(p) => p,
         Err(_) => return Fault(503, "Too many requests; retry shortly".into()).into_response(),
@@ -103,7 +148,9 @@ async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> R
         *request.method(),
         axum::http::Method::GET | axum::http::Method::HEAD
     );
-    let login = request.uri().path() == "/api/login";
+    let login = request.uri().path() == "/api/login"
+        || bootstrap
+        || (app.device && request.uri().path() == "/api/device/activate");
     if mutation && !login {
         let native = request.headers().contains_key("authorization");
         if !native {
@@ -146,9 +193,14 @@ async fn login(
 ) -> Result<Response, Fault> {
     let source = addr.ip().to_string();
     let device = app.device;
+    let bound = device && app.bind_devices;
     let dev = app.dev;
     let (token, actor) = blocking(app, move |s| {
-        s.login(&input.name, &input.password, &input.device, &source)
+        if bound {
+            s.login_enrolled(&input.name, &input.password, &input.device, addr.ip())
+        } else {
+            s.login(&input.name, &input.password, &input.device, &source)
+        }
     })
     .await?;
     let mut response = Json(if device {
@@ -300,6 +352,111 @@ async fn backup(State(app): State<App>, h: HeaderMap) -> Result<Response, Fault>
     )
         .into_response())
 }
+async fn invite(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, false)?;
+    let user = input
+        .get("user_id")
+        .and_then(Value::as_str)
+        .ok_or(Fault(400, "Choose a household user".into()))?
+        .to_owned();
+    if input.as_object().is_none_or(|v| v.len() != 1) {
+        return Err(Fault(400, "Unexpected invitation fields".into()));
+    }
+    Ok(Json(
+        blocking(app, move |s| s.enrollment_invite(&token, &user)).await?,
+    ))
+}
+async fn devices(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, false)?;
+    Ok(Json(
+        blocking(app, move |s| s.enrollment_overview(&token)).await?,
+    ))
+}
+async fn approve(
+    State(app): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, false)?;
+    let code = input
+        .get("verification")
+        .and_then(Value::as_str)
+        .filter(|c| c.len() <= 12)
+        .ok_or(Fault(400, "Enter the phone verification code".into()))?
+        .to_owned();
+    if input.as_object().is_none_or(|v| v.len() != 1) {
+        return Err(Fault(400, "Unexpected approval fields".into()));
+    }
+    Ok(Json(
+        blocking(app, move |s| s.enrollment_approve(&token, &id, &code)).await?,
+    ))
+}
+async fn revoke_device(
+    State(app): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, false)?;
+    Ok(Json(
+        blocking(app, move |s| s.enrollment_revoke(&token, &id)).await?,
+    ))
+}
+async fn claim(
+    State(app): State<App>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    Ok(Json(
+        blocking(app, move |s| {
+            s.enrollment_claim(input, &peer.ip().to_string())
+        })
+        .await?,
+    ))
+}
+async fn enrollment_status(
+    State(app): State<App>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    Ok(Json(
+        blocking(app, move |s| {
+            s.budget(&format!("enroll-status:{}", peer.ip()), 300)?;
+            s.enrollment_status(input)
+        })
+        .await?,
+    ))
+}
+async fn cancel_enrollment(
+    State(app): State<App>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    Ok(Json(
+        blocking(app, move |s| {
+            s.budget(&format!("enroll-cancel:{}", peer.ip()), 30)?;
+            s.enrollment_cancel(input)
+        })
+        .await?,
+    ))
+}
+async fn activate(
+    State(app): State<App>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    Ok(Json(
+        blocking(app, move |s| {
+            s.budget(&format!("activate:{}", peer.ip()), 60)?;
+            s.activate_device(input, peer.ip())
+        })
+        .await?,
+    ))
+}
 pub fn router(app: App) -> Router {
     let mut routes = Router::new()
         .route(
@@ -314,13 +471,59 @@ pub fn router(app: App) -> Router {
         .route("/api/head", get(head))
         .route("/api/commands", post(command))
         .route("/api/images/{id}", get(image));
+    if app.device {
+        routes = routes.route("/api/device/activate", post(activate));
+    }
     if !app.device {
         routes = routes
+            .route("/api/enrollment/invitations", post(invite))
+            .route("/api/enrollment/devices", get(devices))
+            .route("/api/enrollment/devices/{id}/approve", post(approve))
+            .route("/api/enrollment/devices/{id}/revoke", post(revoke_device))
+            .route("/api/enrollment/claim", post(claim))
+            .route("/api/enrollment/status", post(enrollment_status))
+            .route("/api/enrollment/cancel", post(cancel_enrollment))
             .route("/api/admin", get(admin_get).post(admin_post))
             .route("/api/admin/backup", get(backup))
             .route(
                 "/",
                 get(|| async { Html(include_str!("../../admin/index.html")) }),
+            )
+            .route(
+                "/organization.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/organization.js"),
+                    )
+                }),
+            )
+            .route(
+                "/calendar.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/calendar.js"),
+                    )
+                }),
+            )
+            .route(
+                "/management.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/management.js"),
+                    )
+                }),
+            )
+            .route(
+                "/planning.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/planning.js"),
+                    )
+                }),
             )
             .route(
                 "/app.js",

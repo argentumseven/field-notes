@@ -1,7 +1,13 @@
 package org.fieldnotes.app
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 import org.fieldnotes.domain.Workspace
 import org.fieldnotes.platform.AndroidTransport
 import org.fieldnotes.platform.AndroidVault
@@ -18,5 +24,9 @@ class FieldNotesApplication : Application() {
         transport = AndroidTransport(); vault = AndroidVault(this)
         model = Workspace(transport, vault, { UUID.randomUUID().toString() }, scope)
         scope.launch { try { model.initialize() } finally { initialized.complete(Unit) } }
+        ContextCompat.registerReceiver(this, object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) { if (::model.isInitialized) PlannerWidget.refresh(context) }
+        }, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_USER_UNLOCKED) }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        scope.launch { initialized.await(); model.state.collectLatest { delay(600); PlannerWidget.refresh(this@FieldNotesApplication) } }
     }
 }

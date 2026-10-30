@@ -6,18 +6,15 @@ import {fixture,password} from '../../tests/support.mjs';
 export async function illustration(browser){
  const page=await browser.newPage({viewport:{width:800,height:450},deviceScaleFactor:1});
  try{
-  await page.setContent(`<body style="margin:0"><svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="#edf2fa"/><text x="50" y="58" font-family="sans-serif" font-size="25" fill="#243654">Kitchen shelf measurements</text><text x="50" y="89" font-family="sans-serif" font-size="15" fill="#526078">Household demo · sketch before buying timber</text><rect x="175" y="130" width="450" height="245" rx="12" fill="#fff" stroke="#62738d" stroke-width="3"/><path d="M195 210H605M195 290H605" stroke="#a28b74" stroke-width="14"/><path d="M175 400H625M175 390V410M625 390V410" stroke="#2756af" stroke-width="2"/><text x="360" y="430" font-family="sans-serif" font-size="18" fill="#2756af">120 cm</text><path d="M665 130V375M655 130H675M655 375H675" stroke="#6942b7" stroke-width="2"/><text x="688" y="263" font-family="sans-serif" font-size="18" fill="#6942b7">65 cm</text><rect x="225" y="172" width="45" height="31" rx="4" fill="#9cb7d8"/><rect x="280" y="155" width="26" height="48" rx="3" fill="#beabdf"/><rect x="450" y="252" width="62" height="31" rx="8" fill="#84ac9b"/></svg></body>`);
+  await page.setContent(`<body style="margin:0;background:#f4f4ed;color:#202927;font:24px system-ui;padding:50px"><h2 style="font-size:28px">Shelf measurements</h2><hr style="border:1px solid #d4dcd1"><p>Width: 120 cm</p><p>Depth: 25 cm</p><p>Gap above counter: 65 cm</p><small>Reference attachment · synthetic demonstration</small></body>`);
   return await page.screenshot({type:'png'});
  }finally{await page.close();}
 }
 
-export async function demo(image){
- const f=await fixture();
+export async function demo(image, enrollment = false){
+ const f=await fixture({enrollment});
  try{
-  const login=async(name,device)=>{
-   const r=await f.request('/api/login',{base:f.device,body:{name,password,device}});
-   assert.equal(r.status,200);return r.data.token;
-  };
+  const login=async(name,device)=>f.login(name,password);
   const owner=await login('owner','Home computer · Linux');
   const meta=(await f.request('/api/snapshot',{token:owner})).data;
   const command=async(action,target,data={},revision=null,token=owner)=>{
@@ -45,12 +42,21 @@ export async function demo(image){
    ['seeds',home,'Order herb seedlings','do','','The nursery order is confirmed.'],
   ];
   const ids={home,workshop,weekend};
-  for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes});}
+  for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes,priority:({shelves:2,backup:1,lamp:2,bench:4})[key]||3,estimate_minutes:({shelves:30,backup:15,walk:20})[key]||0,planned_for:['shelves','walk'].includes(key)?'2026-10-30':'',blocked:key==='herbs',pinned:key==='backup'});}
+  ids.groceries=randomUUID();ids.routines=randomUUID();
+  await command('list.create',ids.groceries,{title:'Groceries',notes:'Shared shopping, without a project or deadline.'});
+  await command('list.create',ids.routines,{title:'Household routines',notes:'The practical things we keep coming back to.'});
+  await command('task.create',randomUUID(),{title:'Oats and coffee',project_id:ids.groceries,priority:4});
+  await command('task.create',randomUUID(),{title:'Check parcel delivery',priority:2});
+  ids.reference=randomUUID();
+  await command('note.create',ids.reference,{title:'Household reference',body:'Useful details belong here, without becoming tasks.\n\nAir filter: 20 × 25 × 1\nPaint finish: warm white, matte\nKeep a copy of the appliance receipts with the household backup.',pinned:true});
+  await command('note.create',randomUUID(),{title:'Weekend ideas',body:'A woodland walk, a new recipe, or a quiet afternoon at home.'});
+  await command('event.create',randomUUID(),{title:'Household planning',notes:'Review the week together.',all_day:true,start_date:'2026-10-30',end_date:'2026-10-31',starts_at:0,ends_at:0});
   await command('task.start',ids.boiler,{},1,sam);
   await command('task.complete',ids.seeds,{},1);
   await command('comment.create',randomUUID(),{task_id:ids.shelves,body:'I can measure the alcove on Saturday morning.'},null,sam);
-  await command('comment.create',randomUUID(),{task_id:ids.shelves,body:'Perfect. I added a sketch so we can compare the shelf sizes.'});
-  await command('image.create',randomUUID(),{task_id:ids.shelves,name:'Kitchen shelf sketch.png',bytes:image.toString('base64')});
+  await command('comment.create',randomUUID(),{task_id:ids.shelves,body:'Perfect. I attached the measurements for reference.'});
+  await command('image.create',randomUUID(),{task_id:ids.shelves,name:'Shelf measurements.png',bytes:image.toString('base64')});
   return {...f,ids,owner,sam,command};
  }catch(e){await f.close();throw e;}
 }

@@ -3,7 +3,7 @@ package org.fieldnotes.app
 import android.content.pm.PackageManager
 import android.util.Base64
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.fieldnotes.domain.*
 import org.fieldnotes.platform.AndroidTransport
@@ -26,11 +26,15 @@ class NativeDeviceTest {
         val transport=AndroidTransport();val keys=transport.keys()
         assertEquals(32,Base64.decode(keys.text("private_key"),Base64.NO_WRAP).size)
         val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val ready=File(context.filesDir,"native-test-peer-ready.txt");ready.delete()
         File(context.filesDir,"native-test-public.txt").writeText(keys.text("public_key"))
         val paired=JsonObject(config+ ("private_key" to keys.getValue("private_key")))
-        transport.configure(paired)
         val peer=config.text("server_key")
         try{
+            // The disposable host must actually install this test peer before
+            // the first handshake. TCG/ADB latency is not a server failure.
+            withTimeout(60_000) { while(!ready.isFile || ready.readText()!=keys.text("public_key")) delay(50) }
+            transport.configure(paired)
             val login=transport.exchange("/api/login",null,obj("name" to "owner".j(),"password" to "household-test-password-only".j(),"device" to "Emulator native test".j()),peer)
             assertEquals(200,login.status);val token=WireJson.parseToJsonElement(login.body).jsonObject.text("token")
             val snapshot=transport.exchange("/api/snapshot",token,serverKey=peer);assertEquals(200,snapshot.status)
@@ -46,6 +50,6 @@ class NativeDeviceTest {
             val start=command("task.start",task,obj(),1);assertEquals(200,start.status)
             val repeat=command("task.start",task,obj(),1);assertEquals(409,repeat.status)
             try{transport.exchange("/api/head",token,serverKey="different-server");fail("Stale server identity accepted")}catch(_:IllegalStateException){}
-        }finally{transport.stop();File(context.filesDir,"native-test-public.txt").delete()}
+        }finally{transport.stop();File(context.filesDir,"native-test-public.txt").delete();ready.delete()}
     }
 }

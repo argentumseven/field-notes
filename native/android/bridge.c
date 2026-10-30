@@ -30,4 +30,5 @@ static jbyteArray call(JNIEnv *env, jbyteArray input, char *(*function)(char *))
 JNIEXPORT jbyteArray JNICALL Java_org_fieldnotes_platform_NativeBridge_keys(JNIEnv *env, jclass type) { (void)type; return output(env, FieldKeys()); }
 JNIEXPORT jbyteArray JNICALL Java_org_fieldnotes_platform_NativeBridge_configure(JNIEnv *env, jclass type, jbyteArray input) { (void)type; return call(env, input, FieldConfigure); }
 JNIEXPORT jbyteArray JNICALL Java_org_fieldnotes_platform_NativeBridge_exchange(JNIEnv *env, jclass type, jbyteArray input) { (void)type; return call(env, input, FieldExchange); }
+JNIEXPORT jbyteArray JNICALL Java_org_fieldnotes_platform_NativeBridge_bootstrap(JNIEnv *env, jclass type, jbyteArray input) { (void)type; return call(env, input, FieldBootstrap); }
 JNIEXPORT void JNICALL Java_org_fieldnotes_platform_NativeBridge_stop(JNIEnv *env, jclass type) { (void)env; (void)type; FieldStop(); }

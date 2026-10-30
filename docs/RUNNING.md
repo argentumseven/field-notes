@@ -1,215 +1,198 @@
-# Build and run
+# Install, build and recover
 
-This is a development implementation with a compiled Kotlin Multiplatform /
-Compose Android app and a tested Rust server/LAN web interface. Physical
-GrapheneOS and home-network verification remain separate. See
-[VALIDATION.md](VALIDATION.md) for the actual executed checks.
+Server: Linux only, Debian/Ubuntu installer. Android: arm64 GrapheneOS/Android
+8+. Linux and Windows use the LAN web interface. Native desktop and iOS builds
+are deferred. See [VALIDATION.md](VALIDATION.md) for checks and limits.
 
-## Cloud development
+## Fresh home server
+
+Build on Linux or unpack the matching Linux server bundle:
 
 ```sh
-bash scripts/setup/cloud.sh
-source scripts/dev-env.sh
-bash scripts/check.sh
 bash scripts/build/server.sh
-```
+# Or extract dist/server/field-notes-0.2.0-linux-x86_64.tar.gz on the Linux host.
 
-Tool caches live under `/workspace/.cache/field-notes` by default, outside the
-checkout. Rust 1.90.0 and Go 1.26.9 are pinned; Cargo and Go dependencies have
-lock/checksum files. The LAN UI is embedded into the server binary; rebuild after
-editing its assets. Chromium is required for browser tests (`CHROMIUM_PATH` can
-select its executable). Python 3 and Node 24 are used for the test tools.
-
-For a disposable loopback-only UI development session, run
-`node scripts/dev-server.mjs`. It uses synthetic test credentials from
-`tests/support.mjs`, prints its assigned backend addresses, and removes its
-temporary data on exit. Do not use that fixture as a persistent household server.
-`node scripts/dev-server.mjs --smoke` exercises authenticated readiness and exits.
-
-Initialize a persistent local development workspace with a password entered securely:
-
-```sh
-python3 -c 'import getpass,sys; sys.stdout.write(getpass.getpass("Owner password (12+ characters): "))' \
-  | target/debug/field-notes-server init --name owner
-
-target/debug/field-notes-server serve --dev
-```
-
-The two HTTP backends bind only loopback, on ports 8787 (web/admin) and 8788
-(device API). The development flag allows a non-Secure cookie only for local
-HTTP development. Installed use requires HTTPS through the supplied Caddy
-configuration. The exact public/LAN web origin must match `--origin`; do not
-weaken origin checks or certificate verification to solve setup errors.
-
-The service never creates an owner or a new key over an existing installation.
-Keep `.local/secrets/master.key` private. Production keys and data do not belong
-in the checkout. `stats` reports counts without printing records or credentials.
-
-## Home Linux installation
-
-The release bundle is under `dist/server/`. The current binary is built on the
-cloud host's libc; it has not been certified for older Debian/Ubuntu releases.
-Build from source on the target distribution if necessary. The installer tests
-that the binary executes before changing the host.
-
-From the checkout or extracted release bundle:
-
-```sh
-bash scripts/install-server.sh --plan \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24
-
+sudo bash scripts/install-server.sh --plan \
+  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
+  --endpoint your-home.example.net:51831
 sudo bash scripts/install-server.sh --apply \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24
+  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
+  --endpoint your-home.example.net:51831
 ```
 
-Replace addresses with the actual server and trusted management network. Choose
-an overlay subnet that does not overlap Bungee, your LAN, or another VPN. The
-plan performs no writes or network operations. Apply is a fresh-install helper:
-it installs packages and dedicated systemd services, asks for the initial owner
-password, generates separate storage/WireGuard keys, and refuses existing
-installation paths, accounts, or conflicting Field Notes units. It does not
-provide a tested automatic upgrade/rollback system yet.
+Replace example addresses/domain with yours. Reserve the server's LAN address
+on your router. Select a private /24 overlay with `--overlay` if `10.82.0.0/24`
+overlaps Bungee/your LAN/VPN. Supply a publicly reachable endpoint to use phones
+away from home; omitting it produces a clearly labeled LAN-only installation.
+`--udp-port` defaults to 51831, `--web-port` to 9443. Port 8443 belongs to the
+inner device API. The installer prompts for an owner name/password, never a
+command-line password. Review `--plan` before applying.
 
-The installer uses a dedicated Caddy service/config, not the global Caddy site
-configuration. On a new Caddy package installation it prevents the unrelated
-default service from starting. Existing services/firewall policies are not
-replaced. Root/kernel/service installation has **not** been executed in this
-cloud environment; run the plan and validate on the target host before use.
+The installer refuses existing directories, accounts, services and WireGuard
+configuration. It is for fresh hosts; it is not an in-place migration from the
+older proxy-based prototype. Installation failure leaves reviewable files; do
+not blindly rerun over an incomplete installation or delete household data.
 
-Configure one router UDP forward (default 51831) to the server. The native API
-listens through WireGuard at the selected overlay server address, port 8443.
-The website binds only the specified LAN address on HTTPS/443. Phone traffic to
-admin, other peers, the LAN, host management, and Internet forwarding is denied
-by a dedicated nftables policy. Other host firewall rules can still deny allowed
-traffic; this installer does not override them. Verify IPv4/IPv6 and an actual
-cellular/off-LAN connection, including possible CGNAT/double NAT.
+The installer installs WireGuard tools, nftables and OpenSSL. It creates:
 
-Set LAN DNS for the chosen hostname (default `notes.home.arpa`). Trust the public
-Caddy root certificate on administrator devices after checking its fingerprint
-locally. Automatic trust installation is disabled. The server prints the public
-certificate path, not its private key. Never distribute the Caddy root private
-key or application master key to phones. The native client receives the public
-CA certificate through its trusted pairing configuration.
+- `/opt/field-notes`: server and constrained host helpers.
+- `/var/lib/field-notes`: app-owned encrypted database, event log and private
+  desired-peer manifest; `/etc/field-notes/master.key`: server recovery key.
+- `/etc/field-notes/tls`: public CA and leaf files; root-only `private/ca.key`.
+- `/etc/field-notes/network.json`: public bootstrap identity and trusted outer
+  endpoints; `/etc/wireguard/fieldnotes.conf`: host private key and peer PSKs.
+- `field-notes.service`: nonroot Rust TLS server, no NET_ADMIN.
+- `wg-quick@fieldnotes`, `field-notes-firewall`: host hub and peer isolation.
+- `field-notes-peers.timer`: constrained root reconciliation every two seconds,
+  acknowledging only a successful apply/save. Private host state is separate in
+  `/var/lib/field-notes-peer-helper`, status in `/run/field-notes-peers`.
+- `field-notes-certificates.timer`: daily offline leaf-renewal check; renews when
+  fewer than 30 days remain. Rust loads a new valid certificate/key within 60s.
 
-## Android builds and pairing
+There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly at
+`https://192.168.1.10:9443`; the separate phone API binds only `10.82.0.1:8443`.
+The installer checks login, authenticated snapshot and logout over real TLS.
+It does not install a shell-execution endpoint in the management website.
 
-The Android app uses Kotlin Multiplatform/Compose; Flutter is no longer needed.
-Only Android is being delivered now. iOS and native desktop packages are deferred.
-Shared `commonMain` UI/domain code is portable to a future iOS target, but native
-Apple storage/networking/notification adapters would still be needed.
+Forward **one UDP port only**, 51831 by default, to the server. Never forward TCP
+9443/8443. Keep existing host firewall restrictions and permit the selected UDP
+and management LAN as appropriate. Check the [network access matrix](NETWORK.md)
+on your actual host; CGNAT or an upstream UDP filter can prevent remote access.
+
+## Trust the LAN website
+
+On the Linux host, verify the public CA fingerprint:
+
+```sh
+openssl x509 -in /etc/field-notes/tls/ca.crt -outform DER | sha256sum
+```
+
+Transfer only `ca.crt` to your administrator computer and install it in the
+appropriate OS/browser trust store after comparing that fingerprint. Never
+transfer `private/ca.key`, `server.key` or the server recovery key to phones.
+Open the exact management URL shown by the installer. Phones receive the public
+CA in their trusted-source QR invitation and need no system-wide CA installation.
+See [enrollment steps](ENROLLMENT.md) for scan, code approval, provisioning and
+revocation. No manual peer JSON editing is needed.
+
+## Install the Android APK
+
+Build output:
+`dist/android/field-notes-0.2.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
+Copy the APK to the phone, verify its hash/signing-certificate fingerprint, and
+open it with your file manager. Temporarily allow installation from that source.
+The debug APK is signed with the development key in the external tool cache;
+retain that key for in-place development updates. Do not commit signing keys.
+
+Open **Enroll this phone** on trusted home Wi-Fi and follow [ENROLLMENT.md](ENROLLMENT.md).
+Camera access is requested only for scanning. QR decoding is entirely local;
+ZXing does not require Play services. Paste is available without camera access.
+The app does not consume Android's system VPN slot; existing VPN/lockdown policy
+still governs its outer UDP sockets. Test home and mobile-data connectivity on
+each phone before relying on background catch-up.
+
+To add the widget, use your launcher's widget picker and choose **Field Notes**.
+It opens the credential-locked app. Task titles are hidden by default; opt in
+under **Workspace menu → Settings & widgets** if you accept launcher-visible
+copies. Notes/images/credentials never enter the widget. Updates use cached data,
+not Google or OS Calendar, and are best-effort.
+
+## Build from source
 
 ```sh
 bash scripts/setup/cloud.sh --android
+source scripts/dev-env.sh
+bash scripts/check.sh
 bash scripts/android.sh hostTest lintDebug
 bash scripts/build/android.sh debug
-# With an existing operator signing key supplied securely:
+bash scripts/build/server.sh
+```
+
+Pinned Kotlin 2.1.21/Compose 1.8.2/AGP 8.10.1/Gradle 8.11.1, JDK 21, Android SDK
+36, NDK 28.2 and Go/Rust setup live under `scripts/setup`. Dependencies are locked
+and verified. Tool/signing caches remain outside the checkout. The Android build
+produces the actual arm64 APK, verifies signature, ZIP/ELF 16 KiB alignment and
+manifest constraints. Server builds use fresh staging to prevent stale files
+from earlier bundles. Per-target scripts do not report success without artifacts.
+
+An operator release requires a stable separately protected signing key:
+
+```sh
+# Supply these securely in your shell/secret manager; never commit their values.
+export FIELD_NOTES_KEYSTORE=/protected/path/release.jks
+export FIELD_NOTES_KEY_ALIAS=field-notes
+# Also set FIELD_NOTES_STORE_PASSWORD and FIELD_NOTES_KEY_PASSWORD securely.
 bash scripts/build/android.sh release
 ```
 
-The build uses JDK 21, Kotlin 2.1.21, Compose 1.8.2, AGP 8.10.1 and a checksum-pinned
-Gradle 8.11.1 wrapper. Google Maven artifacts are fetched directly from the
-already allowed official `dl.google.com` Android repository. No Flutter downloads
-or custom network additions are required. Repository dependency locks should be
-reviewed when versions change, not silently regenerated during routine builds.
+The release script refuses missing signing inputs. Native Windows/Linux clients
+and iOS binaries are not produced by these scripts.
 
-Release signing requires `FIELD_NOTES_KEYSTORE`, `FIELD_NOTES_KEY_ALIAS`,
-`FIELD_NOTES_STORE_PASSWORD`, and `FIELD_NOTES_KEY_PASSWORD` through a secure local
-build environment. Never paste values into chat or Git. The debug keystore is a
-separate persistent development identity under the configured tool user's home;
-retain it to update the debug app without uninstalling. Debug signing is not a
-substitute for an operator-controlled production release key.
+## Development and checks
 
-Output: `dist/android/field-notes-0.1.0-android-arm64-debug.apk` (or release), plus
-`.sha256` and `.signer.txt`. Verify both, copy the APK to your phone, open it,
-temporarily allow installation from that source, install, and restore that
-source permission. Optional developer route: `adb install -r <apk>`.
-
-The phone app runs on Android 8/API 26 or later, targets Android 16/API 36, and is
-built for arm64 GrapheneOS phones. It does not require Google Play services,
-Firebase, an Android VPN service, device administration, or broad photo access.
-The OS photo picker grants access only to selected images. A secure device lock
-prompts for the device credential before opening the UI, with a five-minute
-foreground grace period. Keystore cache keys remain usable for explicitly enabled
-background catch-up after first device unlock; UI locking is not per-access
-biometric encryption of every packet.
-
-Background catch-up is opt-in through **Notifications & connection**, uses
-WorkManager at minimum 15-minute intervals, and can be delayed by Android Doze,
-force-stop, reboot-before-unlock, missing network, or VPN restrictions. Generic
-notifications need Android notification permission. Optional local reminders
-check cached due dates after 09:00 in the device's time zone and deduplicate by
-task/due-date. They can be stale while offline and are not exact-time alarms.
-No permanent foreground service, FCM, APNs, or public push fallback is used.
-
-If the public home endpoint does not work from your LAN because the router lacks
-hairpin NAT, use **Notifications & connection → Edit server endpoint** to choose
-the server’s trusted LAN address/UDP port. Change back to the public endpoint
-when remote, or configure router/DNS routing appropriately. Endpoint edits keep
-the same server key and CA and preserve pending edits; they do not bypass the
-system VPN or re-pair the device.
-
-The shared-domain JVM tests run through `bash scripts/android.sh hostTest`.
-Android instrumented tests require a disposable AOSP emulator. The integration
-fixture `scripts/test-android-emulator.mjs` verifies the dedicated AVD name
-`field-notes-test` before clearing app data; it never runs against a physical
-phone. Build the x86_64 test ABI first and use the test hub/fixture instructions
-in the validation record. Emulator results do not establish GrapheneOS behavior,
-hardware Keystore properties, battery use, or another system VPN's policy.
-
-Pairing is manual in this first implementation; QR invitations and a web-driven
-peer admission worker are not implemented. The native Android app generates and shows
-its own public key. On the home server, allocate one unused overlay address per
-device and approve its public key:
+`node scripts/dev-server.mjs` runs explicit loopback-only HTTP development
+listeners with synthetic local data; it is not a production deployment.
+`--dev` refuses nonloopback bindings. Installed operation always uses TLS.
 
 ```sh
-sudo python3 /opt/field-notes/peer.py add \
-  --public-key '<phone-public-key>' --address 10.82.0.2
-
-sudo python3 /opt/field-notes/peer.py connection \
-  --public-key '<phone-public-key>' --address 10.82.0.2 \
-  --endpoint '<reachable-home-IP-or-DNS>:51831' \
-  --ca-file /var/lib/field-notes-tls/caddy/pki/authorities/local/root.crt
+bash scripts/build/android-emulator.sh
+node scripts/test-native-client.mjs
+# On only the disposable field-notes-test AVD:
+# Connect its emulated Wi-Fi first if it has no IPv4 route:
+adb -s emulator-5554 shell cmd wifi connect-network AndroidWifi open
+node scripts/test-android-emulator.mjs
+node scripts/capture-web.mjs
+node scripts/capture-android.mjs
 ```
 
-For a custom subnet pass the same `--overlay` used at installation. The connection
-JSON contains public trust/endpoint information, never the phone's private key.
-Transfer it from the trusted LAN administrator, compare server identity, and
-paste it into the app. Then sign in with a household account created in the web
-admin interface. The app's private stack carries only its HTTPS device API.
-A browser or another push app cannot use that in-process tunnel.
+The capture scripts use synthetic data. Web captures run against a real Rust
+server. Android captures use actual Compose/RemoteViews with a test-only
+transport fixture; they do not prove live tunnel enrollment or widget launcher
+lifecycle. The separate launcher-icon capture shows the actual installed icon.
+Production screen-capture protection is not disabled. See [WALKTHROUGH.md](WALKTHROUGH.md).
 
-To revoke a device, revoke its application session in the web UI **and** remove
-its peer with `peer.py remove --public-key ... --address ...`. Session revocation
-alone does not remove network access or prevent a user with a known password
-from signing in again. Peer helper success requires runtime and persisted
-WireGuard updates; failures are not reported as complete revocation.
-
-## Backup and restoration
-
-An owner can reauthenticate and download an encrypted backup in the web UI.
-Host-side equivalent:
+## Operation, renewal and recovery
 
 ```sh
-field-notes-server backup --data /var/lib/field-notes \
-  --key-file /etc/field-notes/master.key --file /protected/field-notes.backup
+sudo systemctl status field-notes field-notes-peers.timer field-notes-certificates.timer
+sudo journalctl -u field-notes -u field-notes-peers --since today
+sudo wg show fieldnotes
+sudo nft list table inet fieldnotes
 ```
 
-Keep a protected copy of the master key separately; login/password recovery
-cannot replace a lost encryption key. Backups include account/authentication
-metadata as well as encrypted content, and the entire backup is encrypted again.
-They do not include host WireGuard/Caddy configuration or their private keys;
-back those up separately with appropriate protection.
+Do not publish peer manifests, QR material, host configs or unredacted support
+logs. Root-owned host configuration/keys need host disk protection. Application
+AES-GCM does not encrypt every SQLite metadata field, WireGuard config or memory.
 
-Restore into a **nonexistent** directory, inspect it, then switch the stopped
-service to it. Never restore over a live database:
+Back up the workspace with **Management → Download encrypted backup**, after
+reauthentication. Store the recovery master key separately and protect host
+WireGuard, CA and network configuration in a separate host backup. Existing
+backups are not erased by clearing active data.
+
+For restore, stop the app and peer timer, preserve a coherent backup, and restore
+into a **new** data directory using the same master key:
 
 ```sh
-field-notes-server restore --data /var/lib/field-notes-restored \
-  --key-file /etc/field-notes/master.key --file /protected/field-notes.backup
+sudo systemctl stop field-notes field-notes-peers.timer
+sudo /opt/field-notes/field-notes-server restore \
+  --data /var/lib/field-notes-restored --key-file /etc/field-notes/master.key \
+  --file /protected/path/field-notes.backup
 ```
 
-Restoration rotates the server epoch and revokes sessions/old command receipts.
-Native clients must sign in again; old-generation/epoch edits become retained
-conflicts, not automatically uploaded records. Workspace clear similarly fences
-old queues but preserves users. Deletion/clear does not erase historic backups
-or guarantee physical overwriting of flash blocks.
+Verify and set service ownership/permissions, then deliberately switch the unit's
+data path and peer-helper desired path together. Review before restarting. A
+restore changes the epoch, invalidates sessions/invitations, and marks peers for
+removal. Keep the old directory untouched until recovery is verified. Re-enroll
+phones; old offline edits are retained as conflicts, not silently uploaded into
+the restored workspace. Loss of the master key cannot be repaired by a password
+reset. Do not delete or replace unreadable phone vaults containing offline work.
+
+Manual certificate renewal, preserving the CA:
+
+```sh
+sudo python3 /opt/field-notes/tls.py renew --directory /etc/field-notes/tls \
+  --group fieldnotes --name 192.168.1.10 --name notes.home.arpa --name 10.82.0.1
+```
+
+Use the names selected during installation. CA/server-WireGuard identity rotation
+needs reviewed re-enrollment; automatic cross-CA trust rotation is not implemented.

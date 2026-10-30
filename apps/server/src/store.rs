@@ -1,6 +1,10 @@
 mod admin;
 mod auth;
 mod commands;
+mod enrollment;
+mod organization;
+mod planning;
+pub use enrollment::NetworkConfig;
 
 use crate::crypto::{self, Vault};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -104,6 +108,10 @@ pub struct Snapshot {
 pub struct Store {
     pub db: Connection,
     pub vault: Vault,
+    pub network: Option<NetworkConfig>,
+    pub peer_status: Option<std::path::PathBuf>,
+    pub development: bool,
+    data_dir: std::path::PathBuf,
 }
 
 impl Store {
@@ -120,7 +128,7 @@ impl Store {
         let version: i64 = db
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
-        if version > 1 {
+        if version > 2 {
             return Err(
                 "Database was created by a newer server; refusing a schema downgrade".into(),
             );
@@ -138,7 +146,10 @@ impl Store {
           CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY AUTOINCREMENT,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,at INTEGER NOT NULL,data BLOB NOT NULL);
           CREATE TABLE IF NOT EXISTS blobs(id TEXT PRIMARY KEY REFERENCES objects(id) DEFERRABLE INITIALLY DEFERRED,bytes BLOB NOT NULL);
           CREATE TABLE IF NOT EXISTS login_limits(key TEXT PRIMARY KEY,attempts INTEGER NOT NULL,until_time INTEGER NOT NULL);
-          PRAGMA user_version=1;").map_err(|e|e.to_string())?;
+          CREATE TABLE IF NOT EXISTS enrollment_invites(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,issuer TEXT NOT NULL REFERENCES users(id),user_id TEXT NOT NULL REFERENCES users(id),role TEXT NOT NULL,expires INTEGER NOT NULL,device_id TEXT,data BLOB NOT NULL);
+          CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),public_key TEXT NOT NULL UNIQUE,address TEXT UNIQUE,name TEXT NOT NULL,state TEXT NOT NULL,claim_hash TEXT NOT NULL,activation_hash TEXT NOT NULL,expires INTEGER NOT NULL,verification TEXT NOT NULL,data BLOB NOT NULL);
+          CREATE TABLE IF NOT EXISTS device_sessions(session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,device_id TEXT NOT NULL REFERENCES devices(id));
+          PRAGMA user_version=2;").map_err(|e|e.to_string())?;
         let check: Option<Vec<u8>> = db
             .query_row("SELECT check_key FROM meta WHERE id=1", [], |r| r.get(0))
             .optional()
@@ -167,7 +178,14 @@ impl Store {
             )
             .map_err(|e| e.to_string())?;
         }
-        Ok(Self { db, vault })
+        Ok(Self {
+            db,
+            vault,
+            network: None,
+            peer_status: None,
+            development: false,
+            data_dir: data.to_path_buf(),
+        })
     }
     pub fn meta(&self) -> Result<(String, i64, i64)> {
         Ok(self.db.query_row("SELECT epoch,generation,COALESCE((SELECT MAX(seq) FROM events),0) FROM meta WHERE id=1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?)
@@ -183,8 +201,24 @@ impl Store {
             .optional()?;
         let (kind, revision, data) = row.ok_or(Fault(404, "Item no longer exists".into()))?;
         let decrypted = self.vault.open(&format!("{kind}:{oid}"), &data)?;
-        let data = serde_json::from_slice(&decrypted)
+        let mut data: Value = serde_json::from_slice(&decrypted)
             .map_err(|_| Fault(500, "Invalid encrypted data".into()))?;
+        if kind == "task" {
+            let created: i64 = self.db.query_row(
+                "SELECT COALESCE(MIN(at),0) FROM events WHERE object_id=?",
+                [oid],
+                |r| r.get(0),
+            )?;
+            let object = data
+                .as_object_mut()
+                .ok_or(Fault(500, "Invalid task data".into()))?;
+            object.entry("created_at").or_insert(json!(created));
+            object.entry("priority").or_insert(json!(3));
+            object.entry("estimate_minutes").or_insert(json!(0));
+            object.entry("planned_for").or_insert(json!(""));
+            object.entry("pinned").or_insert(json!(false));
+            object.entry("blocked").or_insert(json!(false));
+        }
         Ok(Record {
             id: oid.into(),
             kind,

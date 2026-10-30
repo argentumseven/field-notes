@@ -9,6 +9,12 @@ Distinguish compiled/tested behavior from physical GrapheneOS verification.
 ## Persistent product constraints
 
 - Server: Linux only, with Debian/Ubuntu the installation target.
+- Serve HTTPS directly in Rust. No Caddy, reverse proxy or load balancer. Keep
+  LAN administration separate from the WireGuard-only notes endpoint and check
+  actual connection addresses; forwarded identity headers are not trusted.
+- Compact charcoal/paper with teal accents, clean rows, no decorative art.
+  Priority and planned day are distinct from an optional due date. Calendar and
+  Android widgets use our own data without Google services or Calendar access.
 - Android/GrapheneOS must work without Play services or FCM. No hidden Google
   push fallback, public push service, analytics, external fonts, or runtime CDN.
 - Android may not consume the OS VPN slot. The selected app-contained WireGuard

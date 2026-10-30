@@ -30,6 +30,12 @@ func FieldConfigure(s *C.char) *C.char {
 //export FieldExchange
 func FieldExchange(s *C.char) *C.char { v, e := transport.Exchange(C.GoString(s)); return result(v, e) }
 
+//export FieldBootstrap
+func FieldBootstrap(s *C.char) *C.char {
+	v, e := transport.Bootstrap(C.GoString(s))
+	return result(v, e)
+}
+
 //export FieldStop
 func FieldStop() { transport.Stop() }
 

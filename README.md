@@ -1,96 +1,93 @@
 # Field Notes
 
-A private household workspace for tasks, projects, notes, comments and images.
-Original ink/slate styling inspired by Talaris's quiet, project-focused layout.
-Home Linux server, app-contained WireGuard Android client, LAN-only administration.
+A self-hosted household planner: Inbox, lists, projects, standalone notes, comments,
+images, optional dates, priorities and a private calendar. Compact charcoal/paper, teal accents, clean rows.
+Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development release 0.1.0.** The Android app now uses **Kotlin Multiplatform and
-Compose**, replacing Flutter. A signed, sideloadable arm64 debug APK is built at
-`dist/android/field-notes-0.1.0-android-arm64-debug.apk`, with checksum and signer
-report. The Rust server and web interface are retained. See the current
-[validation record](docs/VALIDATION.md) for tested behavior and practical limits.
+**Development version 0.2.0.** Rust serves HTTPS directly. **No Caddy, reverse
+proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
+app-contained WireGuard stack, without taking Android's VPN slot or using Google
+services. iOS/native desktop packages are deferred.
 
-## Screenshots and walkthrough
+[Installation](docs/RUNNING.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
+[Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
-[See the complete Android, browser, and server management walkthrough](docs/WALKTHROUGH.md).
-The Android app uses sample data and a test connection for these captures.
-Browser images come from a disposable Rust server.
+![Compact Focus view with ranked and undated tasks](docs/screenshots/web/02-focus.png)
 
-| Android app | Task details |
-| --- | --- |
-| <a href="docs/screenshots/android/03-matrix.png"><img src="docs/screenshots/android/03-matrix.png" width="280" alt="Native Android task Matrix"></a> | <a href="docs/screenshots/android/08-task-notes.png"><img src="docs/screenshots/android/08-task-notes.png" width="280" alt="Native Android task title, notes and due date"></a> |
+## Planner and administration
 
-![Server management: roles, people, sessions, backups, server status and administrative activity](docs/screenshots/web/08-administration.png)
+- Capture tasks in Inbox without creating a project. Lists hold shopping, routines
+  and checklists; Projects group an outcome. Move tasks between either or Inbox.
+  Standalone Notes hold shared reference material with pinning and search.
+  Unscheduled, Waiting and Completed views surface different kinds of work.
+- Focus ranks tasks using priority, optional due date, planned day, waiting time
+  and estimate. Pins come first; blocked/completed/other-claimed/future-planned
+  tasks stay out of Focus. Each task explains its score. No artificial due dates.
+- Calendar shows task due/planned days and all-day/timed events. Dates and time
+  zones have distinct semantics; no Google or OS Calendar integration.
+- Task notes, image attachments and comments; encrypted offline edits/outbox,
+  replay-safe retries, server-arbitrated claims and retained conflicts.
+- QR enrollment: select an account, scan on home Wi-Fi, enter the phone's code
+  on the server, then wait for peer installation and tunnel activation. Private
+  keys stay on phones. Revocation stops content access immediately and tracks
+  confirmed peer removal separately.
+- LAN management: users/roles, devices/sessions, audited claim overrides, backup,
+  workspace clearing and server state. Owner/admin/member/viewer household roles.
+- Android home widget, redacted by default, opt-in title previews, no Google ties.
+  Optional scheduled catch-up and local reminders are best-effort, not instant push.
+- Keystore/AES-GCM local vault, device credential UI lock, screenshot protection,
+  scoped image picker, offline QR scanner, no analytics/runtime CDN/FCM/Play services.
 
-## Features
+The server can decrypt content, as requested. Protect its master key, disk and
+host configuration. This is not end-to-end encryption excluding the server.
+[Security](docs/SECURITY.md) describes exact boundaries.
 
-- Projects, matrix/board/list task views, notes, comments, due dates, and images.
-- Server-arbitrated task claims, revisions, replay-safe retries, deletion/reset
-  fences, encrypted offline commands, provisional state and retained conflicts.
-- Android Keystore-backed local encryption, atomic persistence, secure image
-  cache scoped by server/user, device-credential UI lock and screenshot protection.
-- Optional Google-free background catch-up and local due-date reminders using
-  Android's scheduler. These are best-effort, not instant push or exact alarms.
-- Server owner/admin/member/viewer roles, session revocation, audited overrides,
-  reauthentication, workspace clearing, encrypted backup and host restore.
-- No FCM, Play services, analytics, runtime CDN, OS VPN service or system routes.
+## Install or build
 
-The server and authorized administrators can decrypt household content, as
-requested. This is not end-to-end encryption excluding the server. Protect the
-host master key and disk; keep a protected recovery-key copy separately.
-
-## Install the phone app
-
-Copy the arm64 APK from `dist/android/` onto your GrapheneOS phone, verify its
-SHA-256 and signing-certificate fingerprint, then open it and temporarily allow
-installation from that source. This artifact uses a **development signer** kept
-in the development tool cache; retain that key for in-place updates. A separately
-configured operator key is required for signed release builds.
-
-Open Field Notes, copy its public key, approve the peer on your home server, paste
-the public connection JSON from the trusted LAN administrator, and sign in.
-[Installation and pairing instructions](docs/RUNNING.md) include the server and
-root-only peer helper. Production peer/QR enrollment is still manual.
-
-## Build and test
+The signed arm64 development APK, checksum and signer report are under
+`dist/android/field-notes-0.2.0-android-arm64-debug.apk`. Copy it to your phone,
+verify hash/signer, and open it to sideload. Preserve the development signer for
+in-place updates. Operator release builds require your separately protected key.
 
 ```sh
 bash scripts/setup/cloud.sh --android
 source scripts/dev-env.sh
 bash scripts/check.sh
-bash scripts/android.sh hostTest lintDebug
 bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 ```
 
-Kotlin 2.1.21, Compose 1.8.2, AGP 8.10.1 and Gradle 8.11.1 are pinned. The Gradle
-wrapper verifies the official distribution checksum. Dependencies are locked.
-The SDK, NDK, JDK, Rust and Go caches are outside the checkout. APK builds do not
-need the previously blocked Flutter downloads or additional network domains.
+On your Debian/Ubuntu host, review then apply the installer, using your own LAN
+and reachable home DDNS/IP endpoint:
 
-The server bundle and checksums are under `dist/server/`. iOS and native desktop
-packages are deferred; common Kotlin UI/domain code provides a possible future
-iOS path, with platform integration still required. No Apple build is needed now.
+```sh
+sudo bash scripts/install-server.sh --plan \
+  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
+  --endpoint your-home.example.net:51831
+# Repeat with --apply after reviewing the plan.
+```
 
-## Deployment and organization
+Forward one UDP port only. LAN management is direct TLS on 9443, and the isolated
+WireGuard notes endpoint is 8443. The installer includes local certificate
+issuance/renewal, a nonroot app service, peer isolation and constrained root peer
+provisioning. No manual phone peer JSON is needed. See [RUNNING.md](docs/RUNNING.md)
+for trust, enrollment, exact artifact paths and recovery.
 
-Your topology is one home WireGuard hub with a forwarded UDP endpoint and distinct
-client peers. The Android app creates its own userspace network stack; an existing
-system VPN can still route/filter its outer UDP traffic. Only the device API is
-admitted from peers. Web administration stays on the trusted LAN.
+## Organization and evidence
 
-- `apps/mobile/`: Kotlin shared domain/UI, Android adapters, tests and Gradle build.
-- `apps/server/src/`: Rust storage, crypto, HTTP, auth, commands and administration.
-- `apps/admin/`: bundled LAN web interface for Linux/Windows browsers.
-- `native/`: Go WireGuard/HTTPS stack, C ABI and Android JNI bridge.
-- `deploy/`, `scripts/`, `tests/`: Linux configuration, builds, checks and fixtures.
+- `apps/server/src/store/`: transactional auth, commands/planning, enrollment, admin and backup.
+- `apps/admin/`: bundled planner/calendar/management, no external page dependencies.
+- `apps/mobile/`: shared Kotlin domain/UI, Android adapters/widget/scanner and tests.
+- `native/`: endpoint-only WireGuard/HTTPS, scoped LAN enrollment, C/JNI bridge.
+- `scripts/`, `deploy/`, `tests/`: reproducible builds/install, constrained helpers,
+  cross-language planning fixtures and real-process/transport checks.
 
-[Run/install/recover](docs/RUNNING.md) · [Validation](docs/VALIDATION.md) ·
-[Network](docs/NETWORK.md) · [Sync](docs/SYNC.md) · [Security](docs/SECURITY.md) ·
-[Architecture](docs/ARCHITECTURE.md) · [Android decision](docs/adr/0002-android-kotlin-multiplatform.md)
+[Architecture](docs/ARCHITECTURE.md) · [Network](docs/NETWORK.md) ·
+[Sync](docs/SYNC.md) · [Planner research and scoring](docs/PLANNER-RESEARCH.md)
 
-This remains a development implementation. Physical GrapheneOS/VPN coexistence,
-home routing and independent security review are separate checks. Household-wide
-roles are implemented; per-project ACLs, QR enrollment, automatic upgrades, and
-scheduled server backups remain future work. Earlier design documents describe
-the target system; the validation record describes what exists now.
+Screenshots use synthetic data. Browser captures run against the real Rust server;
+Android captures render actual Compose/RemoteViews using a test-only connection.
+Physical GrapheneOS/VPN coexistence, home routing/isolation and independent review
+remain separate deployment checks. Automatic upgrades and per-project ACLs remain
+future work. Check the validation record before treating any feature as verified
+on your own hardware.

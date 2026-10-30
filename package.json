@@ -1,1 +1,14 @@
-{"name":"field-notes-checks","version":"0.1.0","private":true,"type":"module","scripts":{"test":"node --test --test-concurrency=1 tests/api.test.mjs","test:browser":"node --test --test-concurrency=1 tests/browser.test.mjs"},"devDependencies":{"playwright":"1.56.1"}}
+{
+  "name": "field-notes-checks",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/api.test.mjs tests/planning.test.mjs tests/enrollment.test.mjs tests/organization.test.mjs",
+    "test:browser": "node --test --test-concurrency=1 tests/browser.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1",
+    "prettier": "3.6.2"
+  }
+}

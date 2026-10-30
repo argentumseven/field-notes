@@ -13,6 +13,7 @@ internal object NativeBridge {
     @JvmStatic external fun keys(): ByteArray
     @JvmStatic external fun configure(input: ByteArray): ByteArray
     @JvmStatic external fun exchange(input: ByteArray): ByteArray
+    @JvmStatic external fun bootstrap(input: ByteArray): ByteArray
     @JvmStatic external fun stop()
 }
 class AndroidTransport : Transport {
@@ -31,6 +32,11 @@ class AndroidTransport : Transport {
         val json = decode(NativeBridge.exchange(request.toString().encodeToByteArray()))
         Reply(json.number("status").toInt(), json.text("body"), json["binary"]?.jsonPrimitive?.contentOrNull)
     }
+    }
+    override suspend fun bootstrap(url: String, ca: String, path: String, body: JsonObject): Reply = withContext(Dispatchers.IO) {
+        val input = obj("url" to url.j(), "ca" to ca.j(), "path" to path.j(), "body" to body.toString().j())
+        val result = decode(NativeBridge.bootstrap(input.toString().encodeToByteArray()))
+        Reply(result.number("status").toInt(), result.text("body"))
     }
     override suspend fun stop() { withContext(Dispatchers.IO) { gate.withLock { NativeBridge.stop(); peerKey = null } } }
     suspend fun image(id: String, token: String, serverKey: String): ByteArray {

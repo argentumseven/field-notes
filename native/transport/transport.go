@@ -29,13 +29,14 @@ import (
 )
 
 type Configuration struct {
-	Address              string `json:"address"`
-	Endpoint             string `json:"endpoint"`
-	PrivateKey           string `json:"private_key"`
-	ServerKey            string `json:"server_key"`
-	PresharedKey         string `json:"preshared_key,omitempty"`
-	API                  string `json:"api"`
-	CertificateAuthority string `json:"ca_pem"`
+	Address              string   `json:"address"`
+	Endpoint             string   `json:"endpoint"`
+	AlternateEndpoints   []string `json:"alternate_endpoints,omitempty"`
+	PrivateKey           string   `json:"private_key"`
+	ServerKey            string   `json:"server_key"`
+	PresharedKey         string   `json:"preshared_key,omitempty"`
+	API                  string   `json:"api"`
+	CertificateAuthority string   `json:"ca_pem"`
 }
 type Request struct {
 	Method string `json:"method"`
@@ -49,12 +50,16 @@ type Response struct {
 	Binary string `json:"binary,omitempty"`
 }
 type peer struct {
-	device    *device.Device
-	http      *http.Client
-	transport *http.Transport
-	cancel    context.CancelFunc
-	ctx       context.Context
-	origin    string
+	device        *device.Device
+	http          *http.Client
+	transport     *http.Transport
+	cancel        context.CancelFunc
+	ctx           context.Context
+	origin        string
+	server        string
+	endpoints     []string
+	endpointIndex int
+	requests      sync.Mutex
 }
 
 var current struct {
@@ -115,12 +120,25 @@ func Configure(raw string) error {
 	if e != nil || !api.Addr().Is4() || !api.Addr().IsPrivate() || api.Port() == 0 || api.Addr() == local.Addr() {
 		return errors.New("API must be a private numeric IPv4 address and port")
 	}
-	if len(c.Endpoint) > 260 || strings.ContainsAny(c.Endpoint, "\n\r\x00") {
-		return errors.New("invalid UDP endpoint")
+	if len(c.AlternateEndpoints) > 2 {
+		return errors.New("too many outer endpoints")
 	}
-	endpoint, e := net.ResolveUDPAddr("udp", c.Endpoint)
-	if e != nil || endpoint.Port == 0 || endpoint.IP.IsUnspecified() || endpoint.IP.IsMulticast() {
-		return errors.New("UDP endpoint cannot be resolved")
+	var endpoints []string
+	for _, candidate := range append([]string{c.Endpoint}, c.AlternateEndpoints...) {
+		if len(candidate) > 260 || strings.ContainsAny(candidate, "\n\r\x00") {
+			return errors.New("invalid UDP endpoint")
+		}
+		host, port, err := net.SplitHostPort(candidate)
+		if err != nil || host == "" || port == "" {
+			return errors.New("invalid UDP endpoint")
+		}
+		endpoint, err := net.ResolveUDPAddr("udp", candidate)
+		if err == nil && endpoint.Port > 0 && !endpoint.IP.IsUnspecified() && !endpoint.IP.IsMulticast() {
+			endpoints = append(endpoints, endpoint.String())
+		}
+	}
+	if len(endpoints) == 0 {
+		return errors.New("no trusted UDP endpoint can be resolved")
 	}
 	private, e := key(c.PrivateKey)
 	if e != nil {
@@ -148,7 +166,7 @@ func Configure(raw string) error {
 	}
 	wg := device.NewDevice(tun, conn.NewDefaultBind(), &device.Logger{Verbosef: func(string, ...any) {}, Errorf: func(string, ...any) {}})
 	// Scheduled client-initiated sync does not need an always-on NAT heartbeat.
-	config := fmt.Sprintf("private_key=%s\npublic_key=%s\n%sallowed_ip=%s/32\nendpoint=%s\npersistent_keepalive_interval=0\n", private, server, psk, api.Addr(), endpoint.String())
+	config := fmt.Sprintf("private_key=%s\npublic_key=%s\n%sallowed_ip=%s/32\nendpoint=%s\npersistent_keepalive_interval=0\n", private, server, psk, api.Addr(), endpoints[0])
 	if e = wg.IpcSet(config); e == nil {
 		e = wg.Up()
 	}
@@ -163,7 +181,7 @@ func Configure(raw string) error {
 		}
 		return stack.DialContextTCPAddrPort(ctx, api)
 	}}
-	p := &peer{wg, &http.Client{Transport: tr, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, tr, cancel, ctx, c.API}
+	p := &peer{device: wg, http: &http.Client{Transport: tr, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, transport: tr, cancel: cancel, ctx: ctx, origin: c.API, server: server, endpoints: endpoints}
 	current.Lock()
 	old := current.p
 	current.p = p
@@ -197,7 +215,7 @@ func Exchange(raw string) (string, error) {
 	if r.Method != "GET" && r.Method != "POST" {
 		return "", errors.New("unsupported HTTP method")
 	}
-	if !strings.HasPrefix(r.Path, "/api/") || strings.HasPrefix(r.Path, "/api/admin") || strings.ContainsAny(r.Path, "?#%\\\r\n") || strings.Contains(r.Path, "..") || len(r.Path) > 150 {
+	if !devicePath(r.Path) || strings.ContainsAny(r.Path, "?#%\\\r\n") || strings.Contains(r.Path, "..") || len(r.Path) > 150 {
 		return "", errors.New("invalid device API path")
 	}
 	if r.Token != "" {
@@ -220,16 +238,34 @@ func Exchange(raw string) (string, error) {
 	if p == nil {
 		return "", errors.New("pair a device first")
 	}
-	request, e := http.NewRequestWithContext(p.ctx, r.Method, p.origin+r.Path, strings.NewReader(r.Body))
-	if e != nil {
-		return "", errors.New("request could not be created")
+	p.requests.Lock()
+	defer p.requests.Unlock()
+	var response *http.Response
+	var e error
+	// Only the trusted outer UDP address changes. WG identity, PSK, inner
+	// destination and TLS trust stay fixed; retry preserves the exact body.
+	for attempt := 0; attempt < len(p.endpoints); attempt++ {
+		request, err := http.NewRequestWithContext(p.ctx, r.Method, p.origin+r.Path, strings.NewReader(r.Body))
+		if err != nil {
+			return "", errors.New("request could not be created")
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Field-Protocol", "1")
+		if r.Token != "" {
+			request.Header.Set("Authorization", "Bearer "+r.Token)
+		}
+		response, e = p.http.Do(request)
+		if e == nil {
+			break
+		}
+		if attempt+1 < len(p.endpoints) {
+			p.endpointIndex = (p.endpointIndex + 1) % len(p.endpoints)
+			p.transport.CloseIdleConnections()
+			if err = p.device.IpcSet(fmt.Sprintf("public_key=%s\nupdate_only=true\nendpoint=%s\n", p.server, p.endpoints[p.endpointIndex])); err != nil {
+				break
+			}
+		}
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Field-Protocol", "1")
-	if r.Token != "" {
-		request.Header.Set("Authorization", "Bearer "+r.Token)
-	}
-	response, e := p.http.Do(request)
 	if e != nil {
 		return "", errors.New("server unavailable or TLS verification failed")
 	}
@@ -246,4 +282,28 @@ func Exchange(raw string) (string, error) {
 	}
 	encoded, e := json.Marshal(out)
 	return string(encoded), e
+}
+
+func devicePath(path string) bool {
+	switch path {
+	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/head", "/api/commands", "/api/device/activate":
+		return true
+	}
+	if strings.HasPrefix(path, "/api/images/") {
+		id := strings.TrimPrefix(path, "/api/images/")
+		if len(id) != 36 {
+			return false
+		}
+		for i, c := range id {
+			if i == 8 || i == 13 || i == 18 || i == 23 {
+				if c != '-' {
+					return false
+				}
+			} else if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }

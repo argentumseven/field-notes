@@ -1,173 +1,97 @@
-# Architecture proposal
+# Architecture
 
-This is the target design/contract. See [VALIDATION.md](VALIDATION.md) for current
-implementation status and [RUNNING.md](RUNNING.md) for actual commands.
+Field Notes is one household workspace: a Rust server on Linux, a bundled LAN
+web interface, and a Kotlin Multiplatform Android client. The server can decrypt
+content. iOS and native desktop packaging are deferred; Linux and Windows use
+the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 
-Status: design, pending implementation and validation. The server can decrypt
-content. The selected deployment is a home Linux WireGuard hub with per-phone
-spokes and a forwarded UDP endpoint. Administration stays LAN-only. See
-[the network contract](NETWORK.md).
+## Boundaries and source map
 
-## What is being built
+| Location | Responsibility |
+| --- | --- |
+| `apps/server/src/main.rs`, `tls.rs` | Configuration, two direct TLS 1.3 listeners, certificate reload, peer reconciliation timer |
+| `apps/server/src/http.rs` | Separate management/device routes, actual-source ACL, CSRF, bounded requests |
+| `apps/server/src/store/` | Auth/roles, transactional commands, typed organization/planning, device enrollment, administration, backup |
+| `apps/server/src/crypto.rs` | AES-GCM storage encryption, Argon2id passwords, random capabilities |
+| `apps/admin/` | Local assets; compact planner, typed collections/notes, calendar, management, in-tab revision-aware drafts |
+| `apps/mobile/src/commonMain/.../domain/` | Protocol, encrypted-cache model, durable outbox/drafts, enrollment state, typed organization, ranking/calendar/widget policy |
+| `apps/mobile/src/commonMain/.../ui/` | Compose planner/task editor; separate organization, calendar/date/event and theme components |
+| `apps/mobile/src/androidMain/` | Keystore vault, credential lock, offline camera scanner, widget, scheduler, manifests/resources |
+| `apps/mobile/src/jvmMain/` | JNI adapter shared by Android and actual JVM integration checks |
+| `native/transport/`, `native/bridge/`, `native/android/` | Userspace WireGuard/HTTPS, scoped LAN bootstrap, C ABI, JNI byte bridge |
+| `scripts/peer-agent.py` | Constrained root-side desired-peer reconciliation and acknowledgement |
+| `scripts/tls.py` | Host-only local CA/leaf issuance and renewal |
+| `scripts/install-server.py`, `deploy/` | Reviewed fresh-host installation, systemd services/timers, isolated WireGuard and nftables |
+| `tests/fixtures/` | Shared ranking cases and a public test CA; no private fixture keys |
 
-One household workspace with projects, shared tasks, rich details, comments,
-images, assignments, due dates, reminders, and administrative controls. Provide
-list, board, and Eisenhower views over the same task data. Native Android is the
-first mobile delivery target; Linux, Windows, and web use the same product model.
-iOS is a supported design target with explicitly limited background behavior.
+Domain code does not import a UI or transport implementation. UI submits commands;
+only the server store grants ownership and commits changes. Platform effects sit
+behind Transport/Vault interfaces. Server auth, planning and enrollment are
+separate store modules so new features need not bypass command authorization.
+Keep one application process and one SQLite WAL database. Add modules when there
+is an actual boundary; no broker, load balancer, reverse proxy, or empty package
+hierarchy is required.
 
-Talaris is a Hyprland desktop shell, using Qt/Wayland surfaces and local sockets.
-It is not a portable, multi-user sync server to deploy unchanged. Reuse the
-interaction ideas: project navigation, task collections, quiet cards, quick add,
-and an inspector. Build a separate cross-platform product around those ideas.
+## Network and enrollment
 
-## Recommended components
+Rust serves HTTPS itself on the management LAN (default 9443) and the dedicated
+WireGuard server address (8443). There is no Caddy or forwarded-header trust.
+Only one encrypted UDP port is forwarded by the router. The nonroot content
+service has no network-administration capabilities. A root timer applies only
+validated peer keys, unique PSKs and /32 addresses to `fieldnotes`; it accepts no
+commands, route tables or interface names from phone requests.
 
-| Component | Proposed implementation | Reason |
-| --- | --- | --- |
-| Linux server | Rust, Axum, SQLite in WAL mode | Typed API boundaries, transactional household-scale coordination, one persistent service |
-| Shared client | Kotlin Multiplatform + Compose; Android target now | Shared UI/domain with Android platform adapters; iOS deferred |
-| Administration | Bundled LAN web UI and separate server admin handlers | Bundled LAN HTML/CSS/JS surface with independent server authorization |
-| Local client storage | Atomic encrypted native cache/outbox; in-tab web drafts | Keystore-backed Android encryption and platform-independent sync model |
-| Live updates | Authenticated event stream; bounded catch-up HTTP API | Live delivery accelerates synchronization; durable cursors supply correctness |
-| Android notifications | App-owned authenticated event connection through the private tunnel; local reminders and best-effort catch-up | Only WireGuard is publicly reachable; a separate push distributor cannot use this private stack |
-| Native remote transport | Bungee-style app-contained WireGuard/netstack adapter carrying HTTPS | Dedicated encrypted app transport without OS VPN routes; only the home UDP endpoint is exposed |
-| Browser transport | HTTPS on the home LAN | Local administration without a public web endpoint |
-| HTTPS edge | Caddy or equivalent, trusted certificates, strict reverse-proxy boundary | TLS, request limits, same-origin web serving |
+A LAN-only, ten-minute QR invitation is scoped to an existing account and role.
+The phone generates its own private key and persists a claim nonce before
+sending its public key. The administrator enters the code displayed by that
+phone. Approval creates a desired peer; only a fresh, matching root acknowledgement
+releases the connection configuration. Activation travels through WireGuard and
+must originate from the assigned inner address. Native sessions are bound to
+that device and account. Revocation denies application access immediately; the
+website keeps removal pending until the host acknowledges peer removal.
 
-Do not add a message broker, Kubernetes, separate search cluster, distributed
-database, or microservices for a two-person household. A single-writer database
-is sufficient initially. Keep domain boundaries modular so a measured future
-capacity problem can justify a change.
+See [NETWORK.md](NETWORK.md) and [ENROLLMENT.md](ENROLLMENT.md) for constraints,
+expiry/retry/recovery, and the trust bootstrap.
 
-The Android toolchain is now pinned and installed. See the actual dependency
-versions and current tests in VALIDATION.md and the Kotlin decision in
-[ADR 0002](adr/0002-android-kotlin-multiplatform.md). The larger module layout below
-remains a target design, not a claim that every planned package exists.
+## Planning and sync
 
-## Intended repository layout
+Tasks can exist in Inbox without a parent. Lists and Projects are separate typed
+collections, with editable names/context. Standalone Notes have title, body and
+pinning; they never become tasks to appear in a workspace. The browser sidebar
+and Android drawer expose these plus Unscheduled, Waiting and Completed views.
+Collection deletion is refused while any tasks remain; task movement and note
+edits use the same revision and workspace fences as other commands.
 
-The directories below are an implementation plan, not existing source modules.
+Due dates are optional. Priority, planned day, estimate, pin and blocked state are
+separate fields. Immutable server creation time supplies a bounded waiting-time
+bonus. The same versioned ranking formula runs in Kotlin and JavaScript, checked
+against shared golden cases. Ranking suggests next steps; it cannot grant a claim.
 
-```text
-apps/
-  server/                  Rust binary, composition root, HTTP/admin handlers
-  mobile/                  Kotlin Multiplatform UI/domain, Android adapters
-packages/
-  server-domain/           Task transitions, policy, roles; no HTTP dependencies
-  server-storage/          Migrations, transactions, event log, durable jobs
-  client-domain/           Models, offline commands, reconciliation, conflicts
-  client-storage/          SQLite/IndexedDB adapters and outbox
-  protocol/                Versioned schemas, error codes, shared fixtures
-  design-system/           Tokens, controls, accessibility and UI components
-  platform/                Keystore/Keychain, images, notifications, background work
-  transport/               HTTPS over native WireGuard; LAN HTTPS web adapter
-deploy/
-  compose/                 Linux deployment, explicit image versions/digests
-  systemd/                 Service/tunnel lifecycle and timer definitions
-  wireguard/               Hub configuration, peer admission and firewall policy
-scripts/
-  setup/                   Toolchain setup and preflight checks
-  build/                   Per-target artifact-producing commands
-  release/                 Version checks, manifests, checksums and signatures
-tests/
-  contracts/               Client/server protocol and migration compatibility
-  integration/             Real DB, processes, races, restart and fault injection
-  e2e/                     Browser and device workflows
-docs/
-  adr/                     Short decisions recording context and tradeoffs
-```
+Task due/planned dates and all-day events are floating civil dates. All-day end
+is exclusive; timed events store UTC instants and render in the device's time
+zone. ISO times require an explicit offset during entry, so ambiguous DST times
+are not guessed. No Google or OS calendar provider is involved.
 
-Domain code must not import UI, HTTP, notification providers, or WireGuard.
-Server handlers delegate to use cases; only storage owns SQL and transaction
-mechanics. Notifications consume committed events rather than making task writes.
-Clients render cached data and submit domain commands, not direct SQL mirrors.
-One protocol definition generates or verifies client/server boundary types.
-Do not force identical schemas on server and local caches.
+The server resolves competing task starts transactionally using revisions and
+server commit order. Client timestamps cannot steal a claim. Immutable operation
+IDs survive retries and process death. Workspace epoch/generation fences reject
+old writes after reset/restore. Local rejected/dependent edits remain available
+for review. See [SYNC.md](SYNC.md).
 
-## Reachability and the VPN question
+## Notifications and widget
 
-Android's system VPN API ordinarily provides one active VPN per user/profile.
-Bungee avoids taking that slot by using wireguard-go and a gVisor network stack
-inside the application. Its outer packets are ordinary UDP sockets. The reviewed
-transport dials one fixed inner API and does not create a VpnService.
+Foreground sync checks every 15 seconds. Optional WorkManager catch-up and local
+reminders use Android scheduling; they are best-effort, without FCM or an always-on
+service. Instant background push remains future work. A separate UnifiedPush app
+cannot borrow this process-private tunnel.
 
-Field Notes will use the same pattern, with its own keys, peer identity, allowed
-destinations, and lifecycle. Two app-contained peers need not compete for the
-system VPN slot. Their private stacks are independent, but outer sockets still
-follow the OS network and any active VPN. UDP filters, VPN lockdown, captive
-portals, roaming, MTU, battery restrictions, and blocked destinations can break
-connectivity. Coexistence is a physical-device test requirement, not a blanket
-guarantee. Do not copy Bungee's application-specific address/port restrictions.
+The real Android RemoteViews home widget reads the encrypted local cache, uses
+the shared Focus order, and opens the credential-locked app. Titles are hidden
+by default. Opt-in shares title copies with the launcher; cached copies cannot
+be guaranteed erased on lock. No notes/images/credentials enter RemoteViews.
+Refresh occurs after local cache changes and on Android's 30-minute widget cycle;
+this is neither a network push nor an exact timer.
 
-A browser cannot open a raw WireGuard UDP socket. The admin interface is served
-over LAN HTTPS. Native clients use the dedicated phone/client API through the
-private stack. A browser on a phone cannot automatically inherit that stack.
-
-The user's revised plan accepts one home UDP port forward. It works if the home
-endpoint has reachable public IPv4/IPv6 and the upstream permits inbound UDP.
-CGNAT/double NAT can still prevent that; verify actual off-LAN reachability.
-No VPS relay is required or selected. Do not silently add one if UDP is blocked.
-
-Use separate device and administration listeners plus server-side interface and
-firewall restrictions. Client AllowedIPs restrict app intent but are not the
-security boundary against a modified client. No phone-to-LAN, phone-to-phone,
-admin, SSH, or general internet routing is admitted through the phone interface.
-Use an independent subnet from Bungee and any existing home/system VPN routes.
-
-Home HTTPS uses a private CA with explicit trust/enrollment, or a valid domain
-certificate issued through DNS-01 without exposing the web service publicly.
-Plan certificate renewal and native trust/pinning rotation. Pinning must be
-bootstrapped from the trusted LAN administrator, not arbitrary QR content.
-
-Native Android/desktop transport needs a stable FFI boundary to the userspace
-network stack; iOS needs a compatible native framework. Requests, image streams,
-cancellation, body limits, redirects, connection cleanup, IPv4/IPv6 endpoints,
-and key zeroization need tests. Bungee's fixed small JSON exchange API must not
-be copied unchanged for potentially large image downloads and uploads.
-
-## Notification model
-
-The only public listener in the selected topology is WireGuard UDP. A separate
-UnifiedPush distributor cannot access Field Notes' process-private network stack.
-Do not claim that installing ntfy alone supplies notifications through this
-tunnel. Options are an app-owned event connection, a deliberately integrated
-embedded distributor, or an independently reachable push service. The last
-option changes exposure and requires an explicit user decision.
-
-Default to app-owned event delivery through the tunnel while the app is active,
-locally scheduled reminders, and best-effort background catch-up. An opt-in
-continuous notification connection requires a legitimate supported Android
-foreground-service design, visible notification, battery settings, and physical
-Doze/roaming/reboot tests before claiming background push. Do not misuse a
-dataSync service indefinitely: modern Android versions impose time limits.
-Treat this feasibility test as an early implementation gate. If it cannot meet
-the desired latency, report the tradeoff rather than disguising polling as
-guaranteed push. No FCM or public push fallback is allowed.
-
-Push is a hint to fetch durable changes, not a command or the source of truth.
-If a separate push adapter is added, use random event identifiers or generic
-wake-ups, not task text, attachment
-names, invitation tokens, or credentials. Endpoint capability URLs are secrets.
-Re-check the current user/device permissions before fetching and displaying data.
-Lock-screen notifications are generic by default; detail previews are opt-in.
-
-Task state and notification outbox commit in one DB transaction. Delivery is
-at-least-once with retry, deduplication, expiration, and a visible last-success
-status. A due-date scheduler records job revision and timezone handling; stale
-jobs after edits, completion, revocation, or deletion must not send reminders.
-
-Android Doze, force-stop, reboot before first unlock, notification permission,
-connection health, and battery policies affect delivery. WorkManager is a
-best-effort catch-up mechanism, not an exact-time or always-connected service.
-A permanent foreground connection, if offered later, is explicit and visible,
-and still cannot guarantee delivery. No safety-critical reminder guarantees.
-
-iOS does not give ordinary apps unlimited background sockets. For the initial
-Google-free, provider-independent iOS mode, support foreground synchronization,
-OS-scheduled best-effort refresh, and locally scheduled notifications for already
-downloaded tasks. These can become stale during outages. Reliable remote wake-up
-requires a separate opt-in APNs design; APNs is Apple infrastructure even when
-the application server is self-hosted. Never imply a custom tunnel solves this.
-Browser push can also involve browser-vendor infrastructure; keep it disabled
-by default in the privacy-preserving web mode.
+Future iOS work can share Kotlin domain/UI, but needs a native transport bridge,
+Keychain, background policy and widget implementation. An in-process VPN does
+not prevent iOS suspension or replace APNs wake-up capabilities.

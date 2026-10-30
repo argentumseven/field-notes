@@ -1,6 +1,7 @@
 mod crypto;
 mod http;
 mod store;
+mod tls;
 use std::{
     io::{self, Read, Write},
     net::SocketAddr,
@@ -38,7 +39,7 @@ async fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
     let action = args.get(1).map(String::as_str).unwrap_or("help");
     if action == "help" {
-        println!("Field Notes 0.1.0\nCommands: init, serve, backup, restore, stats\nOptions: --data DIR --key-file FILE\ninit: --name NAME (password from stdin)\nserve: --admin-bind 127.0.0.1:8787 --device-bind 127.0.0.1:8788 --origin https://notes.home\nLocal HTTP development only: --dev\nbackup/restore: --file FILE (restore requires a NEW data directory)");
+        println!("Field Notes {}\nCommands: init, serve, backup, restore, stats\nOptions: --data DIR --key-file FILE\ninit: --name NAME (password from stdin)\nserve: --admin-bind LAN_IP:9443 --admin-allow LAN_CIDR --device-bind WG_IP:8443 --origin https://LAN_IP:9443 --tls-cert FILE --tls-key FILE --network-config FILE --peer-status FILE\nLocal HTTP development only: --dev\nbackup/restore: --file FILE (restore requires a NEW data directory)", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     let data = PathBuf::from(arg(&args, "--data", ".local/data"));
@@ -88,7 +89,7 @@ async fn run() -> Result<(), String> {
         let store = Store::open(&data, &key)?;
         store
             .db
-            .execute_batch("BEGIN IMMEDIATE; DELETE FROM sessions; DELETE FROM operations;")
+            .execute_batch("BEGIN IMMEDIATE; DELETE FROM sessions; DELETE FROM operations; DELETE FROM enrollment_invites; UPDATE devices SET state='revoking';")
             .map_err(|e| e.to_string())?;
         store
             .db
@@ -101,7 +102,7 @@ async fn run() -> Result<(), String> {
         println!("Restored with a fresh server epoch. All sessions revoked; reconnect and reconcile client drafts.");
         return Ok(());
     }
-    let store = Store::open(&data, &key)?;
+    let mut store = Store::open(&data, &key)?;
     if action == "backup" {
         private_write(
             &PathBuf::from(arg(&args, "--file", "field-notes.backup")),
@@ -130,19 +131,51 @@ async fn run() -> Result<(), String> {
     service_lock.try_lock().map_err(|_| {
         "Another server is using this database; stop it before starting a second instance"
     })?;
-    let admin: SocketAddr = arg(&args, "--admin-bind", "127.0.0.1:8787")
-        .parse()
-        .map_err(|_| "Invalid admin address")?;
-    let device: SocketAddr = arg(&args, "--device-bind", "127.0.0.1:8788")
-        .parse()
-        .map_err(|_| "Invalid device address")?;
-    // TLS proxies run on the same host. Never expose these plaintext listeners.
-    if !admin.ip().is_loopback() || !device.ip().is_loopback() {
-        return Err(
-            "HTTP listeners must bind to loopback; expose only the configured TLS proxy".into(),
-        );
-    }
     let dev = args.iter().any(|a| a == "--dev");
+    let admin: SocketAddr = arg(
+        &args,
+        "--admin-bind",
+        if dev {
+            "127.0.0.1:8787"
+        } else {
+            "127.0.0.1:9443"
+        },
+    )
+    .parse()
+    .map_err(|_| "Invalid admin address")?;
+    let device: SocketAddr = arg(
+        &args,
+        "--device-bind",
+        if dev {
+            "127.0.0.1:8788"
+        } else {
+            "10.82.0.1:8443"
+        },
+    )
+    .parse()
+    .map_err(|_| "Invalid device address")?;
+    if dev && (!admin.ip().is_loopback() || !device.ip().is_loopback()) {
+        return Err("Development HTTP is loopback-only".into());
+    }
+    if !dev
+        && [admin.ip(), device.ip()].iter().any(|ip| match ip {
+            std::net::IpAddr::V4(ip) => !ip.is_private() && !ip.is_loopback(),
+            std::net::IpAddr::V6(ip) => !ip.is_unique_local() && !ip.is_loopback(),
+        })
+    {
+        return Err("HTTPS must bind to explicit private LAN/tunnel addresses".into());
+    }
+    let admin_allow: Vec<ipnet::IpNet> = arg(&args, "--admin-allow", "")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.parse()
+                .map_err(|_| "Invalid management source prefix".to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    if !dev && admin_allow.is_empty() {
+        return Err("Specify --admin-allow with the management LAN source prefix".into());
+    }
     let origin = arg(
         &args,
         "--origin",
@@ -155,6 +188,28 @@ async fn run() -> Result<(), String> {
     if (!dev && !origin.starts_with("https://")) || origin.ends_with('/') {
         return Err("Origin must be an exact HTTPS origin without trailing slash".into());
     }
+    let network_file = arg(&args, "--network-config", "");
+    if !network_file.is_empty() {
+        let network: store::NetworkConfig =
+            serde_json::from_slice(&std::fs::read(network_file).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        network.validate().map_err(|e| e.1)?;
+        if !dev
+            && (network.bootstrap_url != format!("https://{admin}/api/enrollment")
+                || network.api != format!("https://{device}"))
+        {
+            return Err(
+                "Enrollment endpoints must match the actual LAN and tunnel HTTPS listeners".into(),
+            );
+        }
+        store.network = Some(network);
+    }
+    store.development = dev;
+    let status = arg(&args, "--peer-status", "");
+    if !status.is_empty() {
+        store.peer_status = Some(PathBuf::from(status));
+    }
+    let bind_devices = store.network.is_some() || !dev;
     let app = http::App {
         store: Arc::new(Mutex::new(store)),
         origin,
@@ -162,7 +217,43 @@ async fn run() -> Result<(), String> {
         device: false,
         gate: Arc::new(tokio::sync::Semaphore::new(16)),
         requests: Arc::new(tokio::sync::Semaphore::new(24)),
+        admin_allow,
+        bind_devices,
     };
+    let peer_store = app.store.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        loop {
+            interval.tick().await;
+            let store = peer_store.clone();
+            let _=tokio::task::spawn_blocking(move|| {
+                if let Ok(mut s)=store.lock() {if s.reconcile_peers().is_err(){eprintln!("Field Notes: peer reconciliation is pending; no new device activation was acknowledged");}}
+            }).await;
+        }
+    });
+    if !dev {
+        let cert = arg(&args, "--tls-cert", "");
+        let key = arg(&args, "--tls-key", "");
+        if cert.is_empty() || key.is_empty() {
+            return Err(
+                "Direct HTTPS requires --tls-cert and --tls-key; no plaintext fallback exists"
+                    .into(),
+            );
+        }
+        let config = tls::start(PathBuf::from(cert), PathBuf::from(key))?;
+        let mut device_app = app.clone();
+        device_app.device = true;
+        println!("Field Notes: direct LAN HTTPS {admin}; private device HTTPS {device}. TLS 1.3; no HTTP or reverse proxy.");
+        tokio::try_join!(
+            axum_server::bind_rustls(admin, config.clone())
+                .serve(http::router(app).into_make_service_with_connect_info::<SocketAddr>()),
+            axum_server::bind_rustls(device, config).serve(
+                http::router(device_app).into_make_service_with_connect_info::<SocketAddr>()
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     let admin_listener = tokio::net::TcpListener::bind(admin)
         .await
         .map_err(|e| e.to_string())?;
@@ -171,7 +262,10 @@ async fn run() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let mut device_app = app.clone();
     device_app.device = true;
-    println!("Field Notes {}: LAN proxy backend {admin}; device proxy backend {device}. No public HTTP listeners.",env!("CARGO_PKG_VERSION"));
+    println!(
+        "Field Notes {}: disposable loopback HTTP admin {admin}; device {device}.",
+        env!("CARGO_PKG_VERSION")
+    );
     let a = axum::serve(
         admin_listener,
         http::router(app).into_make_service_with_connect_info::<SocketAddr>(),

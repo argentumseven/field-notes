@@ -10,11 +10,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,8 +74,28 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 		t.Fatal(e)
 	}
 	tlsListener := tls.NewListener(listener, &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: signing}}})
+	var bodies []string
+	var bodyLock sync.Mutex
 	api := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/commands" {
+			body, _ := io.ReadAll(r.Body)
+			bodyLock.Lock()
+			bodies = append(bodies, string(body))
+			first := len(bodies) == 1
+			bodyLock.Unlock()
+			if first {
+				connection, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					t.Error(err)
+				} else {
+					connection.Close()
+				}
+				return
+			}
+			w.Write([]byte(`{"accepted":true}`))
+			return
+		}
 		if r.URL.Path != "/api/head" {
 			http.NotFound(w, r)
 			return
@@ -83,6 +105,7 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 	go api.Serve(tlsListener)
 	defer api.Shutdown(context.Background())
 	c := Configuration{Address: "10.82.0.2/32", Endpoint: net.JoinHostPort("127.0.0.1", big.NewInt(int64(port)).String()), PrivateKey: clientKeys["private_key"], ServerKey: serverKeys["public_key"], API: "https://10.82.0.1:8443", CertificateAuthority: string(ca)}
+	c.AlternateEndpoints = []string{c.Endpoint}
 	config, _ := json.Marshal(c)
 	if e = Configure(string(config)); e != nil {
 		t.Fatal(e)
@@ -99,7 +122,15 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 	if decoded.Status != 200 || decoded.Body != `{"sequence":42}` {
 		t.Fatalf("unexpected result: %s", response)
 	}
-	for _, path := range []string{"/api/admin", "/api/../admin", "https://elsewhere.invalid/api/head", "/api/head?redirect=yes"} {
+	if _, err := Exchange(`{"method":"POST","path":"/api/commands","body":"{\"operation_id\":\"same-durable-operation\"}"}`); err != nil {
+		t.Fatal(err)
+	}
+	bodyLock.Lock()
+	if len(bodies) != 2 || bodies[0] != bodies[1] {
+		t.Error("ambiguous response did not retry the identical command")
+	}
+	bodyLock.Unlock()
+	for _, path := range []string{"/api/enrollment/claim", "/api/enrollment/devices", "/api/admin", "/api/../admin", "https://elsewhere.invalid/api/head", "/api/head?redirect=yes"} {
 		b, _ := json.Marshal(Request{Method: "GET", Path: path})
 		if _, e = Exchange(string(b)); e == nil {
 			t.Fatalf("accepted forbidden path %s", path)

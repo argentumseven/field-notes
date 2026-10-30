@@ -46,9 +46,10 @@ with a fresh ephemeral release key. If a release key is unavailable, report that
 the release build is unsigned and supply a separately labeled test APK.
 
 Installation instructions should be brief: download APK, verify it, temporarily
-allow installation from that source, install, then pair by pasting the public
-connection JSON from the trusted LAN administrator after peer approval. QR and
-short-lived invitation enrollment remain future work. Provide an
+allow installation from that source, install, then enroll on home Wi-Fi with a short-lived QR invitation from the trusted
+LAN administrator. Review server/account, enter the phone code on the server,
+and wait for peer acknowledgement and tunnel activation. Paste is a fallback;
+manual peer/configuration JSON editing is unnecessary. Provide an
 optional `adb install -r <apk>` route, not a developer-mode requirement.
 
 Enrollment shows the server identity and requested workspace/role. It must not
@@ -69,12 +70,12 @@ VPN permission, or an overlay permission.
 Provide a repeatable `scripts/install-server.sh` with a no-write preflight/plan
 mode and distinct fresh-install/upgrade behavior. Target Debian stable and Ubuntu
 LTS versions explicitly selected at implementation time, on x86_64 and arm64.
-Prefer a Compose deployment with non-root application containers and a documented
-systemd lifecycle. Explain prerequisites and detect unsupported OS/architecture.
+Use the direct Rust HTTPS binary with a nonroot systemd content service and
+constrained root peer/certificate timers; no reverse proxy or load balancer. Explain prerequisites and detect unsupported OS/architecture.
 
 The installer must:
 
-1. Check CPU/RAM/disk, Docker/Compose/systemd support, filesystem permissions,
+1. Check CPU/RAM/disk, systemd/WireGuard/nftables support, filesystem permissions,
    TLS approach, network bind addresses, and whether an existing installation
    or data directory is present. Refuse silent replacement.
 2. Configure the home WireGuard hub and per-device peers, plus separate LAN-only
@@ -121,8 +122,9 @@ existing isolated checkout rather than creating extra Git worktrees.
    native workflow requires its private tunnel; LAN web uses HTTPS directly.
 
 Each slice should result in an exercised workflow, not a collection of stubs.
-The complete household release includes slices 1–4 and the requested desktop
-targets; iOS device artifacts require the external Apple build prerequisites.
+The current scope implements slices 1–4 as a development build, with remaining
+physical deployment checks recorded separately. Linux/Windows access uses LAN
+browsers; native desktop and iOS packages are deferred.
 
 ## Acceptance gates
 

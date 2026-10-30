@@ -17,6 +17,7 @@ import android.util.Base64
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -40,9 +41,12 @@ import java.security.MessageDigest
 import kotlinx.coroutines.*
 import org.fieldnotes.domain.*
 import org.fieldnotes.ui.FieldNotesApp
+import org.fieldnotes.ui.FieldNotesTheme
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as FieldNotesApplication
+    private var invitationCode by mutableStateOf<String?>(null)
+    private var scanning by mutableStateOf(false)
     private var unlocked by mutableStateOf(false)
     private var prompting = false
     private var lastUnlock = 0L
@@ -64,6 +68,8 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        invitationCode = intent?.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         lifecycleScope.launch {
             app.initialized.await()
@@ -73,11 +79,13 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            if (!unlocked) MaterialTheme { Surface(Modifier.fillMaxSize()) { Column(Modifier.padding(30.dp), verticalArrangement = Arrangement.Center) {
+            if (!unlocked) FieldNotesTheme { Surface(Modifier.fillMaxSize()) { Column(Modifier.padding(30.dp), verticalArrangement = Arrangement.Center) {
                 Text("Your workspace is locked", style = MaterialTheme.typography.headlineSmall)
                 Button(onClick = { unlock() }, modifier = Modifier.padding(top = 20.dp)) { Text("Unlock with device credential") }
             } } }
             else {
+                val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> scanning = granted }
+                if (scanning) FieldNotesTheme { EnrollmentScanner(this, { invitationCode = it; scanning = false }, { scanning = false }) }
                 var back by remember { mutableStateOf<(() -> Unit)?>(null) }
                 var pendingImage by rememberSaveable { mutableStateOf<String?>(null) }
                 var pendingEpoch by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,7 +99,11 @@ class MainActivity : ComponentActivity() {
                     if (uri != null && target != null && epoch != null && generation != null) app.model.launch { attach(target, uri, Basis(epoch, generation)) }
                 }
                 BackHandler(enabled = back != null) { back?.invoke() }
+                val lifecycleState by lifecycle.currentStateFlow.collectAsState()
                 FieldNotesApp(app.model,
+                    enrollmentPolling = lifecycleState.isAtLeast(Lifecycle.State.STARTED),
+                    invitationCode = invitationCode,
+                    scanInvitation = { if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scanning = true else cameraPermission.launch(Manifest.permission.CAMERA) },
                     copyText = { text -> getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Field Notes", text).apply { description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) } }) },
                     attachImage = { id -> pendingImage = id; pendingEpoch = app.model.state.value.cache.snapshot?.epoch; pendingGeneration = app.model.state.value.cache.snapshot?.generation; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     configureBackground = { preferences ->

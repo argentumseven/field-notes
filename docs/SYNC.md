@@ -1,136 +1,102 @@
 # Synchronization contract
 
-This is the target design/contract. See [VALIDATION.md](VALIDATION.md) for current
-implementation status and [RUNNING.md](RUNNING.md) for actual commands.
+Current protocol 1 uses transactional commands, an event sequence, snapshots and
+head polling. The database is schema 2 in 0.2.0. An event stream, resumable uploads,
+comment editing and notification-job outbox are future features, not implied by
+this contract. See [VALIDATION.md](VALIDATION.md) for executed checks.
 
-Status: requirements for implementation, not a tested protocol.
+## Authority and retries
 
-## Authority and identity
+The server owns accepted state. Each command includes `operation_id`, workspace
+`epoch` and `generation`, action, target ID, expected revision and bounded data.
+The authenticated session supplies user/device identity; JSON cannot choose a
+role or author. Native sessions additionally require their active enrolled device
+and actual assigned peer address. The server validates permission in the write
+transaction, increments revision, appends the event and saves the encrypted
+idempotent result atomically. Same ID/payload retries return the original result;
+changed payloads or an old session cannot reuse that ID as a new grant.
 
-The server owns the accepted state and assigns a monotonically increasing event
-sequence in the same database transaction as each accepted mutation. Display a
-server receipt timestamp, but use the sequence/revision for ordering, including
-when the server clock changes. Client wall clocks are informational only.
+Client clocks affect display/ranking only. Server event order/revision decides
+state even if its wall clock changes. Waiting-time rank uses immutable server
+creation time; it never grants ownership.
 
-Each operation carries a random operation ID, workspace ID, workspace generation,
-server epoch, target ID, expected revision, command type, and bounded payload.
-The authenticated session supplies user/device identity; never trust identity or
-role fields from JSON. Protocol major version is explicit. Reject unknown
-security-sensitive fields and incompatible versions rather than guessing.
+## Concurrent task starts
 
-Store a durable idempotency record scoped to workspace/device/operation ID with
-a canonical request digest and result. An identical retry returns its original
-result, but only after checking the caller is still authorized. Reuse with a
-different digest is an error. Commit the result with the mutation; a lost HTTP
-response cannot make a second task or comment. Bound dedupe storage without
-forgetting replay safety: expire upload/command envelopes and maintain a device
-operation high-water/replay fence before pruning old results.
+A start is a compare-and-set on an available, unblocked task. If both devices
+start revision 12, the first valid server transaction wins revision 13. The other
+receives a conflict; its timestamp cannot steal the task. A task's accepted claim
+persists until release, completion or an audited administrative override with a
+reason. An offline phone cannot prove it acted earlier. Offline starts are shown
+as provisional until synchronization; strict global exclusivity needs an online
+server acknowledgement before work begins.
 
-## Starting a task
+Task title/notes/planning changes use the same expected revision. There is no
+last-write-wins text overwrite. Images/comments have their own IDs and revisions;
+comment creation appends rather than replacing another comment. Deleting a task
+removes active children, and an in-flight stale upload cannot recreate them.
+Calendar event updates/deletes enforce author/admin policy and revisions too.
 
-`startTask(taskId, expectedRevision, operationId)` is an atomic compare-and-set:
+## Organization and calendar
 
-1. Begin a write transaction; validate the current workspace generation, device,
-   membership, project permission, task lifecycle, and expected revision.
-2. Transition an available task to in-progress with its claiming user/device.
-3. Increment its revision; append its event, command result, audit metadata, and
-   relevant notification jobs; commit as one unit.
+For protocol compatibility, a task's container field remains `project_id`; it
+can reference a live List or Project, or be empty for Inbox. Creating an Inbox
+task requires no container. A move updates its encrypted data and database parent
+in the same transaction with the task's expected revision. Deleted or wrong-kind
+containers cannot receive tasks. Deleting a List or Project is refused while any
+live tasks remain, including completed tasks. Shared Note body/pin updates and
+collection name/context edits are revision-checked commands too.
 
-If two devices both submit against revision 12, one can commit revision 13. The
-other receives an explicit conflict with the current authorized state. It must
-not silently become the owner. SQLite's write serialization plus conditional
-updates or equivalent transactional guards enforce this; HTTP arrival ordering
-and in-memory locks alone do not.
+Calendar events are shared server records, downloaded in the same snapshot and
+retried through the same outbox as tasks. They sync across Field Notes clients;
+there is no CalDAV, Google/OS calendar bridge, calendar import or subscription.
 
-The winner is the **first valid transaction accepted by the server**, not the
-earliest phone timestamp. A slow or offline phone cannot prove that its user
-acted earlier. If both phones say “start” while offline, both show a provisional
-local state until reconciliation. Global exclusivity while disconnected is
-impossible; the UI must say “pending confirmation.” Strict exclusivity requires
-being online before work starts.
+## Android persistence and conflicts
 
-Initial claims are persistent until release/completion/explicit reassignment.
-Do not introduce expiring leases or silently steal a task because a phone went
-offline. Separate “assignee” from “currently claimed by” if future workflows need
-both. A second start by the same user from another device follows an explicit
-already-started result rather than resetting progress.
+Commands are immutable retry units in an atomic Keystore-encrypted cache. Their
+operation ID is saved before sending. A response lost after commit therefore
+retries the same operation, even after process death. Causal predecessor links
+allow a later local edit to adopt only its accepted predecessor's revision; a
+rejected parent leaves dependent edits retained rather than silently retagging
+them against unrelated remote changes.
 
-## Other conflicts
+Synchronization first fetches current state, fences epoch/generation changes,
+then replays commands and fetches a final snapshot. A failed network exchange or
+session expiry retains the outbox. Rejected revisions, removed items, dependent
+writes and editor drafts become reviewable conflicts. Reapply requires an
+explicit choice with a fresh operation ID and current revision. Deleted items
+must be recreated deliberately, using copied text if needed. The local projection
+never masquerades as accepted server ownership.
 
-| Operation or collision | Required behavior |
-| --- | --- |
-| Different tasks edited | Independent revisions; changes should both succeed |
-| Same task edited from an old base | Return current revision and preserve the local draft for explicit reconciliation |
-| Title/notes edited concurrently | Never silently discard text; offer keep mine, keep server, or edited merge with a new expected revision |
-| Concurrent comments | Append uniquely identified comments; stable server event ordering |
-| Comment edited/deleted concurrently | Revision check; retain the author's local edit as a conflict draft; tombstone accepted deletion |
-| Complete versus start/reopen | Explicit lifecycle transitions; stale start cannot reopen a completed task |
-| Owner reassigns an in-progress task | Privileged command, reason, current revision, transactional audit event; notify affected people |
-| Same user's two devices | Same concurrency rules; shared login is not a reason to overwrite |
-| Role downgraded during a request | Re-check in the committing transaction; an earlier authorization check is insufficient |
-| Delete versus stale edit | Tombstone rejects stale writes; restoration is a distinct authorized action |
-| Workspace cleared versus queued edits | Increment generation and reject all old-generation writes/uploads |
-| Network drops after commit | Retry identical operation ID; return the committed result |
-| Duplicate or reordered push | Fetch by cursor; ignore duplicate hints; never apply notification payloads as state |
+Downloaded images are encrypted and scoped to server/account/image. Switching
+accounts with pending edits is refused. An image picker captures the workspace
+basis at launch, so picking after reset does not relabel old work as new.
 
-Start with object-level revision conflicts. Field-level automatic merging or
-CRDT text editing may be added later with explicit semantics and migration tests.
-Do not turn every entity into a generic untyped blob to anticipate scope creep.
+Web drafts live only in the current tab, preserving their base revision during
+remote changes. They are not an encrypted offline browser database. Copy needed
+text before closing the tab. Expired web sessions close private detail views;
+server authorization continues to guard every mutation/download.
 
-## Offline client and catch-up
+## Enrollment and reset
 
-Persist the local optimistic change and outbox command atomically. Render
-pending, synced, conflict, rejected, and retryable states distinctly. Preserve
-drafts on authentication expiry and server errors without replaying them under
-a different account. Partition caches by server, user, and workspace.
+The enrollment claim nonce is durable before the claim request. Approved tunnel
+configuration and activation credential are durable before activation. Lost
+responses reuse both. User/account/role are checked against the invitation.
+The configuration is not issued merely because a peer was requested: the root
+helper must acknowledge the exact desired manifest. Network fallback changes
+only a trusted outer UDP endpoint and preserves request bodies and all identities.
 
-Use bounded batches, exponential backoff with jitter, cancellation, and network
-change notifications. Retry transient errors; do not loop permission failures,
-invalid data, or revision conflicts unchanged. Never acknowledge an outbox item
-before its result and local state are durably recorded. Observe causal ordering
-for operations on the same object; different objects may proceed independently.
+A clear increments the workspace generation; restore creates a fresh epoch and
+revokes sessions/invitations/devices. Old queued writes cannot enter the restored
+workspace. Restore requires reviewed re-enrollment. The sign-in screen exposes
+retained text; resetting the connection is blocked while drafts/conflicts/outbox
+remain. Discarding them needs explicit confirmation, including a pending-image
+warning. Re-enrollment clears downloaded cache and generates a new identity,
+rather than overwriting keys silently. See [ENROLLMENT.md](ENROLLMENT.md).
 
-The changes API is paginated by committed sequence, scoped to current access,
-and returns a stable high-water mark. Record the cursor only with the applied
-batch. Scope changes need a membership/visibility revision so data removed from
-access is evicted without leaking objects in other projects. A client with an
-expired cursor downloads a consistent snapshot and resumes after its watermark;
-it does not assume the missing history was empty. Snapshot/event retention must
-not cause resurrection of old deletions.
+## Bounds and limits
 
-After a server backup restore, rotate a server epoch before admitting client
-writes. Cursors, old command results, and outboxes belong to the previous epoch.
-Require a full reconciliation and preserve old local drafts separately; never
-auto-upload an entire cached database over the restored server. Include a fresh
-epoch even when restoring the old epoch field from a backup.
-
-## Images and attachments
-
-Uploads have their own IDs, workspace generation, parent revision/identity,
-authorization, byte/dimension limits, and expiration. Upload to quarantine;
-validate actual file type, decode safely with resource bounds, remove EXIF/GPS,
-and generate bounded thumbnails. Reject SVG, HTML, path traversal, malformed
-images, and decompression bombs. Encrypt normalized images and thumbnails before
-durable storage. If original-file preservation is added, it is a separate
-explicit privacy choice; never silently retain GPS-bearing originals.
-
-Publish the attachment metadata only after the complete blob is durable. Use
-random opaque storage names, not user-supplied paths or cross-user deduplication
-keys. Verify integrity at finalization and authorize every read. Upload retries
-must not duplicate attachments; interrupted uploads expire and are garbage
-collected. An orphan sweep must not delete a live in-flight attachment.
-
-Re-check authorization and generation at final commit, not just upload start.
-Clearing a workspace, deleting the parent, or revoking a device must invalidate
-an in-flight finalization. Deletion removes active blob references and schedules
-bounded garbage collection; backup retention and filesystem blocks are separate
-from active-data deletion.
-
-## Required fault tests
-
-Use two independent clients against the real server/database to race claims,
-roles, edits, deletes, uploads, and resets. Kill the server between commit and
-response; restart it before retrying. Exercise clock jumps, long offline periods,
-full disks, duplicate IDs with different payloads, cursor expiry, backup restore,
-new epochs, mismatched protocol versions, and revoked devices with old queues.
-Assert the final state and durable event/results, not just HTTP status codes.
+Protocol mismatches fail closed. Command/image sizes, local cache/outbox size,
+roles and lifecycle transitions are bounded and tested. Snapshot/head polling is
+household scale, not a multi-tenant distributed sync platform. No cursor/result
+pruning policy silently forgets replay receipts. Background catch-up/reminders
+are best-effort; no notification is the source of truth for a task transition.

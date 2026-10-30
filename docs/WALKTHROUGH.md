@@ -1,240 +1,133 @@
-# Field Notes: screenshots and walkthrough
+# Planner and management walkthrough
 
-These are captures of the running Android app and Rust-backed web interface,
-using a disposable household with synthetic names, tasks, comments, and a shelf
-sketch. They show the implemented interface. Click a picture to see it full size.
-Android captures are from an AOSP Android 15 emulator with a test-only fixture
-connection and the real encrypted cache, not a physical GrapheneOS phone or a
-live home tunnel. The fixture loads an authorized snapshot and image from the
-disposable Rust server. The responsive phone browser is shown separately from
-the native app.
+These screenshots contain only a synthetic household. Browser captures use the
+real Rust server/database. Android captures render actual Compose/RemoteViews
+with a test-only connection and encrypted local cache. The widget image uses its
+real Android RemoteViews renderer in the capture activity, not a launcher claim.
+Screenshots do not prove live enrollment, home firewall isolation, camera optics,
+GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
+capture protection enabled. Test invitations expire and their fixture is deleted.
 
-[Android setup](#connect-a-phone) · [Daily use](#use-the-android-app) ·
-[Sync and conflicts](#connection-offline-work-and-conflicts) ·
-[Computer interface](#use-it-on-a-computer) ·
-[Server management](#manage-the-server) · [Reproduce](#reproduce-the-captures)
+## Workspace, lists and shared notes
 
-## Connect a phone
+Capture unfiled tasks in Inbox. Lists keep groceries, routines and checklists
+separate from outcome-oriented Projects. Collections brings both together, and
+Notes holds shared reference material independently of tasks. Unscheduled,
+Waiting and Completed are useful views of the same task data. Keep in moves a
+task between Inbox, a List and a Project with revision checks.
 
-Approve the phone's public key on the home server, paste the connection JSON
-obtained through your trusted LAN administrator, confirm that source, and sign
-in. Peer approval currently uses the server's command-line helper; the web UI
-does not yet enroll WireGuard peers or issue QR invitations. Private keys stay
-on the phone. See [the pairing commands](RUNNING.md#android-builds-and-pairing).
+![Inbox accepts tasks without a project](screenshots/web/20-inbox.png)
+![Lists and Projects in Collections](screenshots/web/21-collections.png)
+![Standalone shared Notes](screenshots/web/22-notes.png)
+![Shared note editor](screenshots/web/23-shared-note.png)
+![Groceries as a List](screenshots/web/24-grocery-list.png)
 
-| 1. Pair the phone | 2. Sign in to the household |
+## Focus, priorities and optional dates
+
+Focus is a suggested order, with pins first, bounded scores and stable ties.
+Undated high-priority work can rank above dated routine work. Open a task to see
+its score calculation. Planned day and due date are separate, optional fields;
+clearing either does not clear priority. Blocked, completed, other-claimed and
+future-planned work stay in All tasks (your already-started task remains in Focus).
+
+![Charcoal Focus with undated priorities and visible scores](screenshots/web/02-focus.png)
+![Paper theme](screenshots/web/03-focus-paper.png)
+![All task rows](screenshots/web/04-task-list.png)
+![Status board](screenshots/web/05-board.png)
+![Task editor: priority, clearable dates, estimates, pins, blocked state and score](screenshots/web/06-task-planning.png)
+![Notes, images and conversation](screenshots/web/07-notes-images-comments.png)
+
+## Calendar
+
+Task deadlines/planned days and dedicated events share a workspace calendar. Undated
+tasks remain available in Focus and All tasks. All-day events use floating dates
+and an exclusive end day. Timed events use explicit offsets, store UTC instants,
+and render in your current time zone without a Google/OS calendar dependency.
+Events sync through your Field Notes server alongside tasks. External calendar
+sync (including CalDAV), import and subscription are not implemented.
+
+![Month and selected-day agenda](screenshots/web/08-calendar.png)
+![Create a calendar event](screenshots/web/09-calendar-event.png)
+
+## Enrollment tied to tunnel provisioning
+
+From Management, select an existing account and create its ten-minute invitation.
+On the phone, scan on trusted home Wi-Fi, review the account/server and confirm
+the trusted source. The phone keeps its private key. Enter its displayed code in
+**Approve** on the server. **Provisioning** means the host has not acknowledged
+peer installation; it is not activated access. Once acknowledged, the phone
+activates through its assigned WireGuard address and synchronizes automatically.
+See [ENROLLMENT.md](ENROLLMENT.md) for retries, expiry, recovery and revocation.
+
+![Management, people, sessions, devices and maintenance](screenshots/web/10-management.png)
+![Add an account with a role](screenshots/web/17-add-person.png)
+![Change a role and revoke its sessions](screenshots/web/18-change-role.png)
+![Single-use invitation for an existing account](screenshots/web/11-enrollment-invitation.png)
+![Pending phone](screenshots/web/12-device-pending.png)
+![Enter the code displayed on the actual phone](screenshots/web/13-device-confirmation.png)
+![Waiting for root peer acknowledgement](screenshots/web/14-provisioning.png)
+![Explicit workspace clearing](screenshots/web/15-clear-workspace.png)
+![Audited claim override with a reason](screenshots/web/19-override-claim.png)
+
+## Android
+
+The installed page glyph in the actual AOSP launcher:
+
+<img src="screenshots/android/17-launcher-icon.png" width="300" alt="Current Field Notes icon in the actual Android launcher">
+
+| Workspace navigation | Notes | Note editor |
+| --- | --- | --- |
+| <img src="screenshots/android/12-workspace-navigation.png" width="250" alt="Android drawer with views and collection types"> | <img src="screenshots/android/13-notes.png" width="250" alt="Shared standalone notes"> | <img src="screenshots/android/14-shared-note.png" width="250" alt="Shared note editor"> |
+
+| Inbox | Collections |
 | --- | --- |
-| <a href="screenshots/android/01-pairing.png"><img src="screenshots/android/01-pairing.png" width="300" alt="Native Android pairing screen with device public key, connection JSON and explicit trust checkbox"></a> | <a href="screenshots/android/02-sign-in.png"><img src="screenshots/android/02-sign-in.png" width="300" alt="Native Android household sign-in screen"></a> |
+| <img src="screenshots/android/15-inbox.png" width="250" alt="Tasks without a project"> | <img src="screenshots/android/16-collections.png" width="250" alt="Lists and Projects"> |
 
-## Use the Android app
+The Android app has Focus / Tasks / Calendar navigation, clearable date pickers,
+priority chips, planning fields, notes/comments/images and a private home widget.
+The first screen supports QR scanning and paste; no public key copying or manual
+peer JSON editing is needed in the normal enrollment flow.
 
-Matrix groups tasks into Do, Decide, Delegate, and Defer. Board groups the same
-tasks by To do, In progress, and Done. List is the compact alternative. Search
-narrows titles and notes; the project button filters to one project. A start
-remains provisional until the server accepts it; simultaneous claims are decided
-by the first valid server transaction, not a phone's clock.
-
-| Matrix | More collections |
+| Enroll on home Wi-Fi | Confirm the phone code |
 | --- | --- |
-| <a href="screenshots/android/03-matrix.png"><img src="screenshots/android/03-matrix.png" width="300" alt="Android Matrix task view"></a> | <a href="screenshots/android/04-matrix-collections.png"><img src="screenshots/android/04-matrix-collections.png" width="300" alt="Android Matrix scrolled to later collections"></a> |
+| <img src="screenshots/android/01-enroll.png" width="280" alt="Android enrollment with scan and paste"> | <img src="screenshots/android/02-phone-confirmation.png" width="280" alt="Phone verification code awaiting administrator approval"> |
 
-| Board | Claims and completed tasks |
-| --- | --- |
-| <a href="screenshots/android/05-board.png"><img src="screenshots/android/05-board.png" width="300" alt="Android Board view showing tasks by status"></a> | <a href="screenshots/android/06-board-claims.png"><img src="screenshots/android/06-board-claims.png" width="300" alt="Android Board showing In progress and Done sections"></a> |
+| Focus | All tasks | Calendar |
+| --- | --- | --- |
+| <img src="screenshots/android/03-focus.png" width="250" alt="Compact Android Focus"> | <img src="screenshots/android/04-tasks.png" width="250" alt="Android task rows"> | <img src="screenshots/android/05-calendar.png" width="250" alt="Android local calendar"> |
 
-| List | Light appearance |
-| --- | --- |
-| <a href="screenshots/android/07-list.png"><img src="screenshots/android/07-list.png" width="300" alt="Android List task view"></a> | <a href="screenshots/android/16-matrix-light.png"><img src="screenshots/android/16-matrix-light.png" width="300" alt="The Android Matrix in the system light appearance"></a> |
+| Calendar event | Task planning | Conversation |
+| --- | --- | --- |
+| <img src="screenshots/android/06-new-event.png" width="250" alt="Android event editor"> | <img src="screenshots/android/07-task-planning.png" width="250" alt="Task notes and optional planning fields"> | <img src="screenshots/android/08-comments-attachments.png" width="250" alt="Task attachments and comments"> |
 
-Open a task to edit its title, notes, due date, and collection. **Save details**
-queues the change. Below the fields are the start/release/complete controls,
-image attachments, and conversation. Images use the system photo picker.
+| Widget privacy settings | Actual RemoteViews renderer | Paper theme |
+| --- | --- | --- |
+| <img src="screenshots/android/09-settings-widgets.png" width="250" alt="Settings including widget title opt-in"> | <img src="screenshots/android/11-widget.png" width="250" alt="Private default and title-enabled widget rendering"> | <img src="screenshots/android/10-focus-paper.png" width="250" alt="Android paper theme"> |
 
-| Task notes and due date | Attached image |
-| --- | --- |
-| <a href="screenshots/android/08-task-notes.png"><img src="screenshots/android/08-task-notes.png" width="300" alt="Task title, notes and due date in the Android detail editor"></a> | <a href="screenshots/android/09-task-image.png"><img src="screenshots/android/09-task-image.png" width="300" alt="An actual shelf sketch attachment displayed in Android"></a> |
+The widget hides titles by default. Opting in shares title copies with your
+launcher, which can retain them. Notes/images/credentials are never included.
+Tap opens the credential-locked app. Updates use the encrypted local cache and
+Android scheduling; they are not guaranteed instant push or lock redaction.
 
-| Conversation | Delete confirmation |
-| --- | --- |
-| <a href="screenshots/android/10-task-conversation.png"><img src="screenshots/android/10-task-conversation.png" width="300" alt="Comments and comment composer on an Android task"></a> | <a href="screenshots/android/11-delete-confirmation.png"><img src="screenshots/android/11-delete-confirmation.png" width="300" alt="Android requires typing DELETE before confirming task deletion"></a> |
+## Browser on a small screen
 
-Use **Add task** for a quick title within the current project. **Workspace menu →
-New project** creates another project. Task deletion requires typing `DELETE`;
-the screenshot shows the confirmation without performing the deletion.
+The responsive LAN website also works in a phone browser. A browser cannot borrow
+the Android app-contained tunnel; the website remains a home-LAN interface.
 
-<a href="screenshots/android/12-new-task.png"><img src="screenshots/android/12-new-task.png" width="300" alt="Android quick-add task dialog"></a>
-
-## Connection, offline work, and conflicts
-
-**Workspace menu → Notifications & connection** controls optional background
-catch-up and local due-date reminders. Background work is best-effort, at least
-15-minute scheduling; this is not instant push. Editing the endpoint changes the
-route while retaining the same server identity, certificate trust, and pending
-work. This is useful when the home router lacks hairpin NAT.
-
-| Background settings | Change the endpoint |
-| --- | --- |
-| <a href="screenshots/android/13-notifications-connection.png"><img src="screenshots/android/13-notifications-connection.png" width="300" alt="Android opt-in background catch-up and local reminder settings"></a> | <a href="screenshots/android/14-server-endpoint.png"><img src="screenshots/android/14-server-endpoint.png" width="300" alt="Android server endpoint editor"></a> |
-
-Queued edits are kept in the encrypted phone cache. A disconnected phone marks
-them **Pending confirmation**. A rejected stale write appears under **Retained
-changes**, with copy, reapply, and discard actions. Review the current server
-version before reapplying. Discarding a retained change requires confirmation.
-
-The conflict fixture replays the rejection returned by a deliberately stale
-command sent to the disposable Rust server. For the offline capture, it pauses
-the test connection and queues a task in the real encrypted outbox. The simulated
-connection resumes after the picture is taken. These pictures demonstrate the
-interface and do not establish delivery or tunnel behavior.
-
-| Retained stale edit | Queued while disconnected |
-| --- | --- |
-| <a href="screenshots/android/15-retained-conflict.png"><img src="screenshots/android/15-retained-conflict.png" width="300" alt="Android retained-change interface with a stale-edit fixture and recovery actions"></a> | <a href="screenshots/android/17-offline-queue.png"><img src="screenshots/android/17-offline-queue.png" width="300" alt="Android offline fixture with a pending task in the encrypted outbox"></a> |
-
-## Use it on a computer
-
-Open the server's LAN HTTPS address in a Linux or Windows browser and sign in.
-The project sidebar, Matrix/Board/List switch, search, and quick-add field work
-on the same server data. These are browser screenshots; a native desktop package
-is not part of the current delivery.
-
-### Matrix
-
-![Web Matrix with project navigation and tasks in four collections](screenshots/web/02-matrix.png)
-
-### Board
-
-![Web Board showing To do, In progress and Done](screenshots/web/03-board.png)
-
-### List and light appearance
-
-![Web List in the light appearance](screenshots/web/04-list-light.png)
-
-### Task editor
-
-![Web task editor with notes, due date, collection and task actions](screenshots/web/05-task-details.png)
-
-### Image attachments and conversation
-
-![Web task attachment and household conversation](screenshots/web/06-images-comments.png)
-
-### New project
-
-![Web project creation dialog](screenshots/web/07-new-project.png)
-
-<details>
-<summary>Browser sign-in and responsive phone layout</summary>
-
-![Browser sign-in](screenshots/web/01-sign-in.png)
-
-This last image is the website in a narrow phone browser, distinct from the
-native Android screenshots above. The website remains available only through
-the trusted management LAN or a separately configured management route.
-
-<a href="screenshots/web/14-phone-browser.png"><img src="screenshots/web/14-phone-browser.png" width="390" alt="Responsive website displayed at phone width"></a>
-
-</details>
-
-## Manage the server
-
-Owners and administrators use **Administration** on the trusted LAN. Members and
-viewers cannot open these admin routes. Household-wide roles are implemented;
-per-project permissions remain future work.
-
-The overview contains **People**, **Devices & sessions**, **Recovery &
-maintenance**, server version/workspace counters, and **Administrative activity**.
-Use **Revoke** to invalidate an application session. WireGuard peer revocation
-is a separate host-side operation using the peer helper.
-
-![Server management overview with people, sessions, backups, server status and audit history](screenshots/web/08-administration.png)
-
-### Confirm administrator identity
-
-Administrative changes ask for your password again and authorize changes for
-five minutes. The capture leaves the password blank.
-
-![Administrator reauthentication prompt](screenshots/web/09-confirm-identity.png)
-
-### Add a person and assign a role
-
-Owners can add a member, viewer, or administrator. Share the initial password
-securely. Viewers can read content but cannot mutate it. Administrators can
-manage content and sessions; owners additionally control ownership and clearing.
-
-![Add household member dialog with name, initial password and role](screenshots/web/10-add-person.png)
-
-### Change a role
-
-Changing a person's role invalidates that person's existing sessions. Disabling
-a person also revokes their sessions and retains their existing task content.
-The screenshot shows a proposed role change; it is canceled for the gallery.
-
-![Owner changing Sam's role](screenshots/web/11-change-role.png)
-
-### Release a claim with an audit reason
-
-Open the claimed task, choose **Override claim**, reauthenticate, and explain
-why. The server records the action in the administrative audit history. The
-gallery stops at the reason prompt and leaves Sam's claim intact.
-
-![Audited administrative task claim override dialog](screenshots/web/13-override-claim.png)
-
-### Back up or clear the workspace
-
-**Download encrypted backup** is on the overview. Keep the server recovery key
-separately; downloading the backup does not download that key. Restoration is a
-host-side procedure documented in [RUNNING.md](RUNNING.md), not a web upload or
-shell console.
-
-**Clear workspace…** is owner-only. It requires reauthentication and typing
-`CLEAR WORKSPACE`. It removes active projects/tasks/comments/images and changes
-the workspace generation so old offline writes cannot recreate cleared content.
-Users and existing backups remain. The gallery shows the confirmation only.
-
-![Owner-only clear workspace confirmation](screenshots/web/12-clear-workspace.png)
+<img src="screenshots/web/16-phone-browser.png" width="390" alt="Responsive LAN planner">
 
 ## Reproduce the captures
 
-Web: `source scripts/dev-env.sh && node scripts/capture-web.mjs`. This starts a
-temporary real Rust server and Chromium, captures the interface, and removes its
-synthetic database afterward. Build the server and install npm dependencies first
-using the normal [setup instructions](RUNNING.md#cloud-development).
-
-Android additionally needs an AOSP API-35 x86_64 emulator named
-`field-notes-test`, the Android SDK/NDK, and the Go toolchain:
-
 ```sh
-bash scripts/build/android-emulator.sh
 source scripts/dev-env.sh
-export ANDROID_AVD_HOME="$FIELD_NOTES_TOOLS/avd"
-export ANDROID_EMULATOR_HOME="$FIELD_NOTES_TOOLS/emulator-home"
-# If this disposable AVD has not been created yet:
-"$ANDROID_HOME/cmdline-tools/19.0/bin/sdkmanager" \
-  'emulator' 'system-images;android-35;default;x86_64'
-printf 'no\n' | "$ANDROID_HOME/cmdline-tools/19.0/bin/avdmanager" create avd \
-  --name field-notes-test --package 'system-images;android-35;default;x86_64'
-# Start in another terminal; omit -accel off if hardware acceleration is available.
-"$ANDROID_HOME/emulator/emulator" -avd field-notes-test -no-window -no-audio \
-  -no-snapshot -gpu swiftshader -feature -Vulkan -accel off -cores 2
-# Wait for sys.boot_completed=1, then capture:
+cargo build --locked
+node scripts/capture-web.mjs
+bash scripts/build/android-emulator.sh
+# Only on the disposable field-notes-test AVD:
 node scripts/capture-android.mjs
 ```
 
-The Android capture command checks the dedicated emulator's identity before
-clearing its demo app data. It changes only that AVD's screenshot dimensions and
-appearance, renders the real MainActivity/Compose UI with fixture responses and
-a disposable Rust server's data, and restores display size/density afterward.
-The fixture responses live only in the instrumentation APK. The real Keystore,
-encrypted cache, image display, and outbox are used. It never operates on a
-physical phone. Rendering can be slow without KVM.
-
-Production screenshot protection remains enabled. An opt-in class in the
-**instrumentation test APK only** temporarily permits captures of its synthetic
-activity, asserts the normal secure-window flag first, and restores it afterward.
-The documentation process does not add a screenshot switch to the shipped app.
-The capture test keeps its screen awake, waits for committed frames, and dismisses
-only known AOSP System UI/Quickstep crash dialogs; a Field Notes ANR fails capture.
-
-Live tunnel login could not be completed in this software-emulated capture run,
-so the gallery uses fixture networking explicitly. Separate transport integration
-results and physical-device limits are recorded in [VALIDATION.md](VALIDATION.md).
+The gallery fixture and capture permission exist only in the instrumentation APK.
+The emulator capture script refuses physical phones or another AVD and clears
+only the dedicated disposable application's state. Unit/API/native integration
+checks are separate; see [VALIDATION.md](VALIDATION.md).

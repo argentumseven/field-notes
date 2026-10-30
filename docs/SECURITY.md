@@ -1,154 +1,100 @@
-# Security and administration requirements
+# Security model
 
-This is the target design/contract. See [VALIDATION.md](VALIDATION.md) for current
-implementation status and [RUNNING.md](RUNNING.md) for actual commands.
+This is a development implementation with automated security checks, not an
+independent audit. [VALIDATION.md](VALIDATION.md) distinguishes executed tests
+from physical deployment requirements.
 
-Status: threat model and implementation requirements. No security audit or
-runtime validation has been performed for Field Notes.
+## Trusted endpoints and encryption
 
-## Trust boundaries
+The server and authorized administrators can decrypt content, as selected by
+the user. A compromised server or unlocked authorized device can expose data.
+The Android app encrypts cache, drafts, pending commands, images, credentials and
+WireGuard keys with AES-GCM under a nonexportable Android Keystore key. Atomic
+writes prevent publishing unpersisted edits. Missing keys/tampered ciphertext
+fail closed and do not create an empty replacement workspace. The device
+credential locks the UI; the key permits scheduled background reads, so it is
+not configured for a biometric prompt on every cryptographic operation.
 
-The user selected **server-readable content**. The server process and authorized
-administrators can access tasks, notes, comments, and images. Server compromise
-can expose all of that data while its keys are available. Disk encryption,
-WireGuard, and HTTPS cannot prevent a compromised authorized endpoint from
-reading plaintext. Do not promise that “nothing leaks”: traffic metadata,
-operating-system behavior, screenshots, exports, and compromised devices have
-their own limits.
+The server encrypts record payloads, normalized attachments, device secret
+payloads and backups with authenticated AES-GCM and associated-data binding.
+The master key is outside the data directory. Passwords use Argon2id; random
+session/invitation/activation capabilities are revocable and bounded. Database
+identifiers, roles, public peer keys, IP assignments, timestamps, indexes and
+sizes are not all encrypted. Root desired-peer files, host WireGuard config,
+private CA/leaf keys and process memory also contain sensitive material. Protect
+host permissions, disk, swap, coherent backups and the recovery key. No claim of
+end-to-end encryption excluding the server is made.
 
-Protect against remote unauthenticated access, malicious/compromised ordinary
-members, replayed and stale operations, accidental deletion, stolen locked
-devices, offline storage theft, untrusted uploaded files, and hostile network peers.
-Treat denial of service, dependency compromise, operator error, and lost recovery
-material as explicit risks. A transport peer key is not a substitute for user
-authorization.
+WireGuard uses per-device keys and unique PSKs. Direct Rust TLS requires TLS 1.3
+and validates trusted certificates. Native clients pin the explicitly trusted
+public CA and verify name/expiry. There is no plaintext, redirect, proxy or public
+relay fallback. Transport metadata and DDNS lookups remain observable.
 
-## Encryption and keys
+## Enrollment and network isolation
 
-- HTTPS everywhere, including LAN installation and the inner device API.
-  TLS 1.3 preferred with a supported
-  secure compatibility policy. Validate names, certificate chains, and expiry;
-  certificate rotation and device re-pairing have documented procedures.
-- Encrypt sensitive database fields, comments/notes, object names where practical,
-  normalized attachments, thumbnails, and backup contents using maintained
-  cryptographic libraries and authenticated encryption. Do not design a new
-  cipher, signature scheme, or password exchange.
-- Use random per-object data keys, a server wrapping key, fresh nonces with
-  appropriate library-enforced uniqueness, key versions, and associated data
-  binding workspace/object/type/version. Fail closed on authentication errors;
-  never replace unreadable data with an empty database.
-- Keep the server wrapping key outside the database/data-volume backups. Choose
-  a root-controlled secret mount or systemd credential mechanism, and document
-  how it is unlocked after a restart. An unattended server must have a usable
-  key source; colocating its unprotected key with stolen data limits protection.
-- Add full-disk encryption on the Linux host where practical. App encryption
-  does not hide all SQLite structure, identifiers, timing, sizes, or indexes;
-  define the exact plaintext metadata before implementation. Avoid plaintext
-  full-text indexes by default. Protect WAL, temporary files, swap, and dumps.
-- Native clients use OS secure storage (Android Keystore, iOS Keychain, Windows
-  protected credentials, Linux Secret Service) to wrap local cache keys. Store
-  offline content and outboxes encrypted; handle missing/locked keyrings as a
-  locked state. Background-access requirements must be reconciled with biometric
-  key policies rather than promising both unrestricted background reads and
-  per-access biometric confirmation.
-- Browser storage is not equivalent to a hardware-backed native vault. Default
-  web sessions to minimal persistent sensitive caching; an optional offline web
-  cache needs a separate unlock/expiry design and an explicit shared-computer
-  warning. Account/server switching and logout clear active caches and object URLs.
-- Recovery includes an offline protected key export and a tested restore path.
-  Password reset can restore login access but cannot reconstruct a lost wrapping
-  key. Never store recovery secrets in logs, QR screenshots, or the repository.
+See [ENROLLMENT.md](ENROLLMENT.md) for account-scoped short-lived invitations,
+nonce-bound retries, human code approval, root provisioning acknowledgement and
+source-bound activation. A malicious QR cannot be made safe by cryptography
+alone: trust must originate from the real LAN administrator. The phone explicitly
+reviews and confirms that source before sending its public key/claim.
 
-## Authentication and roles
+The root helper cannot accept arbitrary commands/routes/interfaces. The content
+service has no NET_ADMIN and cannot read the private CA key. The helper validates
+bounded canonical keys, unique /32 assignments, owner/mode/symlink constraints,
+then acknowledges only after apply/save succeeds. Modified clients are confined
+by host nftables; client AllowedIPs alone are not the boundary. Actual source
+addresses bind phone sessions. Forwarded headers never grant identity.
 
-One-time local bootstrap creates the initial owner. No default password or open
-public setup page. Use a current, well-reviewed authentication implementation:
-Argon2id for passwords, passkeys/WebAuthn where platform support is verified,
-bounded login work, per-source and per-account rate limits, explicit session
-expiry/revocation, and recovery-code handling. Admin destructive actions require
-recent reauthentication, even in an existing session.
+Revocation denies application access immediately and shows peer removal pending
+until acknowledged. Addresses cannot be reused before removal acknowledgement.
+A failed reconciliation does not produce a successful acknowledgement. Restore
+invalidates sessions/invitations and schedules stored peers for removal.
 
-For web: HttpOnly, Secure, SameSite session cookies; CSRF tokens and exact-origin
-checks on mutations; strict CORS if any cross-origin native web transport exists.
-Do not put bearer tokens in browser localStorage. Native sessions use revocable
-per-device credentials in secure storage; protect refresh rotation against
-concurrent refresh/replay and bind device enrollment to an approved user.
-Invitations are high-entropy, hashed at rest, single-use, short-lived, and scoped
-to a specific role/workspace. A QR code must not grant owner privileges by itself.
+## Roles and mutations
 
-| Role | Content access | Administrative access |
-| --- | --- | --- |
-| Owner | All household content | Owners/admins, recovery policy, clear workspace, exports, restore coordination |
-| Admin | Explicit household/project scope | Invites, device/session revocation, roles below owner, retention and task overrides within scope |
-| Member | Create/edit/claim/comment/upload within assigned projects | Own devices, profile, local notification preferences |
-| Viewer | Read only within assigned projects | Own sessions and preferences; no task/comment/upload mutation |
+| Role | Current household scope |
+| --- | --- |
+| Owner | Content, all roles/users, device/session management, override with reason, clear workspace, backup |
+| Admin | Content, create/manage member/viewer devices/users within policy, sessions, audited override and backup |
+| Member | Shared content, task transitions, notes, comments/images; own calendar events |
+| Viewer | Read-only content; login/local preferences |
 
-Decide exact per-project membership inheritance before handlers are written.
-Keep permissions in one server policy layer and re-check at commit, download,
-export, and job delivery. Never rely on hidden admin buttons. Prevent removal
-or downgrade of the last owner. Record privilege changes and invalidate affected
-credentials/access caches promptly. A device cannot self-upgrade by claiming an
-owner role in its request.
+Roles are household-wide, not per-project ACLs. Event/comment/image edits and
+deletions enforce author/admin policy. The server prevents last-owner removal,
+revokes sessions on role change/disable, and rechecks permission at operation
+commit and download. Android is a content client; management stays on the LAN.
 
-## Web administration
+Mutations use immutable operation IDs, revisions, workspace epoch/generation and
+server transactions. A replay cannot duplicate a committed change. Stale task
+starts/edits, reset/restore writes and uploads crossing a deletion boundary are
+rejected. Server commit order decides competing claims; client clocks do not.
+Rejected/causally dependent offline edits remain retained for explicit review.
 
-Provide an authenticated dashboard with:
+## Browser, images and widget
 
-- Users, roles, invitations, project membership, devices, sessions, and revocation.
-- Task inspection, conflict resolution, explicit reassignment/override with reason,
-  archive, trash, restore, and bounded bulk actions with a preview/count.
-- Separate deletion of active content, expired uploads, push registrations, and
-  workspace reset. Reset increments a generation to fence old phones and uploads.
-- Storage use, backup status, restore/import validation results, notification
-  health, client/server compatibility, peer/tunnel connectivity, and audit events.
-- Retention settings and authenticated exports with time/size bounds. Sensitive
-  downloads are not placed at publicly guessable object URLs.
-- A typed confirmation and recent reauthentication for destructive operations.
-  Present the scope and backup implications before executing them.
+Web sessions use HttpOnly/SameSite cookies (Secure in production), exact-origin
+checks and CSRF tokens. Admin operations require recent password reauthentication.
+The page has a restrictive CSP, no third-party assets/analytics/fonts, and uses
+textContent for user text. Web drafts exist only in the tab; copy them before
+closing it. Browsers and OS trust stores are outside the native Keystore boundary.
 
-Restoring a database, rotating master keys, and updating binaries may need
-restricted host-side tooling or a separate maintenance helper. An internet-facing
-web process should not receive root, Docker socket access, arbitrary shell
-commands, or unrestricted filesystem access to make administration convenient.
-Allow only explicit validated maintenance jobs, with status and audit records.
-Do not run untrusted uploaded “backup scripts.”
+Images are bounded, decoded/normalized, dimension-limited and re-encoded; metadata
+is stripped. Native image caches bind ciphertext to server/account/image. OS
+photo picker avoids broad storage permission. Production windows set FLAG_SECURE,
+backups are disabled, clipboard copies are marked sensitive. These controls do
+not prevent every physical screenshot or compromised-device capture.
 
-Keep an append-only logical audit trail with actor, operation, scope, revision,
-reason, and server time/sequence. Do not include task bodies, passwords, keys,
-tokens, private push endpoints, or raw attachment data. A database owner/root can
-alter a local audit log; it is not tamper-proof evidence against the operator.
+Widget titles are hidden by default. Opt-in discloses title copies to the home
+launcher. Android/launchers may retain old RemoteViews, so lock/redaction is
+best-effort and cannot erase cached copies. Widgets never contain notes, images,
+tokens or private keys. Tap opens the credential-locked app; no unauthenticated
+widget action mutates tasks. Offline QR decoding uses CameraX/ZXing with camera
+permission requested only for scanning; frames are not saved or uploaded.
 
-## Operational hardening
+## Remaining gates
 
-Use a non-root server, minimal read-only container filesystem, dropped
-capabilities, no-new-privileges, bounded request/decode work, restricted
-administrative exposure, private data mounts, and explicit ingress/egress rules.
-Separate the NET_ADMIN WireGuard gateway from the content process. Keep the
-admin listener on the management LAN, deny phone-to-LAN/peer forwarding, and
-test interface isolation independently of client route configuration. Do not
-require a fully privileged container for the deployment.
-
-Serve bundled fonts/icons/assets. No telemetry, crash uploads, external image
-fetches, or link previews by default. Untrusted Markdown must be sanitized; raw
-HTML, active SVG, arbitrary URI schemes, SSRF-capable previews, and path-derived
-file access are prohibited. Use a restrictive CSP, no framing, nosniff, bounded
-uploads, and authenticated downloads. Redact both application and proxy logs.
-
-If an independent UnifiedPush adapter is added, endpoint registration must not
-become an SSRF primitive: restrict
-notification dispatch to the operator-configured push origin/paths, validate DNS
-and resolved destinations, disallow credentials in URLs, and reject redirects to
-other destinations. A deliberately internal push origin is an explicit operator
-configuration, not permission to access any private IP or cloud metadata URL.
-
-Run backups on a defined schedule with authenticated encryption, checksums,
-retention, and tested restoration to a separate directory/instance. Include
-coherent DB and object state plus migrations/version metadata. Keep encrypted
-recovery material separately available. Deleting a task does not erase old
-backups or flash blocks. Explain that precisely in the UI and retention policy.
-
-Use signed/verified release artifacts, dependency lockfiles, checksums, a
-dependency inventory/SBOM, and a stable APK signing identity. Do not auto-update
-the server from an unpinned image tag or accept arbitrary web-supplied binaries.
-Run an independent security review before describing the product as audited or
-recommending exposure of an unfinished server to the public Internet.
+Physical GrapheneOS/VPN/lockdown/roaming, actual Debian/Ubuntu root installation,
+firewall negative-access tests, hardware-backed Keystore behavior, camera optics,
+launcher lifecycle, battery/Doze timing and independent review remain deployment
+gates. No reliable instant background push is claimed. Per-project ACLs, passkeys,
+trusted-device key transfer and automatic CA rotation remain future work.

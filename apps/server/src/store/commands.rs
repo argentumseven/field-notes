@@ -100,20 +100,32 @@ impl Store {
             r
         };
         match c.action.as_str() {
-            "project.create" => {
-                fields(&c.data, &["title"])?;
-                record.data = json!({"title":text(&c.data,"title",160)?});
+            "project.create" | "project.update" | "list.create" | "list.update" | "note.create"
+            | "note.update" => {
+                if record.kind != c.action.split('.').next().unwrap_or("") {
+                    return fail(400, "Object kind mismatch");
+                }
+                Self::organized_record(&c.data, &mut record, &actor)?;
             }
             "task.create" => {
                 fields(
                     &c.data,
-                    &["title", "notes", "project_id", "quadrant", "due"],
+                    &[
+                        "title",
+                        "notes",
+                        "project_id",
+                        "quadrant",
+                        "due",
+                        "priority",
+                        "planned_for",
+                        "estimate_minutes",
+                        "pinned",
+                        "blocked",
+                    ],
                 )?;
-                let pid = text(&c.data, "project_id", 36)?;
-                if self.record(&pid)?.kind != "project" {
-                    return fail(400, "Invalid project");
-                }
-                parent = Some(pid.clone());
+                let pid = self.container_ref(c.data.get("project_id").unwrap_or(&json!("")))?;
+                parent = pid.clone();
+                let pid = pid.unwrap_or_default();
                 let notes = c.data.get("notes").and_then(Value::as_str).unwrap_or("");
                 if notes.len() > 16384 {
                     return fail(400, "Notes too long");
@@ -127,10 +139,35 @@ impl Store {
                 let due = c.data.get("due").and_then(Value::as_str).unwrap_or("");
                 Self::due(due)?;
                 record.data = json!({"title":text(&c.data,"title",240)?,"notes":notes,"project_id":pid,"quadrant":quadrant,"due":due,"status":"todo","claimant":null,"created_by":actor.user_id,"updated_at":now()});
+                record.data["created_at"] = json!(now());
+                Self::planning(&c.data, &mut record)?;
             }
             "task.update" => {
                 Self::task(&record)?;
-                fields(&c.data, &["title", "notes", "quadrant", "due"])?;
+                fields(
+                    &c.data,
+                    &[
+                        "title",
+                        "project_id",
+                        "notes",
+                        "quadrant",
+                        "due",
+                        "priority",
+                        "planned_for",
+                        "estimate_minutes",
+                        "pinned",
+                        "blocked",
+                    ],
+                )?;
+                if let Some(value) = c.data.get("project_id") {
+                    let container = self.container_ref(value)?;
+                    self.db.execute(
+                        "UPDATE objects SET parent=? WHERE id=?",
+                        params![container, c.target],
+                    )?;
+                    record.data["project_id"] = json!(container.unwrap_or_default());
+                }
+                Self::planning(&c.data, &mut record)?;
                 if c.data.get("title").is_some() {
                     record.data["title"] = json!(text(&c.data, "title", 240)?);
                 }
@@ -153,6 +190,9 @@ impl Store {
             "task.start" | "task.release" | "task.complete" | "task.reopen" => {
                 fields(&c.data, &[])?;
                 Self::task(&record)?;
+                if c.action == "task.start" && record.data["blocked"] == true {
+                    return fail(409, "Unblock the task before starting it");
+                }
                 let claimant = record.data["claimant"].as_str();
                 if claimant.is_some_and(|u| u != actor.user_id) {
                     return fail(
@@ -270,13 +310,36 @@ impl Store {
                 )?;
                 record.data = json!({"task_id":tid,"name":text(&c.data,"name",180)?,"author":actor.name,"author_id":actor.user_id,"width":image.width(),"height":image.height(),"size":normalized.get_ref().len(),"created_at":now()});
             }
-            "task.delete" | "comment.delete" | "image.delete" => {
+            "event.create" | "event.update" => {
+                if record.kind != "event" {
+                    return fail(400, "Expected a calendar event");
+                }
+                Self::calendar_event(&c.data, &mut record, &actor)?;
+            }
+            "project.delete" | "list.delete" | "note.delete" | "task.delete" | "comment.delete"
+            | "image.delete" | "event.delete" => {
                 let kind = c.action.trim_end_matches(".delete");
                 if record.kind != kind {
                     return fail(400, "Object kind mismatch");
                 }
                 fields(&c.data, &[])?;
-                if kind != "task" && !actor.admin() && record.data["author_id"] != actor.user_id {
+                if ["project", "list"].contains(&kind) {
+                    let count: i64 = self.db.query_row(
+                        "SELECT COUNT(*) FROM objects WHERE parent=? AND deleted=0",
+                        [&c.target],
+                        |r| r.get(0),
+                    )?;
+                    if count > 0 {
+                        return fail(
+                            409,
+                            "Move or delete the tasks before deleting this collection",
+                        );
+                    }
+                }
+                if ["comment", "image", "event"].contains(&kind)
+                    && !actor.admin()
+                    && record.data["author_id"] != actor.user_id
+                {
                     return fail(403, "Only the author or administrator may remove this item");
                 }
                 if kind == "task"
@@ -334,7 +397,7 @@ impl Store {
         }
         Ok(())
     }
-    fn due(s: &str) -> Result<()> {
+    pub(super) fn due(s: &str) -> Result<()> {
         if s.is_empty() {
             return Ok(());
         }
