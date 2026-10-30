@@ -1,0 +1,16 @@
+# Replace LAN_IP and HOSTNAME. Do not publish this web listener on the WAN.
+{
+	admin off
+	skip_install_trust
+	auto_https disable_redirects
+}
+https://notes.home.arpa {
+	bind 192.168.1.10
+	tls internal
+	reverse_proxy 127.0.0.1:8787
+}
+https://10.82.0.1:8443 {
+	bind 10.82.0.1
+	tls internal
+	reverse_proxy 127.0.0.1:8788
+}
