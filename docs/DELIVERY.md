@@ -11,7 +11,7 @@ replaces Flutter; native iOS and desktop packages are deferred. A script is not 
 
 | Active target | Build host | Entry point | Output |
 | --- | --- | --- | --- |
-| Linux server | Linux | `scripts/build/server.sh` | Versioned binary and deployment bundle |
+| Linux server | Linux with local Docker/Compose | `scripts/build/server.sh` | Versioned bundle with both offline images, checksums, installer and uninstaller |
 | LAN web/admin | Bundled into Rust server | Server build | Original HTML/CSS/JS with no runtime CDN |
 | Android arm64 | Linux, pinned JDK/SDK/NDK/Go/Gradle | `scripts/build/android.sh` | Signed debug APK or operator-signed release, checksum and signer report |
 
@@ -70,8 +70,14 @@ VPN permission, or an overlay permission.
 Provide a repeatable `scripts/install-server.sh` with a no-write preflight/plan
 mode and distinct fresh-install/upgrade behavior. Target Debian stable and Ubuntu
 LTS versions explicitly selected at implementation time, on x86_64 and arm64.
-Use the direct Rust HTTPS binary with a nonroot systemd content service and
-constrained root peer/certificate timers; no reverse proxy or load balancer. Explain prerequisites and detect unsupported OS/architecture.
+Use the direct Rust HTTPS binary in a nonroot, read-only app container with no
+capabilities. A separate NET_ADMIN gateway denies initiated egress and forwarding;
+root systemd host supervision and peer/certificate timers manage only this
+installation. No reverse proxy or load balancer. The current bundle was built
+for x86_64; arm64 host builds need their own artifact and verification. Explain
+rootful Docker/Compose, Python and kernel WireGuard prerequisites. Never alter a
+shared daemon's networking/security configuration or run global Docker prune.
+Ship the scoped preview/remove/purge tool and inventory described in [UNINSTALL.md](UNINSTALL.md).
 
 The installer must:
 

@@ -6,7 +6,11 @@ are deferred. See [VALIDATION.md](VALIDATION.md) for checks and limits.
 
 ## Fresh home server
 
-Build on Linux or unpack the matching Linux server bundle:
+Install rootful Docker Engine and Compose 2.24+ first, following their verified
+distribution instructions. Target Debian 13 or Ubuntu 24.04 LTS with Python 3.11+
+and kernel WireGuard support. See [CONTAINERS.md](CONTAINERS.md) for prerequisites
+and the isolation policy. Build on Linux with local Docker or unpack the matching
+Linux server bundle; both offline images are included:
 
 ```sh
 bash scripts/build/server.sh
@@ -70,21 +74,29 @@ configuration. It is for fresh hosts; it is not an in-place migration from the
 older proxy-based prototype. Installation failure leaves reviewable files; do
 not blindly rerun over an incomplete installation or delete household data.
 
-The installer installs WireGuard tools, nftables and OpenSSL. It creates:
+The installer installs host WireGuard tools, OpenSSL and kmod, checks the kernel
+module, then loads the bundled app/gateway images by immutable ID. It leaves the
+shared Docker daemon configuration alone. It creates:
 
 - `/opt/field-notes`: server and constrained host helpers.
 - `/var/lib/field-notes`: app-owned encrypted database, event log and private
   desired-peer manifest; `/etc/field-notes/master.key`: server recovery key.
-- `/etc/field-notes/tls`: public CA and leaf files; root-only `private/ca.key`.
+- `/etc/field-notes/tls`: public CA, root-only `private/ca.key` and separate
+  `issued/server.crt`/`issued/server.key`; only `issued/` is mounted into the app.
 - `/etc/field-notes/network.json`: public bootstrap identity and trusted outer
-  endpoints; `/etc/wireguard/fieldnotes.conf`: host private key and peer PSKs.
-- `field-notes.service`: nonroot Rust TLS server, no NET_ADMIN.
-- `wg-quick@fieldnotes`, `field-notes-firewall`: host hub and peer isolation.
+  endpoints; root-only `gateway/fieldnotes.conf`: private hub key. Fresh installs
+  create no host `/etc/wireguard/fieldnotes.conf` or host nftables table.
+- `/etc/field-notes/deployment.json`, `compose.json`, `installation.json`: root-owned
+  deployment and removal inventory, including selected ports and image IDs.
+- `field-notes.service`: root host supervisor; starts the nonroot, read-only app
+  and separate NET_ADMIN gateway, with new outbound traffic/DNS denied.
 - `field-notes-peers.timer`: constrained root reconciliation every two seconds,
-  acknowledging only a successful apply/save. Private host state is separate in
-  `/var/lib/field-notes-peer-helper`, status in `/run/field-notes-peers`.
+  acknowledging only a successful apply through the gateway. Private host state
+  is in `/var/lib/field-notes-peer-helper`, status in `/run/field-notes-peers`.
 - `field-notes-certificates.timer`: daily offline leaf-renewal check; renews when
   fewer than 30 days remain. Rust loads a new valid certificate/key within 60s.
+- `/opt/field-notes/uninstall-server.sh`: preview by default; normal removal
+  preserves recovery data, explicit purge deletes it. [Removal guide](UNINSTALL.md).
 
 There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly
 at the LAN address and management port you chose (`https://192.168.1.10:9443`
@@ -216,8 +228,8 @@ Production screen-capture protection is not disabled. See [WALKTHROUGH.md](WALKT
 ```sh
 sudo systemctl status field-notes field-notes-peers.timer field-notes-certificates.timer
 sudo journalctl -u field-notes -u field-notes-peers --since today
-sudo wg show fieldnotes
-sudo nft list table inet fieldnotes
+sudo docker --host=unix:///var/run/docker.sock exec field-notes-gateway wg show fieldnotes
+sudo docker --host=unix:///var/run/docker.sock exec field-notes-gateway nft list table inet fieldnotes
 ```
 
 Do not publish peer manifests, QR material, host configs or unredacted support
@@ -229,30 +241,58 @@ reauthentication. Store the recovery master key separately and protect host
 WireGuard, CA and network configuration in a separate host backup. Existing
 backups are not erased by clearing active data.
 
-For restore, stop the app and peer timer, preserve a coherent backup, and restore
-into a **new** data directory using the same master key:
+For restore, stop the app and peer timer, preserve a coherent host backup, and
+restore into a **new** data directory with the same master key. Run the bundled
+image offline, with the dedicated UID/GID and only the needed mounts:
 
 ```sh
-sudo systemctl stop field-notes field-notes-peers.timer
-sudo /opt/field-notes/field-notes-server restore \
-  --data /var/lib/field-notes-restored --key-file /etc/field-notes/master.key \
-  --file /protected/path/field-notes.backup
+sudo systemctl stop field-notes-peers.timer field-notes
+sudo install -d -o fieldnotes -g fieldnotes -m 700 /var/lib/field-notes-recovery
+sudo docker --host=unix:///var/run/docker.sock run --rm --network=none \
+  --read-only --cap-drop=ALL --security-opt=no-new-privileges:true \
+  --user "$(id -u fieldnotes):$(id -g fieldnotes)" \
+  --mount type=bind,src=/var/lib/field-notes-recovery,dst=/recovery \
+  --mount type=bind,src=/etc/field-notes/master.key,dst=/keys/master.key,readonly \
+  --mount type=bind,src=/protected/path/field-notes.backup,dst=/backup,readonly \
+  field-notes-app:0.3.0 restore --data /recovery/restored --key-file /keys/master.key --file /backup
 ```
 
-Verify and set service ownership/permissions, then deliberately switch the unit's
-data path and peer-helper desired path together. Review before restarting. A
-restore changes the epoch, invalidates sessions/invitations, and marks peers for
-removal. Keep the old directory untouched until recovery is verified. Re-enroll
-phones; old offline edits are retained as conflicts, not silently uploaded into
-the restored workspace. Loss of the master key cannot be repaired by a password
-reset. Do not delete or replace unreadable phone vaults containing offline work.
+The output is `/var/lib/field-notes-recovery/restored`, which must not already
+exist. The backup file must be readable by that UID/GID. Preserve its private permissions;
+never mount an entire home or root directory. The bundled native CLI requires a
+compatible builder libc; the image includes its own runtime libraries and is the
+portable Debian/Ubuntu route.
+
+Keep the old directory untouched until recovery is verified. Switching the active
+data path is a reviewed maintenance operation: update `deployment.json`, regenerate
+`compose.json` from `container_deployment.compose`, update the peer-helper desired
+path and the installation inventory's data/deployment paths together. Preserve
+root ownership/modes. There is no automatic restore/migration wizard. A restore
+changes the epoch, invalidates sessions/invitations, and marks peers for removal.
+Re-enroll phones; old offline edits are retained as conflicts. Loss of the master
+key cannot be repaired by a password reset. Do not replace unreadable phone vaults
+containing offline work.
 
 Manual certificate renewal, preserving the CA:
 
 ```sh
-sudo python3 /opt/field-notes/tls.py renew --directory /etc/field-notes/tls \
+sudo python3 -B /opt/field-notes/tls.py renew --issued-subdirectory --directory /etc/field-notes/tls \
   --group fieldnotes --name 192.168.1.10 --name notes.home.arpa --name 10.82.0.1
 ```
 
 Use the names selected during installation. CA/server-WireGuard identity rotation
 needs reviewed re-enrollment; automatic cross-CA trust rotation is not implemented.
+
+
+## Uninstall
+
+```sh
+sudo /opt/field-notes/uninstall-server.sh --plan
+sudo /opt/field-notes/uninstall-server.sh --apply
+# To delete all managed data and keys instead, use --apply --purge and confirm.
+```
+
+Normal removal preserves root-only recovery data. Purge explicitly deletes the
+recorded data/configuration directories. Neither removes Docker, WireGuard tools,
+Bungee or shared resources. See [UNINSTALL.md](UNINSTALL.md) for a later purge,
+legacy installations, custom paths and external router/phone cleanup.

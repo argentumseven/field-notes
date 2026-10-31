@@ -11,15 +11,35 @@ active native target; iOS and native desktop packages are deferred.
 | --- | --- |
 | Kotlin shared-domain tests | 31 passed: durable outbox/drafts, ambiguous commit/restart, causal revisions, reset fences, roles, reminders, endpoint changes; strict invitation parser, lost enrollment/activation replies and restart, failed claim persistence, re-enrollment cannot erase pending work, widget opt-in and known rejected-session redaction across restart/storage failure; assignment drafts, directory caching and old-server fallback; typed workspace views and standalone note drafts across restart; ranking goldens, stable ordering and calendar/DST; upcoming agenda, cached alarm policy, offline initialization/reconnection, cheap head polling and pending-work-safe self-revocation |
 | Shared ranking contract | 19 golden cases independently checked in Kotlin and JavaScript, including priorities without dates, blocked/other-claimed/future work, waiting cap and continuing own work, own/other assignments and retaining an own active claim |
-| Rust tests | 4 passed: authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation; source-bound session renewal, expiry refusal, per-installation self-revocation and unaffected other devices |
+| Rust tests | 5 passed: container-only listener validation rejects missing Docker context, public/source/overlay/port mismatches; authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation; source-bound session renewal, expiry refusal, per-installation self-revocation and unaffected other devices |
 | Node real-process API/planning/enrollment/organization/assignment | 18 passed against both debug and optimized server: roles/CSRF, simultaneous claim winner, persistence/replay/restart, stale timestamps/revisions, normalized images, injected rollback, clear/restore, optional planning fields, calendar intervals and two-client calendar visibility/update/deletion with author enforcement; typed Inbox/List/Project/Note moves, revisions and deletion fences; minimal authenticated directory, competing assignments, recipient validation, safe handoff, completion identity and disabled-person history; LAN enrollment with mocked root acknowledgement |
 | Chromium workflow | 1 passed: actual login/project/list/Inbox task/shared note/comment/claim, task moves/assignment/recipient views, aligned sidebar baselines, priority with cleared date, calendar event, board, management, responsive layout and mobile Task view filters, no third-party page requests |
-| Linux installer/helper/TLS | 19 passed: plan/destination refusal/direct-listener contract, default/explicit/adjacent-to-Bungee forwarding ports and dynamic endpoint guidance, both-port prompts/retry/default confirmation and refusal of missing noninteractive apply choices, automatic endpoint-port propagation and explicit NAT mapping; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected |
+| Linux installer/helper/TLS/uninstall/container policy | 47 passed: plan/destination refusal/direct-listener contract, default/explicit/adjacent-to-Bungee forwarding ports and dynamic endpoint guidance, both-port prompts/retry/default confirmation and refusal of missing noninteractive apply choices, automatic endpoint-port propagation and explicit NAT mapping; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected |
 | Go transport under race detection | 3 passed: real userspace WireGuard peers and HTTPS, boundary paths/CA/stop/bounds; identical command replay after an ambiguous response through trusted alternate endpoint; pinned LAN bootstrap rejects redirects, public/escaped origins, wrong host and oversized replies |
 | Actual JVM/Android JNI adapter on Linux | 1 passed through real Go WireGuard peers → pinned HTTPS → Rust API: Unicode, authenticated people directory, claim authority, stale server identity and admin-path refusal. This uses the explicit legacy-development fixture, not production enrollment/kernel provisioning |
 | Android arm64 build | Signed sideloadable development APK built; strict lock/verification metadata, host tests and lint passed (0 errors, 21 warnings) |
 | APK inspection | Signature/signer report and SHA-256; 16 KiB ZIP/ELF native alignment; actual manifest includes widget and excludes VPN/Calendar/location/GMS/FCM requirements; no Flutter runtime |
-| Linux optimized server | Built and API-tested on x86_64; direct Rust TLS with no proxy. Fresh bundle staging prevents stale proxy files from earlier builds |
+| Linux optimized server | Built and API-tested on x86_64; direct Rust TLS with no proxy. Fresh bundle includes offline app/gateway images, checksums, installer and uninstaller |
+| Container integration | Real Docker shared namespace with production nonroot/read-only app: direct management TLS, account invitation/approval, root-owned peer acknowledgement, actual WireGuard source-bound activation, task/image writes and unavailable private admin routes; modified phone blocked from management/SSH/other peers/LAN; app-UID outbound TCP and Docker DNS hit actual nftables drops; owned containers/network removed |
+
+The 47 Python checks include 21 scoped uninstall tests (temporary real file trees,
+mocked host commands), six container policy/ownership tests and two real TLS
+checks. They cover retain/purge/later purge, retries, legacy/custom paths, changed
+units, mounts/symlinks, reused identities, key recovery, foreign namespace members,
+Bungee preservation, no global prune, fixed local Docker selection and separation
+of issued leaf files from CA signing keys. Actual privileged Debian/Ubuntu
+installation/account deletion has **not** been run.
+
+The real Docker integration uses a fixture-only userspace WireGuard/TUN image
+because this cloud kernel has no WireGuard module. Its extra MKNOD/device access
+and full Python test tooling are not in production images. It checks the actual
+production app and firewall policy, but does not establish production kernel WG,
+physical LAN source preservation, home forwarding or physical phone behavior.
+The Docker hairpin test needs a test-only source CIDR; the production installer
+retains the operator's exact LAN CIDR and rejects translated out-of-range sources.
+See [CONTAINERS.md](CONTAINERS.md) for reproduction and boundaries. Android sources,
+APK and screenshots are unchanged by this deployment update; their evidence below
+is from the preceding Android build.
 
 The lint warnings concern optional API-31 widget sizing hints, arm64-only
 ChromeOS coverage, an obsolete SDK condition, layout overdraw, icon analysis,

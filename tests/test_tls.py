@@ -6,6 +6,18 @@ def port():
  with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 
 class DirectTls(unittest.TestCase):
+ def test_container_leaf_mount_excludes_ca_signing_key_and_renews_in_place(self):
+  with tempfile.TemporaryDirectory(prefix='field-notes-container-tls-') as root:
+   certs=pathlib.Path(root)/'tls'
+   fingerprint=tls.provision(certs,['127.0.0.1'],issued_subdirectory=True)
+   self.assertEqual({p.name for p in (certs/'issued').iterdir()},{'server.key','server.crt'})
+   self.assertFalse((certs/'server.key').exists())
+   ca=(certs/'private/ca.key').read_bytes();leaf=(certs/'issued/server.crt').read_bytes()
+   self.assertEqual(tls.provision(certs,['127.0.0.1'],renew=True,if_needed=True,issued_subdirectory=True),fingerprint)
+   self.assertEqual((certs/'issued/server.crt').read_bytes(),leaf)
+   self.assertEqual(tls.provision(certs,['127.0.0.1'],renew=True,issued_subdirectory=True),fingerprint)
+   self.assertNotEqual((certs/'issued/server.crt').read_bytes(),leaf)
+   self.assertEqual((certs/'private/ca.key').read_bytes(),ca)
  def test_private_ca_direct_https_and_actual_source_acl(self):
   with tempfile.TemporaryDirectory(prefix='field-notes-tls-') as root:
    root=pathlib.Path(root);certs=root/'tls'

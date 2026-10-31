@@ -16,6 +16,59 @@ fn arg(args: &[String], key: &str, default: &str) -> String {
         .map(|w| w[1].clone())
         .unwrap_or(default.into())
 }
+/// Docker publishes the management listener from a private namespace. The
+/// wildcard is opt-in, container-only, and retains actual-source CIDR checks.
+fn validate_container_listener(
+    admin: SocketAddr,
+    device: SocketAddr,
+    origin: &str,
+    network: &store::NetworkConfig,
+    allowed: &[ipnet::IpNet],
+    in_container: bool,
+) -> Result<(), String> {
+    if !in_container || !admin.is_ipv4() || !admin.ip().is_unspecified() {
+        return Err("Container networking requires Docker and an IPv4 namespace listener".into());
+    }
+    network.validate().map_err(|error| error.1)?;
+    let uri: axum::http::Uri = network
+        .bootstrap_url
+        .parse()
+        .map_err(|_| "Invalid bootstrap URL")?;
+    if network.bootstrap_url != format!("{origin}/api/enrollment")
+        || uri.port_u16() != Some(admin.port())
+        || network.api != format!("https://{device}")
+    {
+        return Err(
+            "Container ingress, public enrollment origin and private API must agree".into(),
+        );
+    }
+    let overlay: ipnet::Ipv4Net = network
+        .overlay
+        .parse()
+        .map_err(|_| "Invalid tunnel network")?;
+    let ranges: Vec<ipnet::Ipv4Net> = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+        .into_iter()
+        .map(|value| value.parse().unwrap())
+        .collect();
+    if allowed.is_empty()
+        || allowed.iter().any(|net| match net {
+            ipnet::IpNet::V4(net) => {
+                !ranges
+                    .iter()
+                    .any(|range| range.contains(&net.network()) && range.contains(&net.broadcast()))
+                    || net.contains(&overlay.network())
+                    || overlay.contains(&net.network())
+            }
+            _ => true,
+        })
+    {
+        return Err(
+            "Container management sources must be private and separate from phone peers".into(),
+        );
+    }
+    Ok(())
+}
+
 fn private_write(path: &std::path::Path, data: &[u8]) -> Result<(), String> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -154,14 +207,25 @@ async fn run() -> Result<(), String> {
     )
     .parse()
     .map_err(|_| "Invalid device address")?;
+    let container_network = args.iter().any(|value| value == "--container-network");
+    if container_network && dev {
+        return Err("Container listeners require TLS".into());
+    }
     if dev && (!admin.ip().is_loopback() || !device.ip().is_loopback()) {
         return Err("Development HTTP is loopback-only".into());
     }
     if !dev
-        && [admin.ip(), device.ip()].iter().any(|ip| match ip {
-            std::net::IpAddr::V4(ip) => !ip.is_private() && !ip.is_loopback(),
-            std::net::IpAddr::V6(ip) => !ip.is_unique_local() && !ip.is_loopback(),
-        })
+        && [admin.ip(), device.ip()]
+            .iter()
+            .enumerate()
+            .any(|(index, ip)| match ip {
+                std::net::IpAddr::V4(ip) => {
+                    !(ip.is_private()
+                        || ip.is_loopback()
+                        || container_network && index == 0 && ip.is_unspecified())
+                }
+                std::net::IpAddr::V6(ip) => !ip.is_unique_local() && !ip.is_loopback(),
+            })
     {
         return Err("HTTPS must bind to explicit private LAN/tunnel addresses".into());
     }
@@ -191,10 +255,21 @@ async fn run() -> Result<(), String> {
     let network_file = arg(&args, "--network-config", "");
     if !network_file.is_empty() {
         let network: store::NetworkConfig =
-            serde_json::from_slice(&std::fs::read(network_file).map_err(|e| e.to_string())?)
+            serde_json::from_slice(&std::fs::read(&network_file).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         network.validate().map_err(|e| e.1)?;
+        if container_network {
+            validate_container_listener(
+                admin,
+                device,
+                &origin,
+                &network,
+                &admin_allow,
+                std::path::Path::new("/.dockerenv").is_file(),
+            )?;
+        }
         if !dev
+            && !container_network
             && (network.bootstrap_url != format!("https://{admin}/api/enrollment")
                 || network.api != format!("https://{device}"))
         {
@@ -203,6 +278,9 @@ async fn run() -> Result<(), String> {
             );
         }
         store.network = Some(network);
+    }
+    if container_network && network_file.is_empty() {
+        return Err("Container listeners require enrolled network configuration".into());
     }
     store.development = dev;
     let status = arg(&args, "--peer-status", "");
@@ -278,4 +356,61 @@ async fn run() -> Result<(), String> {
         d.await.map_err(|e| e.to_string())
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod container_listener_tests {
+    use super::*;
+    fn config() -> store::NetworkConfig {
+        use base64::Engine;
+        store::NetworkConfig {
+            bootstrap_url: "https://192.168.1.10:9443/api/enrollment".into(),
+            endpoint: "home.example:49272".into(),
+            lan_endpoint: None,
+            server_key: base64::engine::general_purpose::STANDARD.encode([3; 32]),
+            api: "https://10.82.0.1:8443".into(),
+            ca_pem: include_str!("../../../tests/fixtures/enrollment-ca.crt").into(),
+            overlay: "10.82.0.0/24".into(),
+        }
+    }
+    #[test]
+    fn container_listener_requires_matching_origin_tls_network_and_private_sources() {
+        let a = "0.0.0.0:9443".parse().unwrap();
+        let d = "10.82.0.1:8443".parse().unwrap();
+        let origin = "https://192.168.1.10:9443";
+        let sources = vec!["192.168.1.0/24".parse().unwrap()];
+        assert!(validate_container_listener(a, d, origin, &config(), &sources, true).is_ok());
+        assert!(validate_container_listener(a, d, origin, &config(), &sources, false).is_err());
+        assert!(
+            validate_container_listener(a, d, "https://other:9443", &config(), &sources, true)
+                .is_err()
+        );
+        assert!(validate_container_listener(
+            a,
+            d,
+            origin,
+            &config(),
+            &["0.0.0.0/0".parse().unwrap()],
+            true
+        )
+        .is_err());
+        assert!(validate_container_listener(
+            a,
+            d,
+            origin,
+            &config(),
+            &["10.0.0.0/8".parse().unwrap()],
+            true
+        )
+        .is_err());
+        assert!(validate_container_listener(
+            a,
+            d,
+            origin,
+            &config(),
+            &["10.0.0.0/7".parse().unwrap()],
+            true
+        )
+        .is_err());
+    }
 }

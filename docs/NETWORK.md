@@ -6,7 +6,7 @@ public web endpoint or relay is installed. Encryption is server-readable.
 ```mermaid
 flowchart LR
   A[Android app / private WG stack] -->|encrypted UDP| R[Home router / one UDP forward]
-  R --> W[Linux fieldnotes WireGuard hub]
+  R --> W[Container WireGuard gateway]
   W -->|only overlay .1 TCP 8443| D[Rust device HTTPS API]
   L[Trusted home LAN browser] -->|chosen LAN HTTPS port / direct TLS| M[Rust management HTTPS]
 ```
@@ -18,6 +18,11 @@ protection, system DNS changes or default route. Its ordinary outer UDP sockets
 remain subject to the existing VPN, lockdown, GrapheneOS network permission and
 network filters. Multiple app-contained tunnels do not consume the system VPN
 slot; real coexistence still needs physical testing.
+
+The app and gateway share a private Docker network namespace. Namespace-local
+nftables enforces ingress and denies new outbound connections, including DNS.
+Only the gateway has NET_ADMIN; the app has no capabilities or Docker socket.
+Established replies remain allowed. See [CONTAINERS.md](CONTAINERS.md).
 
 ## Enforcement
 

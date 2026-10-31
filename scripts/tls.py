@@ -9,7 +9,7 @@ def checked(args):
     result = subprocess.run(['openssl', *args], check=True, capture_output=True)
     return result.stdout
 
-def provision(root, names, group=None, renew=False, if_needed=False):
+def provision(root, names, group=None, renew=False, if_needed=False, issued_subdirectory=False):
     root=pathlib.Path(root)
     if not root.is_absolute() or root.is_symlink():raise ValueError('Use an absolute certificate directory without symlinks')
     if not names:raise ValueError('At least one certificate name/IP is required')
@@ -23,11 +23,13 @@ def provision(root, names, group=None, renew=False, if_needed=False):
     if not renew and root.exists():raise ValueError('Certificate directory exists; initialization refused')
     if renew and not (root/'private/ca.key').is_file():raise ValueError('Existing CA key required for renewal')
     root.mkdir(mode=0o750,parents=True,exist_ok=renew);os.chown(root,os.getuid(),gid)
+    issued=root/'issued' if issued_subdirectory else root
+    issued.mkdir(mode=0o750,exist_ok=True);os.chown(issued,os.getuid(),gid)
     private=root/'private';private.mkdir(mode=0o700,exist_ok=renew)
     with open(private/'lock','a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
-        if renew and if_needed and (root/'server.crt').is_file():
-            check=subprocess.run(['openssl','x509','-checkend',str(30*86400),'-noout','-in',str(root/'server.crt')],capture_output=True)
+        if renew and if_needed and (issued/'server.crt').is_file():
+            check=subprocess.run(['openssl','x509','-checkend',str(30*86400),'-noout','-in',str(issued/'server.crt')],capture_output=True)
             if check.returncode==0:return hashlib.sha256(checked(['x509','-in',str(root/'ca.crt'),'-outform','DER'])).hexdigest()
         with tempfile.TemporaryDirectory(prefix='tls-',dir=private) as work:
             work=pathlib.Path(work)
@@ -41,17 +43,17 @@ def provision(root, names, group=None, renew=False, if_needed=False):
             # crash occurs between replacements it keeps the last valid pair.
             for name in ('server.key','server.crt'):
                 p=work/name;os.chown(p,os.getuid(),gid);p.chmod(0o640 if name.endswith('key') else 0o644)
-                os.replace(p,root/name)
-            directory=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+                os.replace(p,issued/name)
+            directory=os.open(issued,os.O_RDONLY|os.O_DIRECTORY)
             try:os.fsync(directory)
             finally:os.close(directory)
     der=checked(['x509','-in',str(root/'ca.crt'),'-outform','DER'])
     return hashlib.sha256(der).hexdigest()
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','renew']);p.add_argument('--directory',required=True);p.add_argument('--name',action='append',required=True);p.add_argument('--group');p.add_argument('--if-needed',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','renew']);p.add_argument('--directory',required=True);p.add_argument('--name',action='append',required=True);p.add_argument('--group');p.add_argument('--if-needed',action='store_true');p.add_argument('--issued-subdirectory',action='store_true');a=p.parse_args()
     os.umask(0o077)
-    print('Public CA SHA-256:',provision(a.directory,a.name,a.group,a.action=='renew',a.if_needed))
+    print('Public CA SHA-256:',provision(a.directory,a.name,a.group,a.action=='renew',a.if_needed,a.issued_subdirectory))
     print('Trust only ca.crt on administrator devices; retain the private CA key separately for renewal/recovery.')
 
 if __name__=='__main__':

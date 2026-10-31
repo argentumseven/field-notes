@@ -9,6 +9,11 @@ Distinguish compiled/tested behavior from physical GrapheneOS verification.
 ## Persistent product constraints
 
 - Server: Linux only, with Debian/Ubuntu the installation target.
+- Fresh installs use offline Docker app/gateway images. Keep the app nonroot,
+  read-only, without capabilities, Docker socket or CA/hub private keys. Only the
+  gateway has NET_ADMIN. Its namespace denies initiated outbound traffic and DNS;
+  do not add resolver/proxy exceptions or host networking. Host helpers control
+  only inventoried resources. Uninstall must preserve shared services and packages.
 - Serve HTTPS directly in Rust. No Caddy, reverse proxy or load balancer. Keep
   LAN administration separate from the WireGuard-only notes endpoint and check
   actual connection addresses; forwarded identity headers are not trusted.

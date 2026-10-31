@@ -53,8 +53,16 @@ def atomic_json(path,value,mode=0o600,gid=None):
             finally:os.close(fd)
         finally:temporary.unlink(missing_ok=True)
 
-def reconcile(config,runner=subprocess.run):
-    if set(config)!={'desired','status','state','interface','overlay','uid','gid'}:raise ReconcileError('Invalid host configuration')
+def reconcile(config,runner=None):
+    fields={'desired','status','state','interface','overlay','uid','gid'}
+    if set(config) not in (fields,fields|{'deployment'}):raise ReconcileError('Invalid host configuration')
+    if 'deployment' in config:
+        from container_deployment import Engine,validate
+        settings=validate(json.loads(read_private(config['deployment'],0,32768)))
+        if settings['project']!='field-notes' or config['desired']!=settings['data']+'/peers.json' or config['status']!=settings['runtime']+'/status.json' or config['uid']!=settings['uid'] or config['gid']!=settings['gid'] or config['overlay']!=settings['overlay']:
+            raise ReconcileError('Peer helper and container deployment disagree')
+        if runner is None:runner=Engine().peer_runner(settings)
+    if runner is None:runner=subprocess.run
     if config['interface']!='fieldnotes':raise ReconcileError('Only the dedicated fieldnotes interface is supported')
     network=ipaddress.IPv4Network(config['overlay'])
     if network.prefixlen!=24 or not any(network.subnet_of(ipaddress.IPv4Network(n)) for n in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')):raise ReconcileError('A private /24 is required')

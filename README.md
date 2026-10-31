@@ -9,7 +9,7 @@ proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
-[Installation](docs/RUNNING.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
+[Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Compact Focus view with ranked and undated tasks](docs/screenshots/web/02-focus.png)
@@ -79,10 +79,17 @@ See the [router forwarding example](docs/RUNNING.md#fresh-home-server).
 The installer prompts for **management HTTPS and WireGuard UDP ports**.
 `--web-port` and `--udp-port` supply explicit choices instead.
 LAN management uses direct TLS on your chosen port (suggested 9443), and the isolated
-WireGuard notes endpoint is 8443. The installer includes local certificate
-issuance/renewal, a nonroot app service, peer isolation and constrained root peer
-provisioning. No manual phone peer JSON is needed. See [RUNNING.md](docs/RUNNING.md)
+WireGuard notes endpoint is 8443. The bundle includes offline Docker images:
+a nonroot, read-only app and a separate WireGuard gateway. New outbound traffic,
+including DNS, is blocked; replies to allowed incoming connections work. Local
+certificate renewal and constrained host peer provisioning need no cloud service.
+Docker Engine/Compose and kernel WireGuard support are prerequisites. No manual
+phone peer JSON is needed. See [container boundaries](docs/CONTAINERS.md) and [RUNNING.md](docs/RUNNING.md)
 for trust, enrollment, exact artifact paths and recovery.
+
+The installed `/opt/field-notes/uninstall-server.sh` previews removal by default.
+`--apply` preserves data and recovery keys; `--apply --purge` explicitly deletes
+them. It leaves Bungee, Docker and shared packages alone. [Removal guide](docs/UNINSTALL.md).
 
 ## Organization and evidence
 

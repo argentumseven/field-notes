@@ -39,6 +39,6 @@ class Plan(unittest.TestCase):
  def test_existing_directory_not_overwritten(self):self.assertNotEqual(self.run_plan('--prefix',str(ROOT)).returncode,0)
  def test_paths_must_be_distinct(self):self.assertNotEqual(self.run_plan('--prefix','/tmp/field-notes-test','--data','/tmp/field-notes-test/child').returncode,0)
  def test_direct_tls_listener_contract_has_no_proxy_service(self):
-  unit=(ROOT/'deploy/field-notes.service').read_text();self.assertIn('--admin-bind 192.168.1.10:9443',unit);self.assertIn('--device-bind 10.82.0.1:8443',unit);self.assertIn('--tls-cert',unit)
-  plan=json.loads(self.run_plan().stdout);self.assertFalse(any('caddy' in s or s=='field-notes-tls' for s in plan['services']));self.assertFalse((ROOT/'deploy/Caddyfile.example').exists())
+  unit=(ROOT/'deploy/field-notes.service').read_text();self.assertIn('container-runtime.py run',unit);self.assertIn('Requires=docker.service',unit)
+  plan=json.loads(self.run_plan().stdout);self.assertFalse(any('caddy' in s or s=='field-notes-tls' for s in plan['services']));self.assertFalse((ROOT/'deploy/Caddyfile.example').exists());self.assertEqual(plan['runtime'],'containers')
 if __name__=='__main__':unittest.main()

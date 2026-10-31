@@ -2,7 +2,10 @@
 """Fresh-install Linux helper. --plan performs validation and writes nothing.
 It never replaces an existing installation. HTTPS is served directly by Rust.
 """
-import argparse, getpass, ipaddress, json, os, pathlib, pwd, re, shutil, socket, subprocess, sys, time, urllib.request
+import argparse, fcntl, getpass, grp, hashlib, ipaddress, json, os, pathlib, pwd, re, shutil, socket, subprocess, sys, tempfile, time, urllib.request
+
+sys.dont_write_bytecode = True
+from server_installation import Host, inventory, digest, UNITS, uninstall_wrapper
 
 DEFAULT_WIREGUARD_PORT = 49272  # One above Bungee's documented example, 49271.
 
@@ -84,22 +87,28 @@ def main():
         if d.exists():raise ValueError(f'Existing destination refused: {d}. Back up and use a reviewed upgrade procedure.')
         for other in destinations:
             if other!=d and other in d.parents:raise ValueError('Installation directories must not overlap')
+    ownership=inventory(*destinations)
+    host=Host()
     for ip in ('127.0.0.1',str(lan)):
+
         if ipaddress.ip_address(ip) in overlay:raise ValueError('Overlay conflicts with host addresses')
     root=pathlib.Path(__file__).resolve().parents[1]
     binary=pathlib.Path(a.binary) if a.binary else (root/'field-notes-server' if (root/'field-notes-server').exists() else root/'target/release/field-notes-server')
-    plan={'port_selection':'Chosen' if ports_chosen else 'Default preview; choose both ports interactively or with explicit flags before --apply','apply_port_options':f'--web-port {a.web_port} --udp-port {a.udp_port}','binary':str(binary),'lan_admin':f'https://{lan}:{a.web_port} (source {prefix})','device_api':f'https://{overlay.network_address+1}:8443','wireguard_endpoint':endpoint,'router_forward':f'UDP {external_port} to {lan}:{a.udp_port}','directories':[str(p) for p in destinations],'services':['field-notes','wg-quick@fieldnotes','field-notes-firewall','field-notes-peers.timer','field-notes-certificates.timer'],'no_public_web':True,'remote_access':bool(a.endpoint),'endpoint_note':f'Provide --endpoint your-home-DDNS:{a.udp_port} for access away from home; the LAN UDP alternative is enrolled automatically.'}
+    plan={'port_selection':'Chosen' if ports_chosen else 'Default preview; choose both ports interactively or with explicit flags before --apply','apply_port_options':f'--web-port {a.web_port} --udp-port {a.udp_port}','runtime':'containers','requires':['Docker Engine (rootful)','Docker Compose 2.24+','WireGuard kernel support'],'binary':str(binary),'lan_admin':f'https://{lan}:{a.web_port} (source {prefix})','device_api':f'https://{overlay.network_address+1}:8443','wireguard_endpoint':endpoint,'router_forward':f'UDP {external_port} to {lan}:{a.udp_port}','directories':[str(p) for p in destinations],'services':['field-notes','field-notes-peers.timer','field-notes-certificates.timer'],'no_public_web':True,'remote_access':bool(a.endpoint),'endpoint_note':f'Provide --endpoint your-home-DDNS:{a.udp_port} for access away from home; the LAN UDP alternative is enrolled automatically.'}
     if not a.apply:print(json.dumps(plan,indent=2));return
     if os.geteuid()!=0:raise ValueError('--apply requires root; review --plan first')
-    if not binary.is_file():raise ValueError('Build the release binary with scripts/build/server.sh first')
-    checked([str(binary),'help'],stdout=subprocess.DEVNULL)
+    for destination in destinations:host.check_parents(str(destination))
+    if not binary.is_file():raise ValueError('Build or unpack the complete server bundle first')
     for name in ('fieldnotes',):
         try:pwd.getpwnam(name)
         except KeyError:pass
         else:raise ValueError(f'Existing service account {name}; fresh installation refused')
+    try:grp.getgrnam('fieldnotes')
+    except KeyError:pass
+    else:raise ValueError('Existing fieldnotes group; fresh installation refused')
     os_release=pathlib.Path('/etc/os-release').read_text()
     if not re.search(r'^ID=(?:debian|ubuntu)$',os_release,re.M):raise ValueError('This installer supports Debian/Ubuntu only')
-    for path in [pathlib.Path('/etc/wireguard/fieldnotes.conf'),*[pathlib.Path('/etc/systemd/system')/name for name in ['field-notes.service','field-notes-peers.service','field-notes-peers.timer','field-notes-firewall.service','field-notes-certificates.service','field-notes-certificates.timer']]]:
+    for path in [pathlib.Path('/etc/wireguard/fieldnotes.conf'),*[pathlib.Path('/etc/systemd/system')/name for name in UNITS]]:
         if path.exists():raise ValueError(f'Existing configuration refused: {path}')
     for port,kind in [(a.web_port,socket.SOCK_STREAM),(a.udp_port,socket.SOCK_DGRAM)]:
         with socket.socket(socket.AF_INET,kind) as sock:sock.bind((str(lan),port))
@@ -108,74 +117,101 @@ def main():
     if password!=getpass.getpass('Confirm password: '):raise ValueError('Passwords do not match')
     name=input('Owner user name [owner]: ').strip() or 'owner'
     if not re.fullmatch(r'[A-Za-z0-9._ -]{2,64}',name):raise ValueError('Use an owner name with 2–64 letters, numbers, spaces, dots, underscores or hyphens')
-    checked(['apt-get','update']);checked(['apt-get','install','-y','wireguard-tools','nftables','openssl'])
+    from container_deployment import Engine,compose,validate as validate_deployment
+    engine=Engine()
+    info=engine.read(['info','--format','{{json .}}'])
+    if any('rootless' in value or 'userns' in value for value in info.get('SecurityOptions',[])):
+        raise ValueError('Use a rootful Docker engine without remapped bind-volume UIDs on this VM; existing daemon policy is not changed')
+    engine.call(['compose','version'])
+    version=json.loads((root/'release.json').read_text())['version']
+    image_index=root/'images.json'
+    image_archive=root/'images.tar.gz'
+    if not image_index.exists():
+        image_index=root/'dist/containers/images.json'
+        image_archive=root/f'dist/containers/field-notes-{version}-linux-{os.uname().machine}-images.tar.gz'
+    if not image_index.is_file() or not image_archive.is_file():
+        raise ValueError('Build the current server/container bundle first; both offline runtime images are required')
+    images=json.loads(image_index.read_text())
+    if set(images)!={'app','gateway'} or any(images[role].get('tag')!=f'field-notes-{role}:{version}' or not re.fullmatch(r'sha256:[a-f0-9]{64}',images[role].get('id','')) for role in images):
+        raise ValueError('Invalid offline image manifest')
+    expected=image_archive.with_suffix(image_archive.suffix+'.sha256').read_text().split()[0]
+    with image_archive.open('rb') as archive:
+        if hashlib.file_digest(archive,'sha256').hexdigest()!=expected:raise ValueError('Offline container archive checksum does not match')
+    # A selected namespace must be free; never adopt or remove another project.
+    for kind,name in [('container','field-notes-app'),('container','field-notes-gateway'),('network','field-notes')]:
+        docker_args=[kind,'ls']+(['--all'] if kind=='container' else [])+['--filter','name=^'+('/' if kind=='container' else '')+name+'$','--format','{{.ID}}']
+        if engine.call(docker_args).stdout.strip():raise ValueError('Existing container resource refused: '+name)
+    checked(['apt-get','update']);checked(['apt-get','install','-y','wireguard-tools','openssl','kmod'])
+    checked(['modprobe','wireguard'])
     install,data,config=destinations
-    for p in destinations:p.mkdir(mode=0o700,parents=True)
-    checked(['useradd','--system','--home-dir',str(data),'--shell','/usr/sbin/nologin','fieldnotes'])
+    config.mkdir(mode=0o700,parents=True)
+    lock=os.open(config/'lifecycle.lock',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    host.write_record(ownership)
+    install.mkdir(mode=0o700,parents=True);data.mkdir(mode=0o700,parents=True)
+    checked(['useradd','--system','--user-group','--home-dir',str(data),'--shell','/usr/sbin/nologin','fieldnotes'])
     user=pwd.getpwnam('fieldnotes')
-    os.chown(data,user.pw_uid,user.pw_gid)
+    settings=validate_deployment(dict(version=1,installation=ownership['id'],project='field-notes',
+        prefix=str(install),data=str(data),config=str(config),runtime='/run/field-notes-peers',
+        uid=user.pw_uid,gid=user.pw_gid,lan_ip=str(lan),lan_prefix=str(prefix),overlay=str(overlay),
+        web_port=a.web_port,udp_port=a.udp_port,images={role:images[role]['id'] for role in images}))
+    ownership.update(uid=user.pw_uid,gid=user.pw_gid,runtime='containers',docker={'settings':settings,'tags':{role:images[role]['tag'] for role in images}})
+    host.write_record(ownership)
+    engine.call(['load','--input',str(image_archive)],timeout=180)
+    engine.verify_images(settings)
     install.chmod(0o755);os.chown(config,0,user.pw_gid);config.chmod(0o750)
+    # A private, empty CLI configuration avoids reliance on /root (hidden by
+    # systemd ProtectHome) or another service's Docker registry/proxy settings.
+    (config/'docker').mkdir(mode=0o700)
     shutil.copy2(binary,install/'field-notes-server');(install/'field-notes-server').chmod(0o755)
-    checked([str(install/'field-notes-server'),'init','--data',str(data),'--key-file',str(config/'master.key'),'--name',name],input=password.encode())
-    for path in data.iterdir():os.chown(path,user.pw_uid,user.pw_gid);path.chmod(0o600)
+    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py'):
+        shutil.copy2(root/'scripts'/helper,install/helper);(install/helper).chmod(0o644 if '_' in helper else 0o755)
+    (install/'uninstall-server.sh').write_text(uninstall_wrapper(config));(install/'uninstall-server.sh').chmod(0o755)
+    # Execute initialization with the image's own libc, so the Debian/Ubuntu
+    # host does not need to match the builder's dynamic-linker version.
+    os.chown(data,user.pw_uid,user.pw_gid)
+    with tempfile.TemporaryDirectory(prefix='.initialize-',dir=config) as key_directory:
+        os.chown(key_directory,user.pw_uid,user.pw_gid)
+        engine.call(['run','--interactive','--rm','--network=none','--read-only','--cap-drop=ALL',
+            '--security-opt=no-new-privileges:true','--user',f'{user.pw_uid}:{user.pw_gid}',
+            '--mount',f'type=bind,source={data},target=/state',
+            '--mount',f'type=bind,source={key_directory},target=/keys',settings['images']['app'],
+            'init','--data','/state','--key-file','/keys/master.key','--name',name],input=password)
+        os.replace(pathlib.Path(key_directory)/'master.key',config/'master.key')
+    # Directories need traversal; attachments must remain writable by the app.
+    for folder,dirs,files in os.walk(data):
+        os.chown(folder,user.pw_uid,user.pw_gid);os.chmod(folder,0o700)
+        for filename in files:
+            path=pathlib.Path(folder)/filename;os.chown(path,user.pw_uid,user.pw_gid);path.chmod(0o600)
     os.chown(config/'master.key',0,user.pw_gid);(config/'master.key').chmod(0o640)
-    shutil.copy2(root/'scripts/tls.py',install/'tls.py');(install/'tls.py').chmod(0o755)
+    gateway=config/'gateway';gateway.mkdir(mode=0o700)
     private=checked(['wg','genkey'],capture_output=True,text=True).stdout.strip()
-    wgfile=pathlib.Path('/etc/wireguard/fieldnotes.conf')
-    if wgfile.exists():raise ValueError('Existing WireGuard interface configuration; refusing replacement')
-    wgfile.parent.mkdir(mode=0o700,exist_ok=True)
-    fd=os.open(wgfile,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    with os.fdopen(fd,'w') as f:f.write(f'[Interface]\nAddress = {overlay.network_address+1}/24\nListenPort = {a.udp_port}\nPrivateKey = {private}\n')
+    server_public=checked(['wg','pubkey'],input=private.encode(),capture_output=True).stdout.decode().strip()
+    ownership['wireguard_public_key']=server_public;host.write_record(ownership)
+    fd=os.open(gateway/'fieldnotes.conf',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'w') as file:file.write(f'[Interface]\nAddress = {overlay.network_address+1}/24\nListenPort = {a.udp_port}\nPrivateKey = {private}\nMTU = 1280\n')
     del private
-    nft=f'''table inet fieldnotes {{
- chain input {{
-  type filter hook input priority -10; policy accept;
-  iifname "fieldnotes" ip daddr {overlay.network_address+1} tcp dport 8443 accept
-  iifname "fieldnotes" drop
-  ip daddr {lan} tcp dport {a.web_port} ip saddr != {prefix} drop
- }}
- chain forward {{ type filter hook forward priority -10; policy accept; iifname "fieldnotes" drop; oifname "fieldnotes" drop; }}
-}}
-'''
-    (config/'firewall.nft').write_text(nft)
-    firewall='''#!/usr/bin/python3
-import subprocess,pathlib
-exists=subprocess.run(['/usr/sbin/nft','list','table','inet','fieldnotes'],capture_output=True).returncode==0
-rules=('delete table inet fieldnotes\\n' if exists else '')+pathlib.Path(CONFIG).read_text()
-subprocess.run(['/usr/sbin/nft','-f','-'],input=rules,text=True,check=True)
-'''.replace('CONFIG',repr(str(config/'firewall.nft')))
-    (install/'firewall.py').write_text(firewall);(install/'firewall.py').chmod(0o755)
-    shutil.copy2(root/'scripts/tls.py',install/'tls.py')
-    checked(['python3',str(install/'tls.py'),'init','--directory',str(config/'tls'),'--group','fieldnotes','--name',str(lan),'--name',a.hostname,'--name',str(overlay.network_address+1)])
-    server_public=checked(['wg','pubkey'],input=wgfile.read_text().split('PrivateKey = ',1)[1].splitlines()[0].encode(),capture_output=True).stdout.decode().strip()
+    (gateway/'listeners.json').write_text(json.dumps({'overlay':str(overlay),'lan_prefix':str(prefix),'web_port':a.web_port,'udp_port':a.udp_port}));(gateway/'listeners.json').chmod(0o600)
+    checked(['python3',str(install/'tls.py'),'init','--issued-subdirectory','--directory',str(config/'tls'),'--group','fieldnotes','--name',str(lan),'--name',a.hostname,'--name',str(overlay.network_address+1)])
     public_config={'bootstrap_url':f'https://{lan}:{a.web_port}/api/enrollment','endpoint':endpoint,'lan_endpoint':f'{lan}:{a.udp_port}','server_key':server_public,'api':f'https://{overlay.network_address+1}:8443','ca_pem':(config/'tls/ca.crt').read_text(),'overlay':str(overlay)}
     (config/'network.json').write_text(json.dumps(public_config));os.chown(config/'network.json',0,user.pw_gid);(config/'network.json').chmod(0o640)
+    (config/'deployment.json').write_text(json.dumps(settings));(config/'deployment.json').chmod(0o600)
+    (config/'compose.json').write_text(json.dumps(compose(settings),indent=2));(config/'compose.json').chmod(0o600)
     helper_state=pathlib.Path('/var/lib/field-notes-peer-helper');helper_state.mkdir(mode=0o700)
-    helper_config={'desired':str(data/'peers.json'),'status':'/run/field-notes-peers/status.json','state':str(helper_state/'state.json'),'interface':'fieldnotes','overlay':str(overlay),'uid':user.pw_uid,'gid':user.pw_gid}
+    helper_config={'desired':str(data/'peers.json'),'status':'/run/field-notes-peers/status.json','state':str(helper_state/'state.json'),'interface':'fieldnotes','overlay':str(overlay),'uid':user.pw_uid,'gid':user.pw_gid,'deployment':str(config/'deployment.json')}
     (config/'peer-helper.json').write_text(json.dumps(helper_config));(config/'peer-helper.json').chmod(0o600)
-    shutil.copy2(root/'scripts/peer-agent.py',install/'peer-agent.py')
-    app_unit=(root/'deploy/field-notes.service').read_text().replace('/opt/field-notes',str(install)).replace('/var/lib/field-notes',str(data)).replace('/etc/field-notes',str(config)).replace('192.168.1.10',str(lan)).replace('192.168.1.0/24',str(prefix)).replace('10.82.0.1',str(overlay.network_address+1)).replace(':9443',f':{a.web_port}')
-    systemd=pathlib.Path('/etc/systemd/system')
-    units={'field-notes.service':app_unit,'field-notes-firewall.service':f'''[Unit]
-Description=Field Notes peer isolation
-Before=wg-quick@fieldnotes.service field-notes.service
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart={install}/firewall.py
-[Install]
-WantedBy=multi-user.target
-''','field-notes-peers.service':f'''[Unit]
-Description=Apply validated Field Notes peer enrollment
-StartLimitIntervalSec=0
-After=wg-quick@fieldnotes.service
-Requires=wg-quick@fieldnotes.service
+    app_unit=(root/'deploy/field-notes.service').read_text().replace('/opt/field-notes',str(install)).replace('/etc/field-notes',str(config))
+    units={'field-notes.service':app_unit,'field-notes-peers.service':f"""[Unit]
+Description=Apply validated Field Notes container peers
+After=field-notes.service
+Requires=field-notes.service
 [Service]
 Type=oneshot
 TimeoutStartSec=30
 User=root
 Group=fieldnotes
-ExecStart=/usr/bin/python3 {install}/peer-agent.py --config {config}/peer-helper.json
+Environment=DOCKER_CONFIG={config}/docker
+ExecStart=/usr/bin/python3 -B {install}/peer-agent.py --config {config}/peer-helper.json
 RuntimeDirectory=field-notes-peers
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
@@ -184,25 +220,24 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
-ReadWritePaths=/etc/wireguard /run/field-notes-peers {helper_state}
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
+ReadWritePaths=/run/field-notes-peers {helper_state}
 LimitCORE=0
-''','field-notes-peers.timer':'''[Unit]
-Description=Reconcile Field Notes peers
+""",'field-notes-peers.timer':"""[Unit]
+Description=Reconcile Field Notes container peers
 [Timer]
 OnBootSec=3
 OnUnitActiveSec=2
 AccuracySec=1
 [Install]
 WantedBy=timers.target
-'''}
-    units['field-notes-certificates.service']=f"""[Unit]
-Description=Renew the local Field Notes TLS certificate when needed
+""",'field-notes-certificates.service':f"""[Unit]
+Description=Renew the local Field Notes TLS certificate
 [Service]
 Type=oneshot
 User=root
 Group=fieldnotes
-ExecStart=/usr/bin/python3 {install}/tls.py renew --if-needed --directory {config}/tls --group fieldnotes --name {lan} --name {a.hostname} --name {overlay.network_address+1}
+ExecStart=/usr/bin/python3 -B {install}/tls.py renew --if-needed --issued-subdirectory --directory {config}/tls --group fieldnotes --name {lan} --name {a.hostname} --name {overlay.network_address+1}
 UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=strict
@@ -212,8 +247,7 @@ PrivateNetwork=yes
 CapabilityBoundingSet=
 ReadWritePaths={config}/tls
 LimitCORE=0
-"""
-    units['field-notes-certificates.timer']="""[Unit]
+""",'field-notes-certificates.timer':"""[Unit]
 Description=Check the local Field Notes certificate daily
 [Timer]
 OnBootSec=10min
@@ -222,13 +256,14 @@ RandomizedDelaySec=1h
 Persistent=yes
 [Install]
 WantedBy=timers.target
-"""
+"""}
+    systemd=pathlib.Path('/etc/systemd/system')
     for filename,contents in units.items():
-        target=systemd/filename
-        if target.exists():raise ValueError(f'Existing unit refused: {target}')
-        target.write_text(contents)
+        ownership['unit_hashes'][filename]=digest(contents.encode());host.write_record(ownership)
+        fd=os.open(systemd/filename,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+        with os.fdopen(fd,'w') as unit_file:unit_file.write(contents)
     checked(['systemd-analyze','verify',*[str(systemd/filename) for filename in units]])
-    checked(['systemctl','daemon-reload']);checked(['systemctl','enable','--now','field-notes-firewall','wg-quick@fieldnotes','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
+    checked(['systemctl','daemon-reload']);checked(['systemctl','enable','--now','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
     checked(['systemctl','is-active','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
     import ssl,http.cookiejar
     context=ssl.create_default_context(cafile=str(config/'tls/ca.crt'));context.minimum_version=ssl.TLSVersion.TLSv1_3
@@ -247,6 +282,8 @@ WantedBy=timers.target
         except (OSError,ValueError,KeyError) as e:failure=e;time.sleep(.2)
     del password
     if failure is not None:raise ValueError('Services started but authenticated readiness failed; inspect service logs before using the installation')
+    ownership['phase']='installed';host.write_record(ownership)
+    print('Uninstall preview:',str(install/'uninstall-server.sh'),'--plan')
     print(json.dumps(plan,indent=2));print('Configure the one UDP forward. Verify and trust the public CA on administrator browsers; phones pin it through enrollment.')
     print('Public CA:',config/'tls/ca.crt')
     print('Open the management URL, create household users, and use Devices → Enroll device. No Caddy, proxy or load balancer is installed.')

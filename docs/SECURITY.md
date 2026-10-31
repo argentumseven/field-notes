@@ -41,9 +41,23 @@ reviews and confirms that source before sending its public key/claim.
 The root helper cannot accept arbitrary commands/routes/interfaces. The content
 service has no NET_ADMIN and cannot read the private CA key. The helper validates
 bounded canonical keys, unique /32 assignments, owner/mode/symlink constraints,
-then acknowledges only after apply/save succeeds. Modified clients are confined
-by host nftables; client AllowedIPs alone are not the boundary. Actual source
+then acknowledges only after applying the desired peers succeeds. Native legacy
+installs also save the interface; container peers are reapplied from the durable
+manifest after gateway recreation. Modified clients are confined
+by namespace-local nftables; client AllowedIPs alone are not the boundary. Actual source
 addresses bind phone sessions. Forwarded headers never grant identity.
+
+The default container app runs with no capabilities, a read-only root filesystem,
+bounded memory/CPU/processes and only its data directory writable. The gateway
+has NET_ADMIN in their private network namespace. It blocks initiated outbound
+TCP/UDP and Docker's DNS resolver, and permits replies to allowed inbound traffic.
+No host network, Docker socket, CA signing key or hub private key enters the app.
+The host supervisor and root peer helper can access Docker and are trusted host
+administration code, outside the application container. Containers share the
+host kernel and do not protect against a host/root compromise. They cannot
+prevent a compromised app returning data on an already authorized connection.
+See [CONTAINERS.md](CONTAINERS.md) for the exact policy and [UNINSTALL.md](UNINSTALL.md)
+for removal versus purge; neither promises forensic disk erasure.
 
 Revocation denies application access immediately and shows peer removal pending
 until acknowledged. Addresses cannot be reused before removal acknowledgement.
@@ -94,7 +108,7 @@ permission requested only for scanning; frames are not saved or uploaded.
 ## Remaining gates
 
 Physical GrapheneOS/VPN/lockdown/roaming, actual Debian/Ubuntu root installation,
-firewall negative-access tests, hardware-backed Keystore behavior, camera optics,
+physical home firewall/source-preservation checks, hardware-backed Keystore behavior, camera optics,
 launcher lifecycle, battery/Doze timing and independent review remain deployment
 gates. No reliable instant background push is claimed. Per-project ACLs, passkeys,
 trusted-device key transfer and automatic CA rotation remain future work.

@@ -1,0 +1,28 @@
+[Unit]
+Description=Field Notes private household workspace
+After=network-online.target wg-quick@fieldnotes.service field-notes-firewall.service
+Requires=wg-quick@fieldnotes.service field-notes-firewall.service
+[Service]
+Type=simple
+User=fieldnotes
+Group=fieldnotes
+ExecStart=/opt/field-notes/field-notes-server serve --data /var/lib/field-notes --key-file /etc/field-notes/master.key --origin https://192.168.1.10:9443 --admin-bind 192.168.1.10:9443 --admin-allow 192.168.1.0/24 --device-bind 10.82.0.1:8443 --tls-cert /etc/field-notes/tls/server.crt --tls-key /etc/field-notes/tls/server.key --network-config /etc/field-notes/network.json --peer-status /run/field-notes-peers/status.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/field-notes
+LimitCORE=0
+[Install]
+WantedBy=multi-user.target

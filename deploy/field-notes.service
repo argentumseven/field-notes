@@ -1,28 +1,30 @@
 [Unit]
-Description=Field Notes private household workspace
-After=network-online.target wg-quick@fieldnotes.service field-notes-firewall.service
-Requires=wg-quick@fieldnotes.service field-notes-firewall.service
+Description=Field Notes private household workspace (containers)
+After=network-online.target docker.service
+Requires=docker.service
 [Service]
 Type=simple
-User=fieldnotes
-Group=fieldnotes
-ExecStart=/opt/field-notes/field-notes-server serve --data /var/lib/field-notes --key-file /etc/field-notes/master.key --origin https://192.168.1.10:9443 --admin-bind 192.168.1.10:9443 --admin-allow 192.168.1.0/24 --device-bind 10.82.0.1:8443 --tls-cert /etc/field-notes/tls/server.crt --tls-key /etc/field-notes/tls/server.key --network-config /etc/field-notes/network.json --peer-status /run/field-notes-peers/status.json
+User=root
+Group=root
+Environment=DOCKER_CONFIG=/etc/field-notes/docker
+ExecStart=/usr/bin/python3 -B /opt/field-notes/container-runtime.py run --config /etc/field-notes/deployment.json
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=70
 UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
-LockPersonality=yes
-CapabilityBoundingSet=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/var/lib/field-notes
+CapabilityBoundingSet=CAP_CHOWN
+ReadWritePaths=/run/field-notes-peers
+RuntimeDirectory=field-notes-peers
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 LimitCORE=0
 [Install]
 WantedBy=multi-user.target

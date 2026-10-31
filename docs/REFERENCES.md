@@ -99,3 +99,14 @@ None of those credentials or signing-key values should be sent in chat.
 Current scope correction: Flutter was replaced by Kotlin Multiplatform/Compose
 at the user’s request. Android is the active native target; iOS and desktop
 packages are deferred. See ADR 0002 and VALIDATION.md.
+
+
+## Container deployment reference
+
+[Bungee at ec7c089](https://github.com/argentumseven/bungee/tree/ec7c089debf12ddb3541a7e34f993b5e1354f0ac)
+was inspected for its app/gateway network namespace and install/uninstall
+boundaries. Its server is containerized and constrains egress, with an optional
+DNS resolver exception. Field Notes uses its own original implementation and no
+runtime DNS exception. No Bungee code or assets were copied; its AGPL license
+still applies to that separate project. Field Notes images include distribution
+runtime dependency notices; the Debian gateway retains installed package notices.

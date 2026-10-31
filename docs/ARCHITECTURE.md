@@ -21,6 +21,8 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | `native/transport/`, `native/bridge/`, `native/android/` | Userspace WireGuard/HTTPS, scoped LAN bootstrap, C ABI, JNI byte bridge |
 | `scripts/peer-agent.py` | Constrained root-side desired-peer reconciliation and acknowledgement |
 | `scripts/tls.py` | Host-only local CA/leaf issuance and renewal |
+| `scripts/container_deployment.py`, `container-runtime.py`, `deploy/containers/` | Immutable offline images, isolated shared network namespace, egress denial, paired lifecycle |
+| `scripts/server_installation.py`, `uninstall-server.py` | Root-owned installation inventory, scoped preview/removal/purge and legacy cleanup |
 | `scripts/install-server.py`, `deploy/` | Reviewed fresh-host installation, systemd services/timers, isolated WireGuard and nftables |
 | `tests/fixtures/` | Shared ranking cases and a public test CA; no private fixture keys |
 
@@ -34,12 +36,21 @@ hierarchy is required.
 
 ## Network and enrollment
 
-Rust serves HTTPS itself on the management LAN (default 9443) and the dedicated
+Rust serves HTTPS itself inside the app container, published on the management LAN (default 9443) and bound to the dedicated
 WireGuard server address (8443). There is no Caddy or forwarded-header trust.
 Only one encrypted UDP port is forwarded by the router. The nonroot content
-service has no network-administration capabilities. A root timer applies only
+service has no capabilities. The separate gateway holds NET_ADMIN, the hub key
+and namespace-local nftables; it denies new outbound connections, DNS and all
+forwarding. Only the app's data mount is writable. CA signing keys and the Docker
+socket remain on the host. The root host supervisor restarts the pair together
+and discards old peer acknowledgements after a namespace replacement. A root timer applies only
 validated peer keys, unique PSKs and /32 addresses to `fieldnotes`; it accepts no
 commands, route tables or interface names from phone requests.
+
+See [CONTAINERS.md](CONTAINERS.md) for mounts, trust boundaries, offline image
+packaging and host requirements. [UNINSTALL.md](UNINSTALL.md) defines scoped
+cleanup, retained recovery data and explicit purge. There is no automatic
+migration from a native installation and no shared Docker daemon reconfiguration.
 
 A LAN-only, ten-minute QR invitation is scoped to an existing account and role.
 The phone generates its own private key and persists a claim nonce before
