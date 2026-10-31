@@ -78,9 +78,9 @@ class GalleryDeviceTest {
         check(fixtureFile.length() in 1..8*1024*1024)
         val fixture = WireJson.parseToJsonElement(fixtureFile.readText()).jsonObject
         val seed = WireJson.decodeFromJsonElement<Snapshot>(fixture.getValue("snapshot"))
-        val transport = GalleryTransport(seed, original.state.value.cache.keys!!, fixture.getValue("stale_error").jsonObject)
+        val transport = GalleryTransport(seed, original.state.value.cache.keys!!, fixture.getValue("stale_error").jsonObject,WireJson.decodeFromJsonElement<List<HouseholdPerson>>(fixture.getValue("people")))
         val model = Workspace(transport, app.vault, { UUID.randomUUID().toString() }, app.scope)
-        runBlocking { model.initialize() }
+        runBlocking { model.initialize();model.preferences(model.state.value.cache.preferences.copy(backgroundSync=false,reminders=false,liveUpdates=false)) }
         model.state.value.cache.snapshot?.let { transport.snapshot = it }
         app.model = model
         val output = File(app.filesDir, "gallery").apply { mkdirs() }
@@ -119,16 +119,18 @@ class GalleryDeviceTest {
                 shot("11-widget")
             }
             try {
+                val config = WireJson.parseToJsonElement(Base64.decode(checkNotNull(args.getString("fieldNotesConfig")), Base64.NO_WRAP).decodeToString()).jsonObject
                 fun widgetSettings() {
                     compose.onNodeWithContentDescription("Workspace menu").performClick(); text("Settings & widgets").performClick(); awaitText("Settings")
                     text("Settings").performTouchInput { swipe(center, center.copy(y=center.y-600f),600) }
+                    text("Alerts and home screen").performScrollTo(); shot("24-background-settings")
+                    text("Alerts in other GrapheneOS profiles").performScrollTo().performClick(); shot("25-profile-help"); compose.onNode(hasText("Close") and hasAnyAncestor(hasAnyDescendant(hasText("GrapheneOS profile alerts"))),useUnmergedTree=true).performClick()
                     text("Add the Field Notes widget from your launcher's widget picker. It opens this locked app and refreshes from the encrypted local cache.").performScrollTo()
                     shot("09-settings-widgets"); text("Close").performClick()
                 }
-                if (args.getString("galleryMode") == "details") { compose.onNodeWithTag("nav-focus").assertExists(); widgetSettings(); widgetPreview(); return }
+                if (args.getString("galleryMode") == "details") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; awaitText("Focus"); compose.onNodeWithTag("nav-focus").assertExists(); widgetSettings(); widgetPreview(); return }
                 if (args.getString("galleryMode") == "light") { compose.onNodeWithTag("nav-focus").assertExists(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
                 awaitText("Enroll this phone"); shot("01-enroll")
-                val config = WireJson.parseToJsonElement(Base64.decode(checkNotNull(args.getString("fieldNotesConfig")), Base64.NO_WRAP).decodeToString()).jsonObject
                 runBlocking { model.beginEnrollment(Invitation(1,"https://192.168.1.10:9443/api/enrollment",config.text("ca_pem"),"a".repeat(64),"owner","owner",kotlinx.datetime.Clock.System.now().epochSeconds+600), "My GrapheneOS phone"); model.advanceEnrollment() }
                 awaitText("1234 ABCD"); shot("02-phone-confirmation")
                 runBlocking { model.cancelEnrollment(); model.pair(config.toString()); model.login("owner", "household-test-password-only"); model.sync() }
@@ -147,6 +149,10 @@ class GalleryDeviceTest {
                 text("Household reference").performClick(); awaitText("Shared note"); shot("14-shared-note"); compose.onNodeWithContentDescription("Back").performClick()
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-collections").performClick(); awaitText("Groceries"); shot("16-collections")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-assignments").performClick(); awaitText("Find assigned work"); shot("18-assignments")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performClick(); shot("19-my-tasks")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
+                compose.onNodeWithContentDescription("Add").performClick(); awaitText("Add task"); shot("21-new-task"); text("Cancel").performClick()
                 compose.onNodeWithTag("nav-focus").performClick()
                 widgetPreview()
             } finally {
@@ -162,7 +168,7 @@ class GalleryDeviceTest {
 
 /** Only in the instrumentation APK. Stable rendering data is intentionally
  * separate from the real JNI/WireGuard integration tests. */
-private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: JsonObject, private val stale: JsonObject) : Transport {
+private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: JsonObject, private val stale: JsonObject,private val people:List<HouseholdPerson>) : Transport {
     private var connected = true
     override suspend fun keys() = deviceKeys
     override suspend fun configure(configuration: JsonObject) { connected = true }
@@ -176,6 +182,8 @@ private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: J
         check(connected) { "The private connection is unavailable. Your changes stay on this phone." }
         return when (path) {
             "/api/login" -> Reply(200, obj("token" to "documentation-only".j(), "actor" to WireJson.encodeToJsonElement(snapshot.actor)).toString())
+            "/api/head" -> Reply(200,obj("epoch" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"sequence" to snapshot.sequence.j()).toString())
+            "/api/people" -> Reply(200,obj("people" to WireJson.encodeToJsonElement(people)).toString())
             "/api/snapshot" -> Reply(200, WireJson.encodeToJsonElement(snapshot).toString())
             "/api/commands" -> {
                 val command = WireJson.decodeFromJsonElement<Command>(checkNotNull(body))

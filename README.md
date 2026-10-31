@@ -4,7 +4,7 @@ A self-hosted household planner: Inbox, lists, projects, standalone notes, comme
 images, optional dates, priorities and a private calendar. Compact charcoal/paper, teal accents, clean rows.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.2.0.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.3.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -20,6 +20,9 @@ services. iOS/native desktop packages are deferred.
   and checklists; Projects group an outcome. Move tasks between either or Inbox.
   Standalone Notes hold shared reference material with pinning and search.
   Unscheduled, Waiting and Completed views surface different kinds of work.
+- Tasks and Assignments are explicit views, with My tasks and Unassigned filters.
+  Planned responsibility is separate from the exclusive working claim. Handoffs
+  require releasing active work; unavailable people cannot receive new assignments.
 - Focus ranks tasks using priority, optional due date, planned day, waiting time
   and estimate. Pins come first; blocked/completed/other-claimed/future-planned
   tasks stay out of Focus. Each task explains its score. No artificial due dates.
@@ -33,8 +36,10 @@ services. iOS/native desktop packages are deferred.
   confirmed peer removal separately.
 - LAN management: users/roles, devices/sessions, audited claim overrides, backup,
   workspace clearing and server state. Owner/admin/member/viewer household roles.
-- Android home widget, redacted by default, opt-in title previews, no Google ties.
-  Optional scheduled catch-up and local reminders are best-effort, not instant push.
+- Actual Android Upcoming and Focus home-screen widgets, redacted by default.
+  Default-on private background connection and cached task/calendar alerts without
+  Google services. [GrapheneOS profile/sound setup](docs/ANDROID-DELIVERY.md),
+  delayed profile test and revoke/uninstall flow; Android scheduling limits apply.
 - Keystore/AES-GCM local vault, device credential UI lock, screenshot protection,
   scoped image picker, offline QR scanner, no analytics/runtime CDN/FCM/Play services.
 
@@ -45,7 +50,7 @@ host configuration. This is not end-to-end encryption excluding the server.
 ## Install or build
 
 The signed arm64 development APK, checksum and signer report are under
-`dist/android/field-notes-0.2.0-android-arm64-debug.apk`. Copy it to your phone,
+`dist/android/field-notes-0.3.0-android-arm64-debug.apk`. Copy it to your phone,
 verify hash/signer, and open it to sideload. Preserve the development signer for
 in-place updates. Operator release builds require your separately protected key.
 
@@ -63,11 +68,17 @@ and reachable home DDNS/IP endpoint:
 ```sh
 sudo bash scripts/install-server.sh --plan \
   --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net:51831
-# Repeat with --apply after reviewing the plan.
+  --endpoint your-home.example.net
+# Choose both ports at the prompts; repeat the reported apply_port_options
+# with --apply after reviewing the plan.
 ```
 
-Forward one UDP port only. LAN management is direct TLS on 9443, and the isolated
+Forward **UDP 49272** to the Linux server (one above Bungee's guide example
+49271), or select `--bungee-port <your-bungee-port>` for an adjacent listener.
+See the [router forwarding example](docs/RUNNING.md#fresh-home-server).
+The installer prompts for **management HTTPS and WireGuard UDP ports**.
+`--web-port` and `--udp-port` supply explicit choices instead.
+LAN management uses direct TLS on your chosen port (suggested 9443), and the isolated
 WireGuard notes endpoint is 8443. The installer includes local certificate
 issuance/renewal, a nonroot app service, peer isolation and constrained root peer
 provisioning. No manual phone peer JSON is needed. See [RUNNING.md](docs/RUNNING.md)
@@ -83,7 +94,8 @@ for trust, enrollment, exact artifact paths and recovery.
   cross-language planning fixtures and real-process/transport checks.
 
 [Architecture](docs/ARCHITECTURE.md) · [Network](docs/NETWORK.md) ·
-[Sync](docs/SYNC.md) · [Planner research and scoring](docs/PLANNER-RESEARCH.md)
+[Sync](docs/SYNC.md) · [Planner research and scoring](docs/PLANNER-RESEARCH.md) ·
+[Household workflow review](docs/HOUSEHOLD-WORKFLOWS.md)
 
 Screenshots use synthetic data. Browser captures run against the real Rust server;
 Android captures render actual Compose/RemoteViews using a test-only connection.

@@ -9,6 +9,9 @@ test('LAN enrollment is scoped, single-claim, approved, acknowledged, source-bou
  const f=await fixture({enrollment:true});
  try{
   const owner=await f.login(),actor=(await f.request('/api/snapshot',{token:owner})).data.actor;
+  // Cleanup is private/source-bound, not an administrator website mutation.
+  assert.equal((await f.request('/api/device/revoke-self',{token:owner,body:{}})).status,404);
+  assert.equal((await f.request('/api/device/revoke-self',{base:f.device,token:owner,body:{},headers:{'X-Forwarded-For':'10.82.0.2'}})).status,403);
   const invite=()=>f.request('/api/enrollment/invitations',{token:owner,body:{user_id:actor.user_id}});
   assert.equal((await invite()).status,403);
   assert.equal((await f.request('/api/reauth',{token:owner,body:{password}})).status,200);

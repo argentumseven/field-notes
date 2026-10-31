@@ -8,6 +8,7 @@ try {
 } catch {}
 const state = {
   actor: null,
+  people: [],
   csrf: "",
   snapshot: null,
   project: null,
@@ -102,6 +103,7 @@ async function api(path, body, method) {
     if (r.status === 401 && state.actor && path !== "/reauth") {
       state.actor = null;
       state.snapshot = null;
+      state.people = [];
       closeDetail();
       renderLogin();
     }
@@ -125,6 +127,7 @@ function projectName(id) {
 }
 function userName(id) {
   return (
+    state.people?.find((u) => u.id === id)?.name ||
     state.users?.find((u) => u.id === id)?.name ||
     (id === state.actor?.user_id
       ? state.actor.name
@@ -139,6 +142,9 @@ function isAdmin() {
 }
 async function refresh() {
   state.snapshot = await api("/snapshot");
+  const directory = await api("/people");
+  state.people = directory.people;
+  state.directoryRevision = directory.revision;
   state.actor = state.snapshot.actor;
   updateSync();
 }
@@ -229,12 +235,15 @@ function render() {
     side = el("aside", "sidebar"),
     main = el("main");
   side.append(brand());
+  const workspaceNav = el("div", "sidebar-scroll");
+  side.append(workspaceNav);
   const nav = el("nav", "nav");
   nav.setAttribute("aria-label", "Planner");
   for (const [key, label] of [
     ["inbox", "Inbox"],
     ["focus", "Focus"],
-    ["tasks", "All tasks"],
+    ["tasks", "Tasks"],
+    ["assignments", "Assignments"],
     ["calendar", "Calendar"],
     ["notes", "Notes"],
     ["collections", "Collections"],
@@ -252,7 +261,7 @@ function render() {
         state.page === key && !state.project ? "active" : "",
       ),
     );
-  side.append(nav);
+  workspaceNav.append(nav);
   const create = el("details", "create-menu"),
     summary = el("summary", "", "+ New");
   create.append(summary);
@@ -268,10 +277,12 @@ function render() {
         return fn();
       }),
     );
-  if (mayWrite()) side.append(create);
+  if (mayWrite()) workspaceNav.append(create);
   const saved = el("nav", "nav smart-views");
   saved.setAttribute("aria-label", "Task views");
   for (const [key, label] of [
+    ["mine", "My tasks"],
+    ["unassigned", "Unassigned"],
     ["undated", "Unscheduled"],
     ["waiting", "Waiting"],
     ["completed", "Completed"],
@@ -289,7 +300,7 @@ function render() {
         state.page === key ? "active" : "",
       ),
     );
-  side.append(saved);
+  workspaceNav.append(saved);
   for (const kind of ["list", "project"]) {
     const section = el("section", "collection-section"),
       header = el("div", "section-label");
@@ -340,7 +351,7 @@ function render() {
         ),
       );
     section.append(group);
-    side.append(section);
+    workspaceNav.append(section);
   }
   const bottom = el("div", "sidebar-bottom");
   if (isAdmin())
@@ -405,6 +416,7 @@ function render() {
       state.drafts.clear();
       state.actor = null;
       state.snapshot = null;
+      state.people = [];
       closeDetail();
       renderLogin();
     },
@@ -429,7 +441,10 @@ function render() {
             completed: "Completed",
             undated: "Unscheduled",
             focus: "Focus",
-            tasks: "All tasks",
+            tasks: "Tasks",
+            assignments: "Assignments",
+            mine: "My tasks",
+            unassigned: "Unassigned",
             calendar: "Calendar",
             admin: "Management",
           }[state.page],
@@ -446,6 +461,10 @@ function render() {
         undated: "Open work without a planned day or deadline.",
         focus: "Your next steps, ranked by priority, time and effort.",
         tasks: "Every task. Dates are optional.",
+        assignments:
+          "Responsibility across your household, with active work shown separately.",
+        mine: "Open work assigned to you, plus tasks you are working on.",
+        unassigned: "Open tasks without a responsible person yet.",
         calendar: "Your calendar, on your server.",
         admin: "People, enrolled devices and server maintenance.",
       }[state.page],
@@ -461,6 +480,10 @@ function render() {
   if (state.page === "admin") {
     main.append(el("div", "admin-grid"));
     renderAdmin().catch((e) => notice(e.message));
+    return;
+  }
+  if (state.page === "assignments") {
+    renderAssignments(main);
     return;
   }
   if (state.page === "calendar") {
@@ -503,6 +526,28 @@ function render() {
     renderTasks();
   };
   toolbar.append(search);
+  const taskView = el("select", "task-view-select");
+  taskView.setAttribute("aria-label", "Task view");
+  for (const [key, label] of [
+    ["focus", "Focus"],
+    ["tasks", "All tasks"],
+    ["mine", "My tasks"],
+    ["unassigned", "Unassigned"],
+    ["undated", "Unscheduled"],
+    ["waiting", "Waiting"],
+    ["completed", "Completed"],
+  ]) {
+    const option = el("option", "", label);
+    option.value = key;
+    taskView.append(option);
+  }
+  taskView.value = state.page;
+  taskView.onchange = () => {
+    state.page = taskView.value;
+    closeDetail();
+    render();
+  };
+  toolbar.append(taskView);
   if (state.page === "tasks") {
     const seg = el("div", "segmented");
     for (const [v, l] of [
@@ -545,6 +590,7 @@ function render() {
           {
             title: add.value,
             project_id: state.project || "",
+            assignee: state.page === "mine" ? state.actor.user_id : null,
           },
           null,
         );
@@ -569,6 +615,15 @@ function renderTasks() {
   let tasks = visibleTasks();
   if (state.page === "inbox")
     tasks = tasks.filter((t) => !t.data.project_id && t.data.status !== "done");
+  if (state.page === "mine")
+    tasks = tasks.filter(
+      (t) =>
+        t.data.status !== "done" &&
+        (t.data.assignee === state.actor.user_id ||
+          t.data.claimant === state.actor.user_id),
+    );
+  if (state.page === "unassigned")
+    tasks = tasks.filter((t) => t.data.status !== "done" && !t.data.assignee);
   if (state.page === "waiting")
     tasks = tasks.filter(
       (t) =>
@@ -626,7 +681,7 @@ function renderTasks() {
         "div",
         "empty",
         state.page === "focus"
-          ? "Nothing to focus on here. Blocked, completed, future-planned and other people’s claimed work remains in All tasks."
+          ? "Nothing to focus on here. Blocked, completed, future-planned and other people’s claimed work remains in Tasks."
           : state.page === "inbox"
             ? "Inbox is clear. Capture a task here, then move it into a list or project whenever you need."
             : "No tasks match this view. Try another view or capture a task.",
@@ -675,6 +730,7 @@ function taskCard(t) {
     t.data.estimate_minutes ? t.data.estimate_minutes + " min" : "",
     t.data.blocked ? "Blocked" : "",
     t.data.pinned ? "Pinned" : "",
+    t.data.assignee ? "Assigned to " + userName(t.data.assignee) : "Unassigned",
     t.data.claimant ? userName(t.data.claimant) + " is working" : "",
   ])
     if (text) meta.append(el("span", "", text));
@@ -782,22 +838,21 @@ function renderDetail() {
   const notes = addField(detail, input("Notes", draft.notes, "textarea"));
   notes.placeholder = "A few details, links, or a little more context…";
   notes.maxLength = 16384;
-  const row = el("div", "form-row"),
-    quadrant = addField(
-      row,
-      select(
-        "Collection",
-        [
-          ["do", "Do"],
-          ["decide", "Decide"],
-          ["delegate", "Delegate"],
-          ["defer", "Defer"],
-        ],
-        draft.quadrant,
-      ),
+  const due = addField(detail, input("Due date", draft.due || "", "date"));
+  const assignee = addField(
+    detail,
+    select(
+      "Assigned to",
+      assignmentOptions(draft.assignee || ""),
+      draft.assignee || "",
     ),
-    due = addField(row, input("Due date", draft.due, "date"));
-  detail.append(row);
+  );
+  assignee.disabled = !mayWrite() || task.data.status === "in_progress";
+  if (task.data.status === "in_progress")
+    detail.append(
+      el("p", "muted", "Release the task before changing its assignment."),
+    );
+
   const priority = addField(
       detail,
       select(
@@ -902,7 +957,7 @@ function renderDetail() {
       ...draft,
       title: title.value,
       notes: notes.value,
-      quadrant: quadrant.value,
+      assignee: assignee.value || null,
       due: due.value,
       project_id: container.value,
       priority: Number(priority.value),
@@ -914,7 +969,6 @@ function renderDetail() {
   for (const n of [
     title,
     notes,
-    quadrant,
     due,
     priority,
     planned,
@@ -925,6 +979,7 @@ function renderDetail() {
     n.disabled = !mayWrite();
     n.addEventListener("input", dirty);
   }
+  assignee.addEventListener("input", dirty);
   if (draft.baseRevision !== task.revision) {
     const c = el("div", "conflict");
     c.append(
@@ -939,7 +994,17 @@ function renderDetail() {
       summary = el("summary", "", "Current server text");
     compare.append(
       summary,
-      el("pre", "", task.data.title + "\n\n" + task.data.notes),
+      el(
+        "pre",
+        "",
+        task.data.title +
+          "\nAssigned to: " +
+          (task.data.assignee ? userName(task.data.assignee) : "Unassigned") +
+          "\nKeep in: " +
+          projectName(task.data.project_id) +
+          "\n\n" +
+          task.data.notes,
+      ),
     );
     c.append(
       compare,
@@ -978,7 +1043,7 @@ function renderDetail() {
                 title: d.title,
                 project_id: d.project_id,
                 notes: d.notes,
-                quadrant: d.quadrant,
+                assignee: d.assignee,
                 due: d.due,
                 priority: d.priority,
                 planned_for: d.planned_for,
@@ -1013,9 +1078,38 @@ function renderDetail() {
           : "Available to start",
     ),
   );
+  if (
+    task.data.assignee &&
+    task.data.assignee !== state.actor.user_id &&
+    task.data.status === "todo"
+  )
+    detail.append(
+      el(
+        "p",
+        "muted",
+        "Assigned to " +
+          userName(task.data.assignee) +
+          ". Reassign it to yourself before starting.",
+      ),
+    );
+  if (task.data.status === "done" && task.data.completed_by)
+    detail.append(
+      el(
+        "p",
+        "item-sub",
+        "Completed by " +
+          userName(task.data.completed_by) +
+          " · " +
+          new Date(task.data.completed_at * 1000).toLocaleString(),
+      ),
+    );
   const actions = el("div", "detail-actions");
   if (mayWrite()) {
-    if (task.data.status === "todo" && !task.data.blocked)
+    if (
+      task.data.status === "todo" &&
+      !task.data.blocked &&
+      (!task.data.assignee || task.data.assignee === state.actor.user_id)
+    )
       actions.append(
         button(
           "Start task",
@@ -1313,7 +1407,8 @@ setInterval(async () => {
     if (
       head.epoch !== state.snapshot.epoch ||
       head.generation !== state.snapshot.generation ||
-      head.sequence !== state.snapshot.sequence
+      head.sequence !== state.snapshot.sequence ||
+      head.directory_revision !== state.directoryRevision
     ) {
       const focused = document.activeElement;
       const typing =

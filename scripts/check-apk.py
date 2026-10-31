@@ -6,7 +6,7 @@ aapt=tools/'android-sdk/build-tools/35.0.0/aapt'
 manifest=subprocess.check_output([str(aapt),'dump','xmltree',str(apk),'AndroidManifest.xml'],text=True)
 for forbidden in ['android.permission.BIND_VPN_SERVICE','VpnService','android.permission.ACCESS_FINE_LOCATION','com.google.android.gms','com.google.firebase','android.permission.READ_CALENDAR','android.permission.WRITE_CALENDAR']:
  assert forbidden not in manifest, f'Unexpected manifest entry: {forbidden}'
-assert 'org.fieldnotes.app.PlannerWidget' in manifest and 'android.appwidget.provider' in manifest
+assert all(name in manifest for name in ['org.fieldnotes.app.PlannerWidget','org.fieldnotes.app.UpcomingWidget','org.fieldnotes.app.PrivateUpdatesService','org.fieldnotes.app.AlertReceiver','org.fieldnotes.app.StartupReceiver','android.permission.FOREGROUND_SERVICE_SPECIAL_USE','android.permission.SCHEDULE_EXACT_ALARM','android.appwidget.provider'])
 assert 'org.fieldnotes.app.MainActivity' in manifest and 'org.fieldnotes.app.FieldNotesApplication' in manifest
 assert 'usesCleartextTraffic' in manifest and 'dataExtractionRules' in manifest
 with zipfile.ZipFile(apk) as archive:

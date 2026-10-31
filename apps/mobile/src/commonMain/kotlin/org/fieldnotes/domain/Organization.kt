@@ -8,6 +8,8 @@ fun workspaceTasks(cache: Cache, view: String, container: String?, query: String
     val tasks=if(view=="Focus") focusTasks(cache,today,now).map { it.first } else projectRecords(cache).filter { it.record.kind=="task" }.sortedWith(compareBy<VisibleRecord> { it.record.data.text("status")=="done" }.thenBy { it.record.data.number("priority",3) }.thenBy { it.record.data.number("created_at") }.thenBy { it.record.id })
     return tasks.filter { row -> val d=row.record.data
         (container==null||d.text("project_id")==container) && (d.text("title")+" "+d.text("notes")).contains(query,true) && when(view) {
+            "My tasks" -> d.text("status")!="done" && (d.text("assignee")==actor||d.text("claimant")==actor)
+            "Unassigned" -> d.text("status")!="done" && d.text("assignee").isBlank()
             "Inbox" -> d.text("project_id").isBlank() && d.text("status")!="done"
             "Waiting" -> d.text("status")!="done" && (row.record.flag("blocked")||(d.text("claimant").isNotBlank()&&d.text("claimant")!=actor))
             "Completed" -> d.text("status")=="done"
@@ -16,3 +18,5 @@ fun workspaceTasks(cache: Cache, view: String, container: String?, query: String
         }
     }
 }
+
+fun personName(cache:Cache,id:String):String = cache.people.firstOrNull { it.id==id }?.name ?: cache.snapshot?.actor?.takeIf { it.user_id==id }?.name ?: "Unavailable member"

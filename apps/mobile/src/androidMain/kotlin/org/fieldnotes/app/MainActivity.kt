@@ -42,6 +42,7 @@ import kotlinx.coroutines.*
 import org.fieldnotes.domain.*
 import org.fieldnotes.ui.FieldNotesApp
 import org.fieldnotes.ui.FieldNotesTheme
+import org.fieldnotes.ui.DeviceActions
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as FieldNotesApplication
@@ -50,6 +51,9 @@ class MainActivity : ComponentActivity() {
     private var unlocked by mutableStateOf(false)
     private var prompting = false
     private var lastUnlock = 0L
+    private var deliveryStatus by mutableStateOf("")
+    override fun onStart(){super.onStart();app.uiVisible=true}
+    override fun onStop(){app.uiVisible=false;super.onStop()}
     private val confirm = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         prompting = false
         unlocked = result.resultCode == RESULT_OK
@@ -64,6 +68,8 @@ class MainActivity : ComponentActivity() {
     }
     override fun onResume() {
         super.onResume()
+        deliveryStatus=DeliverySettings.summary(this)
+        app.scope.launch { try{LocalAlarms.reconcile(this@MainActivity,true)}catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention."} }
         if (lastUnlock == 0L || SystemClock.elapsedRealtime() - lastUnlock > 5 * 60_000) { unlocked = false; unlock() }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,7 +81,7 @@ class MainActivity : ComponentActivity() {
             app.initialized.await()
             CatchUpWorker.schedule(this@MainActivity, app.model.state.value.cache.preferences)
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (isActive) { if (unlocked) app.model.sync(); delay(15_000) }
+                while (isActive) { if (unlocked) app.model.poll(); delay(15_000) }
             }
         }
         setContent {
@@ -90,7 +96,10 @@ class MainActivity : ComponentActivity() {
                 var pendingImage by rememberSaveable { mutableStateOf<String?>(null) }
                 var pendingEpoch by rememberSaveable { mutableStateOf<String?>(null) }
                 var pendingGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+                var notificationAsked by rememberSaveable { mutableStateOf(false) }
                 val requestNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                    if(granted&&app.model.state.value.cache.preferences.liveUpdates)PrivateUpdatesService.start(this)
+                    deliveryStatus=DeliverySettings.summary(this)
                     if (!granted) Toast.makeText(this, "Notifications are disabled. Catch-up can still run; enable notifications in Android Settings when you want alerts.", Toast.LENGTH_LONG).show()
                 }
                 val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -99,8 +108,21 @@ class MainActivity : ComponentActivity() {
                     if (uri != null && target != null && epoch != null && generation != null) app.model.launch { attach(target, uri, Basis(epoch, generation)) }
                 }
                 BackHandler(enabled = back != null) { back?.invoke() }
+                val workspace by app.model.state.collectAsState()
                 val lifecycleState by lifecycle.currentStateFlow.collectAsState()
+                LaunchedEffect(workspace.cache.token,workspace.needsLogin,workspace.cache.preferences.liveUpdates,lifecycleState){
+                    if(lifecycleState.isAtLeast(Lifecycle.State.STARTED)&&workspace.cache.token!=null&&!workspace.needsLogin&&workspace.cache.preferences.liveUpdates){
+                        if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this@MainActivity,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){if(!notificationAsked){notificationAsked=true;requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)}}
+                        else PrivateUpdatesService.start(this@MainActivity)
+                    }
+                }
                 FieldNotesApp(app.model,
+                    requestedPage=intent?.getStringExtra("open_page"),
+                    deviceActions=DeviceActions(androidDelivery=true,status=deliveryStatus,
+                        addUpcomingWidget={DeliverySettings.pin(this)},profileTest={val ok=Alerts.scheduleProfileTest(this);Toast.makeText(this,if(ok)"Test scheduled for 30 seconds. Switch profiles now." else "Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},testAlert={if(!Alerts.test(this))Toast.makeText(this,"Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},
+                        notificationSettings={DeliverySettings.open(this,"notifications")},alarmSettings={DeliverySettings.open(this,"alarms")},
+                        batterySettings={DeliverySettings.open(this,"battery")},profileSettings={DeliverySettings.open(this,"profiles")},
+                        removeInstallation={DeliverySettings.remove(this@MainActivity)}),
                     enrollmentPolling = lifecycleState.isAtLeast(Lifecycle.State.STARTED),
                     invitationCode = invitationCode,
                     scanInvitation = { if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scanning = true else cameraPermission.launch(Manifest.permission.CAMERA) },
@@ -108,6 +130,8 @@ class MainActivity : ComponentActivity() {
                     attachImage = { id -> pendingImage = id; pendingEpoch = app.model.state.value.cache.snapshot?.epoch; pendingGeneration = app.model.state.value.cache.snapshot?.generation; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     configureBackground = { preferences ->
                         CatchUpWorker.schedule(this, preferences)
+                        if(preferences.liveUpdates)PrivateUpdatesService.start(this)else PrivateUpdatesService.stop(this)
+                        app.scope.launch { LocalAlarms.reconcile(this@MainActivity,true) }
                         if ((preferences.backgroundSync || preferences.reminders) && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                     },
                     registerBack = { back = it },

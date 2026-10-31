@@ -46,7 +46,7 @@ android {
     namespace = "org.fieldnotes.app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
-    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 2; versionName = "0.2.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
+    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 3; versionName = "0.3.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     sourceSets["main"].jniLibs.srcDir("src/androidMain/jniLibs")
     packaging { jniLibs.useLegacyPackaging = false; resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

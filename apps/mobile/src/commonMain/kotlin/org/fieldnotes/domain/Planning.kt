@@ -8,7 +8,7 @@ data class TaskRank(val score: Int, val reasons: List<String>, val eligible: Boo
 fun Record.flag(name: String) = data[name]?.jsonPrimitive?.booleanOrNull == true
 fun priorityName(priority: Int) = listOf("Urgent", "High", "Normal", "Low")[(priority - 1).coerceIn(0, 3)]
 
-/** Version 1, a transparent bounded heuristic. Missing dates contribute zero:
+/** Version 2, a transparent bounded heuristic. Missing dates contribute zero:
  * they are never invented or treated as overdue. Clock and local day are inputs. */
 fun rankTask(task: Record, today: LocalDate, nowSeconds: Long, userId: String): TaskRank {
     val d = task.data
@@ -39,8 +39,10 @@ fun rankTask(task: Record, today: LocalDate, nowSeconds: Long, userId: String): 
     if (d.text("status") == "in_progress" && d.text("claimant") == userId) { score += 12; reasons += "Already started +12" }
     if (task.flag("pinned")) reasons.add(0, "Pinned")
     val otherClaim = d.text("claimant").let { it.isNotBlank() && it != userId }
+    val otherAssignment=d.text("assignee").let { it.isNotBlank()&&it!=userId } && !(d.text("status")=="in_progress"&&d.text("claimant")==userId)
+    if(otherAssignment)reasons += "Assigned to another person"
     val futurePlan = planned != null && planned > today && (due == null || due > today) && !(d.text("status") == "in_progress" && d.text("claimant") == userId)
-    return TaskRank(score, reasons, d.text("status") != "done" && !task.flag("blocked") && !otherClaim && !futurePlan)
+    return TaskRank(score, reasons, d.text("status") != "done" && !task.flag("blocked") && !otherClaim && !otherAssignment && !futurePlan)
 }
 
 fun focusTasks(cache: Cache, today: LocalDate, nowSeconds: Long): List<Pair<VisibleRecord, TaskRank>> {

@@ -4,6 +4,9 @@ async function renderAdmin() {
   if (!root) return;
   const data = await api("/admin");
   state.users = data.users;
+  const directory = await api("/people");
+  state.people = directory.people;
+  state.directoryRevision = directory.revision;
   root.replaceChildren();
   const people = el("section", "panel"),
     ph = el("div", "admin-title");

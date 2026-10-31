@@ -5,11 +5,17 @@ Use system fonts and functional icons, with no decorative art or runtime assets.
 The selected direction replaces the earlier blue/violet card-heavy prototype.
 
 The browser sidebar and Android workspace drawer expose Inbox, Focus, Tasks,
-Calendar, Notes and Collections, followed by Unscheduled, Waiting and Completed.
+Assignments, Calendar, Notes and Collections, followed by My tasks, Unassigned,
+Unscheduled, Waiting and Completed.
 Lists and Projects have separate sections. Inbox accepts tasks without a parent;
 Lists suit groceries, routines and checklists, while Projects group an outcome.
 Shared Notes are first-class reference documents with pinning/search, separate
 from task notes and comments. The New menu creates a task, list, project or note.
+The task editor and capture form offer a real person selector. Assignment is
+planning responsibility; the working claim is exclusive server-accepted activity.
+Handoffs require releasing active claims. Focus, widgets and due reminders
+respect assignments. Old matrix buckets are retained only for protocol
+compatibility, without a confusing Collection selector in the interface.
 Tasks can move to Inbox or either kind of collection using Keep in. Nonempty
 collections cannot be deleted. Android keeps Focus / Tasks / Calendar in its
 bottom bar for frequent access; Browse workspace opens the full navigation.

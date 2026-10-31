@@ -26,6 +26,7 @@ export async function demo(image, enrollment = false){
    assert.equal((await f.request('/api/admin',{token:owner,body:{action:'user.create',name,role,password}})).status,200);
   }
   const sam=await login('Sam','Sam’s phone · Android');
+  const samId=(await f.request('/api/snapshot',{token:sam})).data.actor.user_id,ownerId=meta.actor.user_id;
   await login('Alex','Alex’s computer · Windows');
   const home=randomUUID(),workshop=randomUUID(),weekend=randomUUID();
   await command('project.create',home,{title:'Home & garden'});
@@ -42,7 +43,7 @@ export async function demo(image, enrollment = false){
    ['seeds',home,'Order herb seedlings','do','','The nursery order is confirmed.'],
   ];
   const ids={home,workshop,weekend};
-  for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes,priority:({shelves:2,backup:1,lamp:2,bench:4})[key]||3,estimate_minutes:({shelves:30,backup:15,walk:20})[key]||0,planned_for:['shelves','walk'].includes(key)?'2026-10-30':'',blocked:key==='herbs',pinned:key==='backup'});}
+  for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes,assignee:['boiler','herbs','walk'].includes(key)?samId:['shelves','backup','lamp'].includes(key)?ownerId:null,priority:({shelves:2,backup:1,lamp:2,bench:4})[key]||3,estimate_minutes:({shelves:30,backup:15,walk:20})[key]||0,planned_for:['shelves','walk'].includes(key)?'2026-10-30':'',blocked:key==='herbs',pinned:key==='backup'});}
   ids.groceries=randomUUID();ids.routines=randomUUID();
   await command('list.create',ids.groceries,{title:'Groceries',notes:'Shared shopping, without a project or deadline.'});
   await command('list.create',ids.routines,{title:'Household routines',notes:'The practical things we keep coming back to.'});

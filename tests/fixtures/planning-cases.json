@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "today": "2026-10-30",
   "now": 1793361600,
   "user": "me",
@@ -167,6 +167,37 @@
         "planned_for": "2026-11-05"
       },
       "score": 37,
+      "eligible": true
+    },
+    {
+      "name": "assigned_to_me",
+      "data": {
+        "priority": 2,
+        "status": "todo",
+        "assignee": "me"
+      },
+      "score": 45,
+      "eligible": true
+    },
+    {
+      "name": "assigned_elsewhere",
+      "data": {
+        "priority": 2,
+        "status": "todo",
+        "assignee": "other"
+      },
+      "score": 45,
+      "eligible": false
+    },
+    {
+      "name": "own_claim_keeps_work_visible",
+      "data": {
+        "priority": 2,
+        "status": "in_progress",
+        "assignee": "other",
+        "claimant": "me"
+      },
+      "score": 57,
       "eligible": true
     }
   ]

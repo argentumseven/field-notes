@@ -274,13 +274,17 @@ async fn snapshot(
         .await?,
     ))
 }
+async fn people(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, app.device)?;
+    Ok(Json(blocking(app, move |s| s.people(&token)).await?))
+}
 async fn head(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
     let token = credential(&h, app.device)?;
     Ok(Json(
         blocking(app, move |s| {
             s.actor(&token)?;
             let (e, g, q) = s.meta()?;
-            Ok(json!({"epoch":e,"generation":g,"sequence":q}))
+            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?}))
         })
         .await?,
     ))
@@ -444,6 +448,17 @@ async fn cancel_enrollment(
         .await?,
     ))
 }
+async fn revoke_self(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    if input.as_object().is_none_or(|v| !v.is_empty()) {
+        return Err(Fault(400, "Unexpected removal fields".into()));
+    }
+    let token = credential(&h, true)?;
+    Ok(Json(blocking(app, move |s| s.revoke_self(&token)).await?))
+}
 async fn activate(
     State(app): State<App>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -468,11 +483,14 @@ pub fn router(app: App) -> Router {
         .route("/api/logout", post(logout))
         .route("/api/reauth", post(reauth))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/people", get(people))
         .route("/api/head", get(head))
         .route("/api/commands", post(command))
         .route("/api/images/{id}", get(image));
     if app.device {
-        routes = routes.route("/api/device/activate", post(activate));
+        routes = routes
+            .route("/api/device/activate", post(activate))
+            .route("/api/device/revoke-self", post(revoke_self));
     }
     if !app.device {
         routes = routes
@@ -488,6 +506,15 @@ pub fn router(app: App) -> Router {
             .route(
                 "/",
                 get(|| async { Html(include_str!("../../admin/index.html")) }),
+            )
+            .route(
+                "/assignments.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/assignments.js"),
+                    )
+                }),
             )
             .route(
                 "/organization.js",

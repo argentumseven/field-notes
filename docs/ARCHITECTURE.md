@@ -11,10 +11,10 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | --- | --- |
 | `apps/server/src/main.rs`, `tls.rs` | Configuration, two direct TLS 1.3 listeners, certificate reload, peer reconciliation timer |
 | `apps/server/src/http.rs` | Separate management/device routes, actual-source ACL, CSRF, bounded requests |
-| `apps/server/src/store/` | Auth/roles, transactional commands, typed organization/planning, device enrollment, administration, backup |
+| `apps/server/src/store/` | Auth/roles, transactional commands, typed organization/planning/assignment, device enrollment, administration, backup |
 | `apps/server/src/crypto.rs` | AES-GCM storage encryption, Argon2id passwords, random capabilities |
 | `apps/admin/` | Local assets; compact planner, typed collections/notes, calendar, management, in-tab revision-aware drafts |
-| `apps/mobile/src/commonMain/.../domain/` | Protocol, encrypted-cache model, durable outbox/drafts, enrollment state, typed organization, ranking/calendar/widget policy |
+| `apps/mobile/src/commonMain/.../domain/` | Protocol, encrypted-cache model, durable outbox/drafts, enrollment state, typed organization/household directory, ranking/calendar/widget policy |
 | `apps/mobile/src/commonMain/.../ui/` | Compose planner/task editor; separate organization, calendar/date/event and theme components |
 | `apps/mobile/src/androidMain/` | Keystore vault, credential lock, offline camera scanner, widget, scheduler, manifests/resources |
 | `apps/mobile/src/jvmMain/` | JNI adapter shared by Android and actual JVM integration checks |
@@ -59,7 +59,10 @@ Tasks can exist in Inbox without a parent. Lists and Projects are separate typed
 collections, with editable names/context. Standalone Notes have title, body and
 pinning; they never become tasks to appear in a workspace. The browser sidebar
 and Android drawer expose these plus Unscheduled, Waiting and Completed views.
-Collection deletion is refused while any tasks remain; task movement and note
+Assignment responsibility uses the same task revision; a minimal authenticated
+people directory is separate from administrative account data. Its revision
+participates in head polling, and the Android cache retains names for offline
+work. Active handoffs cannot bypass a working claim. Collection deletion is refused while any tasks remain; task movement and note
 edits use the same revision and workspace fences as other commands.
 
 Due dates are optional. Priority, planned day, estimate, pin and blocked state are
@@ -80,17 +83,23 @@ for review. See [SYNC.md](SYNC.md).
 
 ## Notifications and widget
 
-Foreground sync checks every 15 seconds. Optional WorkManager catch-up and local
-reminders use Android scheduling; they are best-effort, without FCM or an always-on
-service. Instant background push remains future work. A separate UnifiedPush app
-cannot borrow this process-private tunnel.
+Default-on background mode uses a user-visible special-use foreground service,
+a bounded wake lock, a 15-second authenticated head check and offline backoff.
+It shares the app-contained WireGuard transport, never VpnService. WorkManager
+catch-up remains a scheduling-constrained fallback. Cached AlarmManager alerts
+are independent of network initialization; exact access is optional and Android
+Doze/DND/profile controls remain authoritative. Encrypted effect receipts dedupe
+occurrences; simultaneous due reminders produce one digest. Device sessions
+renew only after valid, active, source-bound authorization. The private-only
+self-revocation route kills that installation's sessions before peer removal.
 
-The real Android RemoteViews home widget reads the encrypted local cache, uses
-the shared Focus order, and opens the credential-locked app. Titles are hidden
-by default. Opt-in shares title copies with the launcher; cached copies cannot
-be guaranteed erased on lock. No notes/images/credentials enter RemoteViews.
-Refresh occurs after local cache changes and on Android's 30-minute widget cycle;
-this is neither a network push nor an exact timer.
+Separate Focus and Upcoming AppWidgetProviders read the encrypted local cache.
+Upcoming orders dated/planned tasks and events; Focus uses the shared score.
+Titles are hidden by default. Opt-in shares title copies with the launcher;
+cached copies cannot be guaranteed erased on lock. No notes/images/credentials
+enter RemoteViews. A standard requestPinAppWidget flow offers installation.
+See [Android delivery](ANDROID-DELIVERY.md) for profile forwarding, alarms,
+battery behavior and the uninstall boundary.
 
 Future iOS work can share Kotlin domain/UI, but needs a native transport bridge,
 Keychain, background policy and widget implementation. An in-process VPN does

@@ -286,7 +286,7 @@ func Exchange(raw string) (string, error) {
 
 func devicePath(path string) bool {
 	switch path {
-	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/head", "/api/commands", "/api/device/activate":
+	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/device/activate", "/api/device/revoke-self":
 		return true
 	}
 	if strings.HasPrefix(path, "/api/images/") {

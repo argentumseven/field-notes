@@ -98,3 +98,23 @@ firewall negative-access tests, hardware-backed Keystore behavior, camera optics
 launcher lifecycle, battery/Doze timing and independent review remain deployment
 gates. No reliable instant background push is claimed. Per-project ACLs, passkeys,
 trusted-device key transfer and automatic CA rotation remain future work.
+
+## Background delivery and removal
+
+The special-use foreground service is a normal app service with a visible,
+silent status notification, not VpnService or device administration. It uses the
+same restricted app-contained transport. Reminder/update notifications use
+generic text and private visibility, enabling GrapheneOS's opt-in system
+forwarding without task contents. OS permissions, DND and user-profile lifecycle
+remain authoritative. Alarm occurrence receipts are AES-GCM encrypted with
+purpose-specific AAD; pending intents contain no titles or credentials.
+
+Only authenticated active device sessions from the enrolled TCP peer can renew
+their session lifetime (30 days, renewed when fewer than seven remain). Expired,
+revoked, removed or disabled-user sessions cannot renew. LAN sessions cannot
+self-revoke as a phone. The private self-revocation route targets the calling
+session's device, immediately removes its sessions and queues host peer removal;
+it never accepts an arbitrary target from the client. Normal Android uninstall
+removes profile-private data/keys, not shared server records or audits. Direct
+uninstall cannot notify the server. See [Android delivery](ANDROID-DELIVERY.md)
+for the exact cleanup and profile limits.

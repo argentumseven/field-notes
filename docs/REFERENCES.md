@@ -19,6 +19,9 @@ reference clones are outside the project checkout and are not dependencies.
   VPN route. Its README explicitly says direct remote use needs a reachable UDP
   endpoint and includes no relay/NAT traversal. This review did not run Bungee's
   tests or verify its previously reported validation results independently.
+  The installer/network source was revisited for port selection: Bungee has no
+  default port; its `docs/INSTALL.md` example is 49271. Field Notes uses 49272,
+  with an adjacent-port installer option for a different actual Bungee listener.
 - [AOSP VpnService source](https://github.com/aosp-mirror/platform_frameworks_base/blob/master/core/java/android/net/VpnService.java):
   read the documented one-active-VPN constraint and socket/underlay behavior.
 - [UnifiedPush documentation](https://github.com/UnifiedPush/documentation/tree/8c61ba91f4a80231e205f6e0b2b712b591a7ca4b):

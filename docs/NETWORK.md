@@ -8,7 +8,7 @@ flowchart LR
   A[Android app / private WG stack] -->|encrypted UDP| R[Home router / one UDP forward]
   R --> W[Linux fieldnotes WireGuard hub]
   W -->|only overlay .1 TCP 8443| D[Rust device HTTPS API]
-  L[Trusted home LAN browser] -->|TCP 9443 / direct TLS| M[Rust management HTTPS]
+  L[Trusted home LAN browser] -->|chosen LAN HTTPS port / direct TLS| M[Rust management HTTPS]
 ```
 
 Each phone has its own local private key, server-generated PSK and inner /32
@@ -23,10 +23,10 @@ slot; real coexistence still needs physical testing.
 
 | Source | Allowed destination |
 | --- | --- |
-| Internet | The selected WireGuard UDP port only (default 51831) |
+| Internet | The selected WireGuard UDP port only (default 49272) |
 | Enrolled phone peer | Exactly overlay server `.1`, TCP 8443, device routes and device-bound authentication |
 | Phone interface | No LAN/admin, SSH, other host services, peer-to-peer, IPv6 or forwarded Internet traffic |
-| Selected management LAN CIDR | Management IP:9443; login, roles, CSRF and recent admin reauthentication still apply |
+| Selected management LAN CIDR | Management IP:chosen HTTPS port (suggested 9443); login, roles, CSRF and recent admin reauthentication still apply |
 
 The installer generates nftables input/forward isolation before starting
 WireGuard. Peer traffic to every other host port/address is dropped, including
@@ -42,14 +42,22 @@ your server and verify the access matrix from a separate test peer.
 
 ## Reachability
 
-Supply `--endpoint home.example.net:51831` to enroll your reachable DDNS/IP endpoint.
+Supply `--endpoint home.example.net` to enroll your reachable DDNS/IP endpoint
+using the WireGuard UDP port chosen during installation. An explicit external
+`:port` is also supported; the plan prints any external-to-internal NAT mapping.
 The installer adds a trusted LAN UDP alternative with the same WireGuard peer,
 PSK, inner destination and TLS CA. Native requests can retry an identical body
 through the alternative after a connection failure. HTTP authorization failures
 do not trigger this retry. There is no plaintext, public HTTP or relay fallback.
 Without `--endpoint`, installation is LAN-only and the plan says so.
 
-Forward only that UDP port to the Linux host. CGNAT, double NAT, ISP UDP filtering,
+Forward only that UDP port to the Linux host. Both management HTTPS and WireGuard UDP ports are chosen during installation;
+the terminal installer prompts for each missing choice. Only the selected UDP
+port is a router-forwarding candidate. The suggestion is **UDP 49272**, one
+above Bungee's documented example **UDP 49271**; Bungee requires an explicit
+operator choice. Use `--bungee-port <actual-port>` to select one higher, or
+`--udp-port <port>` for another unused listener. See the concrete
+[router forwarding rule](RUNNING.md#fresh-home-server). CGNAT, double NAT, ISP UDP filtering,
 captive portals, dynamic addresses and an active VPN can prevent reachability.
 A WireGuard hub supplies neither rendezvous nor automatic NAT traversal. DNS for
 DDNS uses the OS network policy and discloses endpoint lookup metadata. Choose a

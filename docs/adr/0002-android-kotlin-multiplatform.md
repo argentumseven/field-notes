@@ -21,8 +21,10 @@ network preset. The active build does not need Flutter or storage.googleapis.com
 Superseded Flutter sources/build helpers were preserved outside the checkout in
 `/workspace/.cache/field-notes/retired-flutter-source.tar.gz` before removal.
 
-Android background updates use optional WorkManager catch-up at its minimum
-15-minute period, subject to Doze, scheduling, force-stop and network constraints.
-Local reminders inspect cached due dates after 09:00 device-local time, with
-persistent deduplication. This is not instant server push and does not create a
-permanent foreground service. Notifications contain generic text by default.
+Android background delivery now uses a default-on, user-visible special-use
+foreground service through the app-contained tunnel, with head polling and
+bounded offline backoff. WorkManager catch-up is a fallback. AlarmManager posts
+cached due/calendar reminders independently of the network with encrypted
+receipts. No FCM/Play services or OS VPN slot is used. See
+[Android delivery](../ANDROID-DELIVERY.md) for the battery, exact-alarm, sound and
+GrapheneOS profile limits. iOS background delivery remains deferred.

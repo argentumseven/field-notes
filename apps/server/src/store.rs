@@ -1,4 +1,5 @@
 mod admin;
+mod assignment;
 mod auth;
 mod commands;
 mod enrollment;

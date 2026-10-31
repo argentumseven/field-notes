@@ -1,7 +1,7 @@
 # Synchronization contract
 
 Current protocol 1 uses transactional commands, an event sequence, snapshots and
-head polling. The database is schema 2 in 0.2.0. An event stream, resumable uploads,
+head polling. The database uses schema 2. An event stream, resumable uploads,
 comment editing and notification-job outbox are future features, not implied by
 this contract. See [VALIDATION.md](VALIDATION.md) for executed checks.
 
@@ -50,6 +50,22 @@ Calendar events are shared server records, downloaded in the same snapshot and
 retried through the same outbox as tasks. They sync across Field Notes clients;
 there is no CalDAV, Google/OS calendar bridge, calendar import or subscription.
 
+Assignments use a task's `assignee` field, with `null` for Unassigned. The
+server accepts only active owner/admin/member recipients and checks revisions
+inside the task transaction. An in-progress assignment cannot change until its
+claim is released; start requires an unassigned task or the actor's assignment.
+Completion retains the assignee and records the completing actor/time. A
+historical assignment to an unavailable member stays visible and permits other
+field edits, but cannot be reused on a new task.
+
+`GET /api/people` is an authenticated minimal directory (ID, display name and
+assignability only). Its revision appears in head polling so role/disable changes
+refresh the browser even without task edits. Android persists the directory in
+its encrypted cache for offline display. Protocol 1 and schema 2 remain valid;
+older clients can edit other fields without clearing assignments. New Android
+clients can still sync with a server missing the directory, with assignment
+controls unavailable. Server authorization remains authoritative.
+
 ## Android persistence and conflicts
 
 Commands are immutable retry units in an atomic Keystore-encrypted cache. Their
@@ -70,6 +86,12 @@ never masquerades as accepted server ownership.
 Downloaded images are encrypted and scoped to server/account/image. Switching
 accounts with pending edits is refused. An image picker captures the workspace
 basis at launch, so picking after reset does not relabel old work as new.
+
+A rejected session durably clears its cached token while preserving snapshots,
+outbox and drafts for sign-in/recovery. Widget rendering also checks live login
+state, so a credential-write failure cannot keep titles visible in the running
+app after known rejection. Offline devices and launcher-retained copies remain
+subject to the documented limits.
 
 Web drafts live only in the current tab, preserving their base revision during
 remote changes. They are not an encrypted offline browser database. Copy needed

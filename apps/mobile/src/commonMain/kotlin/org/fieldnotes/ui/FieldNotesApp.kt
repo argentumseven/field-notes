@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,6 +37,7 @@ import org.fieldnotes.domain.*
     model: Workspace, copyText: (String) -> Unit, attachImage: (String) -> Unit,
     configureBackground: (Preferences) -> Unit, registerBack: ((() -> Unit)?) -> Unit,
     imageContent: @Composable (VisibleRecord) -> Unit,
+    deviceActions:DeviceActions=DeviceActions(), requestedPage:String?=null,
     invitationCode: String? = null, enrollmentPolling: Boolean = true, scanInvitation: () -> Unit = {},
 ) {
     val state by model.state.collectAsState()
@@ -46,7 +48,7 @@ import org.fieldnotes.domain.*
                 (state.cache.enrollment?.stage?.let { it != "sign_in" } == true) || state.cache.config == null -> EnrollmentScreen(model, state, invitationCode, scanInvitation, enrollmentPolling)
                 state.needsLogin -> LoginScreen(model, state, copyText)
                 state.cache.snapshot == null -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Connected. Download your workspace."); state.error?.let { ErrorText(it) }; Button(onClick = { model.launch { model.sync() } }) { Text("Sync workspace") } }
-                else -> WorkspaceScreen(model, state, copyText, attachImage, configureBackground, registerBack, imageContent)
+                else -> WorkspaceScreen(model, state, copyText, attachImage, configureBackground, registerBack, imageContent,deviceActions,requestedPage)
             }
         }
     }
@@ -105,12 +107,14 @@ import org.fieldnotes.domain.*
     if (review) ChangesSheet(model, state, { review = false }, copy)
     if (reset) ConfirmDialog("Enroll again?", "Ask the administrator to revoke the old phone entry. This clears downloaded cache and generates a new device identity. Server content is retained.", "REENROLL", { reset = false }) { model.launch { model.resetConnection() }; reset = false }
 }
-@Composable private fun WorkspaceScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit, attach: (String) -> Unit, background: (Preferences) -> Unit, registerBack: ((() -> Unit)?) -> Unit, image: @Composable (VisibleRecord) -> Unit) {
+@Composable private fun WorkspaceScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit, attach: (String) -> Unit, background: (Preferences) -> Unit, registerBack: ((() -> Unit)?) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions,requestedPage:String?) {
     var selected by rememberSaveable { mutableStateOf<String?>(null) }; var page by rememberSaveable { mutableStateOf("Focus") }
     var query by rememberSaveable { mutableStateOf("") }; var project by rememberSaveable { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }; var projectsMenu by remember { mutableStateOf(false) }
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) }; var endpoint by remember { mutableStateOf(false) }
+    LaunchedEffect(requestedPage){if(requestedPage in listOf("Focus","Tasks","Calendar","Assignments","Notes"))page=requestedPage!!}
+    var removeInstallation by remember { mutableStateOf(false) };var profileHelp by remember { mutableStateOf(false) }
     val rows = remember(state.cache) { projectRecords(state.cache) }; val projects = workspaceContainers(state.cache)
     val drawer=rememberDrawerState(DrawerValue.Closed);val uiScope=rememberCoroutineScope()
     fun navigate(view:String,container:String?=null){page=view;project=container;query="";selected=null;uiScope.launch { drawer.close() }}
@@ -126,7 +130,7 @@ import org.fieldnotes.domain.*
     else if (selected != null && current?.record?.kind == "task") TaskScreen(model, state, current, { selected = null }, attach, image)
     else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Workspace",Modifier.padding(14.dp),style=MaterialTheme.typography.titleLarge)
-        for(view in listOf("Inbox","Focus","Tasks","Calendar","Notes","Collections","Unscheduled","Waiting","Completed"))NavigationDrawerItem(modifier=Modifier.testTag("drawer-"+view.lowercase()),label={Text(view)},selected=page==view&&project==null,onClick={navigate(view)})
+        for(view in listOf("Inbox","Focus","Tasks","Assignments","Calendar","Notes","Collections","My tasks","Unassigned","Unscheduled","Waiting","Completed"))NavigationDrawerItem(modifier=Modifier.testTag("drawer-"+view.lowercase().replace(" ","-")),label={Text(view)},selected=page==view&&project==null,onClick={navigate(view)})
         for(kind in listOf("list","project")){HorizontalDivider(Modifier.padding(vertical=12.dp));Row { Text(if(kind=="list")"Lists" else "Projects",Modifier.weight(1f).padding(12.dp),style=MaterialTheme.typography.labelLarge);if(writable)TextButton(onClick={if(kind=="list")addList=true else addProject=true}){Text("+")} };projects.filter { it.record.kind==kind }.forEach { c->NavigationDrawerItem(label={Text(c.record.data.text("title"))},selected=project==c.record.id,onClick={navigate("Tasks",c.record.id)}) }}
     } }}) { Scaffold(topBar = { TopAppBar(title = { Brand() }, navigationIcon={IconButton(onClick={uiScope.launch { drawer.open() }}){Icon(Icons.Outlined.Menu,"Browse workspace")}},actions = {
         IconButton(onClick = { model.launch { model.sync() } }, enabled = !state.syncing) { Icon(Icons.Outlined.Refresh, "Sync now") }
@@ -150,13 +154,17 @@ import org.fieldnotes.domain.*
             Text(when { state.syncing -> "Synchronizing…"; state.online -> "Synced · ${state.cache.outbox.size} queued"; else -> "Offline · ${state.cache.outbox.size} queued · starts provisional" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.cache.conflicts.isNotEmpty()) TextButton(onClick = { changes = true }) { Text("${state.cache.conflicts.size} changes need review") }
             if (page == "Calendar") PlannerCalendar(rows, today, zone, { selected = it })
+            else if(page=="Assignments") {
+                OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(top=12.dp),label={Text("Find assigned work")},singleLine=true)
+                AssignmentRows(state.cache,query){selected=it}
+            }
             else if(page=="Collections") {
                 LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp)) { for(kind in listOf("list","project")){item { Text(if(kind=="list")"Lists" else "Projects",Modifier.padding(vertical=16.dp),style=MaterialTheme.typography.titleMedium) };items(projects.filter { it.record.kind==kind },key={it.record.id}) { c->Column(Modifier.fillMaxWidth().clickable { navigate("Tasks",c.record.id) }.padding(vertical=12.dp)){Text(c.record.data.text("title"),fontWeight=FontWeight.Medium);Text(c.record.data.text("notes"),style=MaterialTheme.typography.bodySmall);if(writable)TextButton(onClick={editingContainer=c.record}){Text("Edit ${kind}")}};HorizontalDivider() } } }
             }
             else {
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page=="Notes")"Search notes" else "Search tasks") }, singleLine = true)
-                    Box { IconButton(onClick = { projectsMenu = true }) { Icon(Icons.Outlined.Home, "Choose project") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
+                    if(page!="Notes") Box { IconButton(onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
                         DropdownMenuItem(text = { Text("All lists & projects") }, onClick = { project = null; projectsMenu = false })
                         projects.forEach { p -> DropdownMenuItem(text = { Text(p.record.data.text("title")) }, onClick = { project = p.record.id; projectsMenu = false }) }
                     } }
@@ -166,7 +174,7 @@ import org.fieldnotes.domain.*
                 if(page=="Notes")NoteRows(rows,query){selected=it}
                 else                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 90.dp)) {
                     if (filtered.isEmpty()) item { Text("No tasks in this view. Capture a task without creating a project first.", Modifier.padding(vertical = 24.dp)) }
-                    items(filtered, key = { it.record.id }) { task -> TaskCard(task) { selected = task.record.id } }
+                    items(filtered, key = { it.record.id }) { task -> TaskCard(task,state.cache) { selected = task.record.id } }
                 }
             }
         }
@@ -176,7 +184,7 @@ import org.fieldnotes.domain.*
     if (addProject) TextDialog("New project", "Project name", { addProject = false }) { title -> model.enqueue("project.create", model.newId(), obj("title" to title.j()), null); addProject = false; model.launch { model.sync() } }
     if (addList) TextDialog("New list","List name",{addList=false}) { title->model.enqueue("list.create",model.newId(),obj("title" to title.j()),null);addList=false;model.launch { model.sync() } }
     if (addNote) TextDialog("New note","Note title",{addNote=false},maxLength=240) { title->val id=model.newId();model.enqueue("note.create",id,obj("title" to title.j()),null);addNote=false;selected=id;page="Notes";model.launch { model.sync() } }
-    if (addTask) TextDialog("Add task", "Task title · dates optional", { addTask = false }, maxLength = 240) { title -> model.enqueue("task.create",model.newId(),obj("title" to title.j(),"project_id" to (project?:"").j()),null);addTask=false;model.launch { model.sync() } }
+    if(addTask)NewTaskDialog(model,state,project,page=="My tasks"){addTask=false}
     editingContainer?.let { c->ContainerEditor(model,state,c){editingContainer=null} }
     if (addEvent) EventEditor(model, state, null, today, { addEvent = false })
     if (endpoint) TextDialog("Server endpoint", "Host:UDP port", { endpoint = false }, confirmLabel = "Update", initial = state.cache.config?.text("endpoint") ?: "", maxLength = 260) { model.updateEndpoint(it); endpoint = false; model.launch { model.sync() } }
@@ -185,21 +193,41 @@ import org.fieldnotes.domain.*
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Settings", style = MaterialTheme.typography.titleLarge); Text("${actor.name} · ${actor.role}"); Text("Server: ${state.cache.config?.text("endpoint")}")
             TextButton(onClick = { endpoint = true }) { Text("Edit server endpoint") }
+            if(device.androidDelivery){
+                Text("Alerts and home screen",style=MaterialTheme.typography.titleMedium)
+                Text(device.status,style=MaterialTheme.typography.bodySmall)
+                state.error?.let { ErrorText(it) }
+                SettingSwitch("Live background updates", "On by default. Keeps a private connection with an ongoing Android notification and can use more battery.",state.cache.preferences.liveUpdates){val p=state.cache.preferences.copy(liveUpdates=it);model.launch { model.preferences(p);background(p) }}
+                TextButton(onClick=device.testAlert){Text("Play a sound test now")}
+                TextButton(onClick=device.profileTest){Text("Test in another profile (30 s)")}
+                TextButton(onClick=device.notificationSettings){Text("Notification sound settings")}
+                TextButton(onClick=device.alarmSettings){Text("Allow precise reminders")}
+                TextButton(onClick=device.batterySettings){Text("Background battery settings")}
+                TextButton(onClick={profileHelp=true}){Text("Alerts in other GrapheneOS profiles")}
+            }
             SettingSwitch("Background catch-up", "Android schedules checks at 15-minute minimum intervals. Doze, force-stop and VPN policy can delay them.", state.cache.preferences.backgroundSync) { val p = state.cache.preferences.copy(backgroundSync = it); model.launch { model.preferences(p); background(p) } }
-            SettingSwitch("Local due reminders", "Checks cached due dates after 09:00. Offline reminders may be stale.", state.cache.preferences.reminders) { val p = state.cache.preferences.copy(reminders = it); model.launch { model.preferences(p); background(p) } }
-            SettingSwitch("Task titles in home widget", "Off by default. Enabling shares title copies with your launcher; a lock cannot erase copies it has cached. Notes and images stay private.", state.cache.preferences.widgetTitles) { val p = state.cache.preferences.copy(widgetTitles = it); model.launch { model.preferences(p); background(p) } }
+            SettingSwitch("Task and calendar reminders", "Cached due/all-day alerts at 09:00 and timed events 10 minutes before. Offline reminders may be stale.", state.cache.preferences.reminders) { val p = state.cache.preferences.copy(reminders = it); model.launch { model.preferences(p); background(p) } }
+            SettingSwitch("Titles in home-screen widgets", "Off by default. Enabling shares title copies with your launcher; a lock cannot erase copies it has cached. Notes and images stay private.", state.cache.preferences.widgetTitles) { val p = state.cache.preferences.copy(widgetTitles = it); model.launch { model.preferences(p); background(p) } }
             Text("Add the Field Notes widget from your launcher's widget picker. It opens this locked app and refreshes from the encrypted local cache.", style = MaterialTheme.typography.bodySmall)
+            if(device.androidDelivery){TextButton(onClick=device.addUpcomingWidget){Text("Add Upcoming to home screen")};TextButton(onClick={removeInstallation=true}){Text("Revoke this installation and uninstall")}}
             TextButton(onClick = { settings = false }) { Text("Close") }; Spacer(Modifier.height(24.dp))
         }
     }
+    if(profileHelp)AlertDialog(onDismissRequest={profileHelp=false},title={Text("GrapheneOS profile alerts")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        Text("Leave the Field Notes profile running and allow it to run in the background. In that profile, enable GrapheneOS notification forwarding to the active profile.")
+        Text("Use the 30-second profile test, switch profiles before it fires, then check the receiving profile's forwarded-notification sound and Do Not Disturb settings. Forwarding hides task contents.")
+        Text("End session, force-stop and a powered-off phone stop delivery. Home-screen widgets belong to the profile where they are installed.")
+    }},confirmButton={TextButton(onClick=device.profileSettings){Text("Open Android settings")}},dismissButton={TextButton(onClick={profileHelp=false}){Text("Close")}})
+    if(removeInstallation)ConfirmDialog("Revoke this installation?","Sync or review retained work first. This revokes this device on your server, clears its local connection, stops background work and opens Android's uninstall screen. Shared household records remain on the server. Direct Android uninstall cannot contact the server; revoke its entry in Management if you uninstall that way.","REVOKE",{removeInstallation=false}){model.launch { device.removeInstallation() };removeInstallation=false}
 }
-@Composable private fun TaskCard(task: VisibleRecord, open: () -> Unit) {
+@Composable internal fun TaskCard(task: VisibleRecord, cache: Cache, open: () -> Unit) {
     val d = task.record.data
     Row(Modifier.fillMaxWidth().clickable(onClick = open).padding(vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(when(d.text("status")) { "done" -> Icons.Outlined.Done; "in_progress" -> Icons.Outlined.PlayArrow; else -> Icons.Outlined.CheckCircle }, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        if(d.text("status") !in setOf("done","in_progress")) Box(Modifier.size(18.dp).border(1.5.dp,MaterialTheme.colorScheme.primary,CircleShape))
+        else Icon(if(d.text("status")=="done")Icons.Outlined.Done else Icons.Outlined.PlayArrow,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.primary)
         Column(Modifier.padding(horizontal = 12.dp).weight(1f)) {
             Text(d.text("title"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text(buildList { add(priorityName(d.number("priority", 3).toInt())); if (d.text("due").isNotBlank()) add("Due ${d.text("due")}") else add("No due date"); if (task.record.flag("blocked")) add("Blocked"); if (task.record.flag("pinned")) add("Pinned"); if (task.pending) add("Queued"); if (d.text("claimant").isNotBlank()) add("Claimed") }.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(buildList { add(priorityName(d.number("priority", 3).toInt())); if (d.text("due").isNotBlank()) add("Due ${d.text("due")}") else add("No due date"); if (task.record.flag("blocked")) add("Blocked"); if (task.record.flag("pinned")) add("Pinned"); if (task.pending) add("Queued"); add(if(d.text("assignee").isBlank())"Unassigned" else "For "+personName(cache,d.text("assignee"))); if (d.text("claimant").isNotBlank()) add("Working: "+personName(cache,d.text("claimant"))) }.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
@@ -215,7 +243,7 @@ import org.fieldnotes.domain.*
     var effort by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("estimate_minutes").toString()) }
     var pinned by remember(task.id) { mutableStateOf((draft?.data ?: task.data)["pinned"] == JsonPrimitive(true)) }
     var blocked by remember(task.id) { mutableStateOf((draft?.data ?: task.data)["blocked"] == JsonPrimitive(true)) }
-    var quadrant by remember(task.id) { mutableStateOf(draft?.data?.text("quadrant") ?: task.data.text("quadrant")) }
+    var assignee by remember(task.id) { mutableStateOf((draft?.data?:task.data).text("assignee")) };var assigneeMenu by remember { mutableStateOf(false) }
     var revision by remember(task.id) { mutableStateOf(draft?.revision ?: task.revision) }
     val basis = remember(task.id) { draft?.let { Basis(it.epoch, it.generation) } ?: state.cache.snapshot!!.basis }
     val staleWorkspace = basis != state.cache.snapshot!!.basis
@@ -223,19 +251,29 @@ import org.fieldnotes.domain.*
     var dirty by remember(task.id) { mutableStateOf(draft != null) }
     var comment by rememberSaveable(task.id) { mutableStateOf("") }
     var delete by remember { mutableStateOf(false) }
-    var groupMenu by remember { mutableStateOf(false) }
     val writable = state.cache.snapshot!!.actor.role != "viewer"
-    fun fields() = obj("title" to title.j(), "notes" to notes.j(), "due" to due.j(), "quadrant" to quadrant.j(), "project_id" to container.j(), "priority" to priority.j(), "planned_for" to planned.j(), "estimate_minutes" to (effort.toIntOrNull() ?: 0).j(), "pinned" to JsonPrimitive(pinned), "blocked" to JsonPrimitive(blocked))
+    fun fields():JsonObject {
+        val data=obj("title" to title.j(),"notes" to notes.j(),"due" to due.j(),"project_id" to container.j(),"priority" to priority.j(),"planned_for" to planned.j(),"estimate_minutes" to (effort.toIntOrNull()?:0).j(),"pinned" to JsonPrimitive(pinned),"blocked" to JsonPrimitive(blocked))
+        return if(state.cache.people.isEmpty())data else JsonObject(data+("assignee" to if(assignee.isBlank())JsonNull else assignee.j()))
+    }
     fun retain() { dirty = true; val captured = fields(); val base = revision; model.launch { model.saveDraft(task.id, base, captured, basis) } }
     LaunchedEffect(draft?.revision) { if (dirty && draft != null && draft.dependsOn == null) revision = draft.revision }
     LaunchedEffect(task.revision, visible.pending) {
-        if (!dirty && !visible.pending && !staleWorkspace) { container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); quadrant = task.data.text("quadrant"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision }
+        if (!dirty && !visible.pending && !staleWorkspace) { container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision }
     }
     Scaffold(topBar = { TopAppBar(title = { Text(if (visible.pending) "Pending confirmation" else "Task details") }, navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.error?.let { message->item { ErrorText(message) } }
             if (staleWorkspace) item { ErrorText("The server was reset or restored. Reopen this task before making new changes; your old drafts are retained.") }
             item { OutlinedTextField(title, { if (it.length <= 240) { title = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Task title") }, enabled = writable && !saving && !staleWorkspace) }
+            item { Box {
+                OutlinedButton(onClick={assigneeMenu=true},enabled=writable&&!saving&&!staleWorkspace&&state.cache.people.isNotEmpty()&&task.data.text("status")!="in_progress"){Text("Assigned to: "+if(assignee.isBlank())"Unassigned" else personName(state.cache,assignee))}
+                DropdownMenu(assigneeMenu,{assigneeMenu=false}){
+                    DropdownMenuItem(text={Text("Unassigned")},onClick={assignee="";assigneeMenu=false;retain()})
+                    state.cache.people.filter { it.can_assign }.forEach { person->DropdownMenuItem(text={Text(person.name)},onClick={assignee=person.id;assigneeMenu=false;retain()}) }
+                }
+            };if(task.data.text("status")=="in_progress")Text("Release the task before changing its assignment.",style=MaterialTheme.typography.bodySmall)
+              if(state.cache.people.isEmpty())Text("Update the server to enable assignments.",style=MaterialTheme.typography.bodySmall) }
             item { OutlinedTextField(notes, { if (it.length <= 16384) { notes = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Notes") }, minLines = 5, enabled = writable && !saving && !staleWorkspace) }
             item { Box { OutlinedButton(onClick={containerMenu=true},enabled=writable&&!staleWorkspace){Text("Keep in: "+(workspaceContainers(state.cache).firstOrNull { it.record.id==container }?.record?.data?.text("title")?:"Inbox"))};DropdownMenu(containerMenu,{containerMenu=false}){DropdownMenuItem(text={Text("Inbox")},onClick={container="";containerMenu=false;retain()});workspaceContainers(state.cache).forEach { c->DropdownMenuItem(text={Text(c.record.data.text("title")+" · "+c.record.kind)},onClick={container=c.record.id;containerMenu=false;retain()})}} } }
             item { DateField("Due date", due, writable && !saving && !staleWorkspace) { due = it; retain() } }
@@ -244,23 +282,21 @@ import org.fieldnotes.domain.*
             item { OutlinedTextField(if (effort == "0") "" else effort, { if (it.length <= 3 && (it.isEmpty() || it.toIntOrNull() in 0..480)) { effort = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Estimate · minutes (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, enabled = writable && !saving && !staleWorkspace) }
             item { SettingSwitch("Pin in Focus", "Pinned tasks come before the score order.", pinned) { if (writable && !staleWorkspace) { pinned = it; retain() } }; SettingSwitch("Blocked", "Hide from Focus until unblocked.", blocked) { if (writable && !staleWorkspace) { blocked = it; retain() } } }
             item { val rank = rankTask(task, Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date, Clock.System.now().epochSeconds, state.cache.snapshot.actor.user_id); Text("Saved Focus score ${rank.score}" + if (!rank.eligible) " · excluded from Focus" else "", style = MaterialTheme.typography.titleSmall); Text(rank.reasons.joinToString(" · "), style = MaterialTheme.typography.bodySmall) }
-            item { Box {
-                OutlinedButton(onClick = { groupMenu = true }, enabled = writable && !saving && !staleWorkspace) { Text("Collection: $quadrant"); Icon(Icons.Outlined.KeyboardArrowDown, null) }
-                DropdownMenu(groupMenu, { groupMenu = false }) { listOf("do", "decide", "delegate", "defer").forEach { group -> DropdownMenuItem(text = { Text(group) }, onClick = { quadrant = group; groupMenu = false; retain() }) } }
-            } }
             if (dirty && revision != task.revision && !visible.pending) item {
                 OutlinedCard { Column(Modifier.padding(16.dp)) {
                     Text("This task changed on another device. Your draft is kept.", fontWeight = FontWeight.Medium)
-                    Text("Server title: ${task.data.text("title")}\nServer notes: ${task.data.text("notes")}", Modifier.padding(vertical = 12.dp))
-                    TextButton(onClick = { container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); quadrant = task.data.text("quadrant"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision; dirty = false; model.launch { model.discardDraft(task.id) } }) { Text("Use server version") }
+                    Text("Server title: ${task.data.text("title")}\nAssigned to: ${task.data.text("assignee").let { if(it.isBlank())"Unassigned" else personName(state.cache,it) }}\nServer notes: ${task.data.text("notes")}", Modifier.padding(vertical = 12.dp))
+                    TextButton(onClick = { container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision; dirty = false; model.launch { model.discardDraft(task.id) } }) { Text("Use server version") }
                     TextButton(onClick = { revision = task.revision; retain() }) { Text("Keep draft for a new save") }
                 } }
             }
             if (writable) item { Button(onClick = { val data = fields(); val base = revision; saving = true; model.launch { try { model.saveDraft(task.id, base, data, basis); model.submitDraft(task.id); dirty = false } finally { saving = false }; model.sync() } }, enabled = title.isNotBlank() && !saving && !staleWorkspace) { Icon(Icons.Outlined.Done, null); Spacer(Modifier.width(8.dp)); Text("Save details") } }
             item { Text(when { visible.pending -> "This change is provisional until the server accepts it."; task.data.text("claimant").isNotBlank() -> "This task is claimed. Server authorization decides who can release or finish it."; else -> "Status: ${task.data.text("status").replace('_', ' ')}" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if(task.data.text("assignee").isNotBlank()&&task.data.text("assignee")!=state.cache.snapshot.actor.user_id&&task.data.text("status")=="todo")item { Text("Reassign this task to yourself before starting.",style=MaterialTheme.typography.bodySmall) }
+            if(task.data.text("status")=="done"&&task.data.text("completed_by").isNotBlank())item { Text("Completed by "+personName(state.cache,task.data.text("completed_by")),style=MaterialTheme.typography.bodySmall) }
             if (writable && !staleWorkspace) item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val status = task.data.text("status")
-                if (status == "todo" && !task.flag("blocked")) OutlinedButton(onClick = { model.enqueueAsync("task.start", task.id, obj(), task.revision, basis) }) { Text("Start task") }
+                if (status == "todo" && !task.flag("blocked") && (task.data.text("assignee").isBlank() || task.data.text("assignee")==state.cache.snapshot.actor.user_id)) OutlinedButton(onClick = { model.enqueueAsync("task.start", task.id, obj(), task.revision, basis) }) { Text("Start task") }
                 if (status == "in_progress") OutlinedButton(onClick = { model.enqueueAsync("task.release", task.id, obj(), task.revision, basis) }) { Text("Release") }
                 OutlinedButton(onClick = { model.enqueueAsync(if (status == "done") "task.reopen" else "task.complete", task.id, obj(), task.revision, basis) }) { Text(if (status == "done") "Reopen" else "Complete") }
                 TextButton(onClick = { delete = true }) { Text("Delete", color = MaterialTheme.colorScheme.error) }

@@ -27,6 +27,7 @@ private class EnrollmentTransport(private val vault: EnrollmentVault) : Transpor
         return Reply(200, obj("user" to "Alex".j(), "role" to "member".j(), "state" to (if(ready) "ready" else "provisioning").j(), *if(ready) arrayOf("configuration" to obj("ca_pem" to ca.j(), "server_key" to "server".j()), "activation_secret" to "secret".j()) else emptyArray()).toString())
     }
     override suspend fun exchange(path: String, token: String?, body: JsonObject?, serverKey: String?): Reply {
+        if(path=="/api/people")return Reply(200, """{"people":[]}""")
         if(path == "/api/device/activate") { activations++; assertEquals("secret", vault.cache.enrollment?.activationSecret); assertNotNull(vault.cache.config); if(lostActivation) { lostActivation = false; error("Lost activation response") }; return Reply(200, obj("token" to "active-token".j(), "actor" to WireJson.encodeToJsonElement(account)).toString()) }
         return Reply(200, WireJson.encodeToString(Snapshot(1,"epoch",1,0,emptyList(),account)))
     }

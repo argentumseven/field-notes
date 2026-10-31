@@ -27,12 +27,13 @@ class PlannerWidget : AppWidgetProvider() {
             val ids = manager.getAppWidgetIds(ComponentName(context, PlannerWidget::class.java))
             if (ids.isEmpty()) return
             val app = context.applicationContext as FieldNotesApplication
-            val cache = app.model.state.value.cache
+            val state = app.model.state.value
+            val cache = state.cache
             val unlocked = context.getSystemService(UserManager::class.java).isUserUnlocked && !context.getSystemService(KeyguardManager::class.java).isDeviceLocked
-            manager.updateAppWidget(ids, views(context, cache, unlocked))
+            manager.updateAppWidget(ids, views(context, cache, unlocked, !state.needsLogin))
         }
-        fun views(context: Context, cache: Cache, unlocked: Boolean): RemoteViews {
-            val show = widgetMayShowTitles(cache, unlocked)
+        fun views(context: Context, cache: Cache, unlocked: Boolean, authenticated: Boolean = true): RemoteViews {
+            val show = widgetMayShowTitles(cache, unlocked, authenticated)
             val view = RemoteViews(context.packageName, R.layout.planner_widget)
             val open = PendingIntent.getActivity(context, 41, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             listOf(R.id.widget_brand, R.id.widget_title, R.id.widget_tasks, R.id.widget_footer).forEach { view.setOnClickPendingIntent(it, open) }

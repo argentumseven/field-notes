@@ -13,6 +13,7 @@ const tools=process.env.FIELD_NOTES_TOOLS||'/workspace/.cache/field-notes';
 const adb=join(tools,'android-sdk/platform-tools/adb');
 const serial=process.env.FIELD_NOTES_EMULATOR||'emulator-5554';
 const launcherOnly=process.argv.includes('--launcher-only');
+const detailsOnly=process.argv.includes('--details-only');
 if(!serial.startsWith('emulator-'))throw Error('Only a disposable emulator is supported.');
 async function call(args,timeout=120000){return(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;}
 const avd=(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()||(await call(['shell','getprop','ro.kernel.qemu.avd_name'])).trim();
@@ -56,7 +57,8 @@ try{
  const imageBytes=await f.request('/api/images/'+image.id,{token:f.owner});assert.equal(imageBytes.status,200);
  // Real authorized server snapshot/image and a real stale response. The test
  // connection renders them deterministically; this is not a tunnel test.
- const uiFixture=Buffer.from(JSON.stringify({snapshot,image:imageBytes.data.toString('base64'),stale_error:stale.data}));
+ const people=(await f.request("/api/people",{token:f.owner})).data.people;
+ const uiFixture=Buffer.from(JSON.stringify({snapshot,people,image:imageBytes.data.toString('base64'),stale_error:stale.data}));
  // Stream the synthetic JSON into this debug app's private test file. Putting
  // image-bearing fixtures in an am instrument argument exceeds ADB's 64 KiB
  // service-command limit. No production permission or parser is relaxed.
@@ -65,7 +67,7 @@ try{
   const child=spawn(adb,['-s',serial,'shell','-T',"run-as org.fieldnotes.app sh -c 'cat > files/gallery-fixture.json'"],{stdio:['pipe','ignore','pipe']});
   let error='';child.stderr.on('data',b=>error+=b);child.on('error',reject);child.on('close',code=>code===0?resolve():reject(Error('Writing the test fixture failed: '+error)));child.stdin.end(uiFixture);
  });
- for(const mode of ['dark','light']){
+ for(const mode of (detailsOnly?['details']:['dark','light'])){
   if(mode==='light')await call(['shell','cmd','uimode','night','no']);
   await call(['shell','input','keyevent','KEYCODE_WAKEUP']);
   console.log('Capturing Android '+mode+' UI.');
@@ -74,11 +76,10 @@ try{
   if(!/OK \(1 test\)/.test(result)||result.includes('FAILURES!!!'))throw Error(result);
  }
  const names=(await call(['shell','run-as','org.fieldnotes.app','ls','files/gallery'])).trim().split(/\s+/);
- if(names.length!==16||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
- const {readdir,rm}=await import('node:fs/promises');for(const old of await readdir(output))if(old.endsWith('.png')&&!names.includes(old))await rm(join(output,old));
+ if(names.length!==(detailsOnly?4:22)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
  for(const name of names){const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/gallery/'+name],{encoding:'buffer',maxBuffer:8*1024*1024});await writeFile(join(output,name),stdout);}
- await launcher();
- console.log('Captured '+(names.length+1)+' Android screenshots, including the actual launcher icon.');
+ if(!detailsOnly)await launcher();
+ console.log(detailsOnly?'Captured '+names.length+' updated Android settings/help/renderer screenshots.':'Captured '+(names.length+1)+' Android screenshots, including the actual launcher icon.');
 }finally{
  hub?.kill('SIGTERM');await browser.close();await f?.close();
  await call(['shell','wm','size','reset']).catch(()=>{});await call(['shell','wm','density','reset']).catch(()=>{});

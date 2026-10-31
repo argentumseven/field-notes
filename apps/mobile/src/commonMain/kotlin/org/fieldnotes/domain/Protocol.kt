@@ -12,6 +12,7 @@ fun JsonObject.text(key: String, default: String = "") = (get(key) as? JsonPrimi
 fun JsonObject.number(key: String, default: Long = 0) = (get(key) as? JsonPrimitive)?.longOrNull ?: default
 
 @Serializable data class Actor(val user_id: String, val name: String, val role: String, val session_id: String, val elevated: Boolean = false)
+@Serializable data class HouseholdPerson(val id:String,val name:String,val can_assign:Boolean)
 @Serializable data class Record(val id: String, val kind: String, val revision: Long, val data: JsonObject)
 @Serializable data class Snapshot(val protocol: Int, val epoch: String, val generation: Long, val sequence: Long, val records: List<Record>, val actor: Actor)
 @Serializable data class Command(val operation_id: String, val epoch: String, val generation: Long, val action: String, val target: String, val expected_revision: Long?, val data: JsonObject)
@@ -20,10 +21,10 @@ val Snapshot.basis get() = Basis(epoch, generation)
 @Serializable data class Pending(val command: Command, val dependsOn: String? = null, val attempted: Boolean = false)
 @Serializable data class Conflict(val command: Command, val reason: String)
 @Serializable data class Draft(val target: String, val epoch: String, val generation: Long, val revision: Long, val data: JsonObject, val dependsOn: String? = null, val action: String = "task.update")
-@Serializable data class Preferences(val backgroundSync: Boolean = false, val reminders: Boolean = false, val widgetTitles: Boolean = false)
+@Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = false, val liveUpdates: Boolean = true)
 @Serializable data class Cache(
     val keys: JsonObject? = null, val config: JsonObject? = null, val token: String? = null,
-    val snapshot: Snapshot? = null, val outbox: List<Pending> = emptyList(),
+    val snapshot: Snapshot? = null, val people: List<HouseholdPerson> = emptyList(), val directoryRevision:Long = 0, val lastSyncedAt:Long = 0, val outbox: List<Pending> = emptyList(),
     val conflicts: List<Conflict> = emptyList(), val drafts: Map<String, Draft> = emptyMap(),
     val enrollment: Enrollment? = null, val preferences: Preferences = Preferences(), val reminded: Set<String> = emptySet(),
 )

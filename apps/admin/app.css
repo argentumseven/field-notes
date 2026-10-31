@@ -633,10 +633,10 @@ dialog::backdrop {
     padding: 16px;
     gap: 14px;
   }
-  .sidebar > .nav {
+  .sidebar-scroll > .nav {
     flex-direction: row;
   }
-  .sidebar > section {
+  .sidebar-scroll > section {
     display: none;
   }
   .sidebar-bottom {
@@ -743,13 +743,13 @@ dialog::backdrop {
   border-top: 1px solid var(--border);
 }
 @media (max-width: 600px) {
-  .sidebar > .nav {
+  .sidebar-scroll > .nav {
     flex-wrap: wrap;
   }
-  .sidebar > .smart-views {
+  .sidebar-scroll > .smart-views {
     display: none;
   }
-  .sidebar > .create-menu {
+  .sidebar-scroll > .create-menu {
     margin: 0;
   }
   .create-menu[open] {
@@ -762,4 +762,84 @@ dialog::backdrop {
   .collection-context {
     flex-wrap: wrap;
   }
+}
+
+/* Footer destinations share the same text baseline as planner navigation. */
+.sidebar-bottom > button {
+  text-align: left;
+  justify-content: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 10px 12px;
+}
+.sidebar-bottom > button:hover,
+.sidebar-bottom > button.active {
+  background: var(--accent-bg);
+}
+.sidebar-bottom > button.active {
+  color: var(--accent);
+}
+.sidebar-bottom .person {
+  padding-left: 12px;
+}
+.nav button:hover {
+  background: var(--accent-bg);
+}
+.assignment-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 28px;
+  margin-top: 24px;
+}
+.assignment-group {
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.assignment-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.assignment-heading h2 {
+  margin: 0;
+}
+.assignment-heading .count {
+  margin-left: auto;
+}
+.assignment-group .task {
+  width: 100%;
+  text-align: left;
+}
+
+@media (min-width: 601px) {
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    min-height: 0;
+  }
+  .sidebar-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .sidebar-bottom {
+    flex-shrink: 0;
+  }
+}
+@media (max-width: 600px) {
+  .sidebar-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+
+.task-view-select {
+  width: auto;
+  max-width: 100%;
 }

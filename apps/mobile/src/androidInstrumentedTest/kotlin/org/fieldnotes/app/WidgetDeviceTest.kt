@@ -18,11 +18,12 @@ class WidgetDeviceTest {
         val cache = Cache(token="PRIVATE-SESSION",keys=obj("private_key" to "PRIVATE-KEY".j()),snapshot=Snapshot(1,"fixture",1,0,listOf(task),Actor("user","Owner","owner","session")))
         fun allText(view: View): String = when(view) { is TextView -> view.text.toString(); is ViewGroup -> (0 until view.childCount).joinToString(" ") { allText(view.getChildAt(it)) }; else -> "" }
         instrumentation.runOnMainSync {
-            fun text(c:Cache, unlocked:Boolean) = allText(PlannerWidget.views(context,c,unlocked).apply(context,FrameLayout(context)))
+            fun text(c:Cache, unlocked:Boolean, authenticated:Boolean=true) = allText(PlannerWidget.views(context,c,unlocked,authenticated).apply(context,FrameLayout(context)))
             assertFalse(text(cache,true).contains("Replace the filter"))
             val opted = cache.copy(preferences=Preferences(widgetTitles=true))
             assertTrue(text(opted,true).contains("Replace the filter"))
             assertFalse(text(opted,false).contains("Replace the filter"))
+            assertFalse(text(opted,true,false).contains("Replace the filter"))
             assertFalse(text(opted.copy(token=null),true).contains("Replace the filter"))
             for(secret in listOf("PRIVATE-NOTES","PRIVATE-SESSION","PRIVATE-KEY")) assertFalse(text(opted,true).contains(secret))
         }

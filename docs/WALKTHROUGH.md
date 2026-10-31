@@ -2,8 +2,9 @@
 
 These screenshots contain only a synthetic household. Browser captures use the
 real Rust server/database. Android captures render actual Compose/RemoteViews
-with a test-only connection and encrypted local cache. The widget image uses its
-real Android RemoteViews renderer in the capture activity, not a launcher claim.
+with a test-only connection and encrypted local cache. Image 11 compares the
+RemoteViews renderer in a test activity; image 22 is a widget actually bound to
+the AOSP home-screen launcher through Android's normal pin confirmation.
 Screenshots do not prove live enrollment, home firewall isolation, camera optics,
 GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
 capture protection enabled. Test invitations expire and their fixture is deleted.
@@ -21,6 +22,24 @@ task between Inbox, a List and a Project with revision checks.
 ![Standalone shared Notes](screenshots/web/22-notes.png)
 ![Shared note editor](screenshots/web/23-shared-note.png)
 ![Groceries as a List](screenshots/web/24-grocery-list.png)
+
+## Tasks, assignments and handoffs
+
+Tasks includes all work. Assignments groups open work by responsible person;
+My tasks and Unassigned are direct filters. The Task view selector keeps these
+available in a small browser viewport as well as the sidebar. Management and
+Change theme now share the navigation text baseline; on desktop their footer
+stays visible while the workspace destinations scroll.
+
+A task can be assigned before anyone starts it. A working claim is exclusive;
+release it before handing off responsibility. Inactive people/viewers cannot
+receive new work. Existing assignments keep their identity and conflicts retain
+edits. Focus, the widget and due reminders respect the responsible person.
+
+![Household assignment overview](screenshots/web/25-assignments.png)
+![My tasks](screenshots/web/26-my-tasks.png)
+![Unassigned work](screenshots/web/27-unassigned.png)
+![Capture a task and select a responsible person](screenshots/web/28-new-assigned-task.png)
 
 ## Focus, priorities and optional dates
 
@@ -71,6 +90,12 @@ See [ENROLLMENT.md](ENROLLMENT.md) for retries, expiry, recovery and revocation.
 
 ## Android
 
+| Assignments | My tasks | Capture with assignment |
+| --- | --- | --- |
+| <img src="screenshots/android/18-assignments.png" width="250" alt="Android household responsibilities"> | <img src="screenshots/android/19-my-tasks.png" width="250" alt="Personal responsibility and active work"> | <img src="screenshots/android/21-new-task.png" width="250" alt="Task title, assignee and collection are independent"> |
+
+<img src="screenshots/android/20-unassigned.png" width="300" alt="Android unassigned work">
+
 The installed page glyph in the actual AOSP launcher:
 
 <img src="screenshots/android/17-launcher-icon.png" width="300" alt="Current Field Notes icon in the actual Android launcher">
@@ -104,10 +129,27 @@ peer JSON editing is needed in the normal enrollment flow.
 | --- | --- | --- |
 | <img src="screenshots/android/09-settings-widgets.png" width="250" alt="Settings including widget title opt-in"> | <img src="screenshots/android/11-widget.png" width="250" alt="Private default and title-enabled widget rendering"> | <img src="screenshots/android/10-focus-paper.png" width="250" alt="Android paper theme"> |
 
-The widget hides titles by default. Opting in shares title copies with your
-launcher, which can retain them. Notes/images/credentials are never included.
-Tap opens the credential-locked app. Updates use the encrypted local cache and
-Android scheduling; they are not guaranteed instant push or lock redaction.
+| Actual home-screen Upcoming widget | Android notification shade |
+| --- | --- |
+| <img src="screenshots/android/22-home-upcoming-widget.png" width="280" alt="Upcoming widget hosted on the actual AOSP home screen"> | <img src="screenshots/android/23-android-notifications.png" width="280" alt="Actual Android reminder and foreground connection status"> |
+
+| Background delivery settings | Full-profile guidance |
+| --- | --- |
+| <img src="screenshots/android/24-background-settings.png" width="280" alt="Background delivery, permissions and test controls"> | <img src="screenshots/android/25-profile-help.png" width="280" alt="GrapheneOS forwarding and full user profile limitations"> |
+
+Upcoming shows dates and internal calendar events; Focus shows ranked work.
+Widgets hide titles by default. Opting in shares title copies with the launcher,
+which can retain them. Notes/images/credentials are never included. Tap opens
+the credential-locked app; the Upcoming footer requests a refresh. The screenshots
+opt into synthetic titles. The documentation fixture disables live mode so its
+fake server identity never starts a real network connection; new installations
+default it on after enrollment and notification permission.
+
+The notification capture uses actual Android alarms, receivers, foreground
+service and channels with a synthetic encrypted calendar cache. It proves
+posting and channel configuration, not physical sound or GrapheneOS forwarding.
+Follow [profile/sound setup and clean uninstall](ANDROID-DELIVERY.md) on the real
+phones. No unconditional timing or cross-profile home-screen sharing is claimed.
 
 ## Browser on a small screen
 
@@ -125,6 +167,9 @@ node scripts/capture-web.mjs
 bash scripts/build/android-emulator.sh
 # Only on the disposable field-notes-test AVD:
 node scripts/capture-android.mjs
+node scripts/capture-home-widget.mjs
+# Refresh only settings/help/renderer after a settings change:
+node scripts/capture-android.mjs --details-only
 ```
 
 The gallery fixture and capture permission exist only in the instrumentation APK.

@@ -38,6 +38,8 @@ class NativeDeviceTest {
             val login=transport.exchange("/api/login",null,obj("name" to "owner".j(),"password" to "household-test-password-only".j(),"device" to "Emulator native test".j()),peer)
             assertEquals(200,login.status);val token=WireJson.parseToJsonElement(login.body).jsonObject.text("token")
             val snapshot=transport.exchange("/api/snapshot",token,serverKey=peer);assertEquals(200,snapshot.status)
+            val directory=transport.exchange("/api/people",token,serverKey=peer);assertEquals(200,directory.status)
+            assertEquals("owner",WireJson.parseToJsonElement(directory.body).jsonObject.getValue("people").jsonArray.single().jsonObject.text("name"))
             val meta=WireJson.parseToJsonElement(snapshot.body).jsonObject
             suspend fun command(action:String,target:String,data:JsonObject,revision:Long?=null):Reply{
                 val c=Command(UUID.randomUUID().toString(),meta.text("epoch"),meta.number("generation"),action,target,revision,data)

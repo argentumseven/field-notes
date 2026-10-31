@@ -1,0 +1,6 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="16dp" android:background="#202626">
+ <TextView android:id="@+id/widget_brand" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Field Notes" android:textColor="#74C7BB" android:textStyle="bold" android:textSize="14sp"/>
+ <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Upcoming" android:textColor="#E3E6DF" android:textSize="18sp"/>
+ <TextView android:id="@+id/widget_tasks" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="8dp" android:textColor="#E3E6DF" android:textSize="14sp" android:maxLines="12" android:ellipsize="end"/>
+ <TextView android:id="@+id/widget_footer" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Cached locally · tap here to refresh" android:textColor="#A6BBB5" android:textSize="12sp"/>
+</LinearLayout>

@@ -10,23 +10,60 @@ Build on Linux or unpack the matching Linux server bundle:
 
 ```sh
 bash scripts/build/server.sh
-# Or extract dist/server/field-notes-0.2.0-linux-x86_64.tar.gz on the Linux host.
+# Or extract dist/server/field-notes-0.3.0-linux-x86_64.tar.gz on the Linux host.
 
 sudo bash scripts/install-server.sh --plan \
   --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net:51831
+  --endpoint your-home.example.net
 sudo bash scripts/install-server.sh --apply \
   --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net:51831
+  --endpoint your-home.example.net
 ```
 
 Replace example addresses/domain with yours. Reserve the server's LAN address
 on your router. Select a private /24 overlay with `--overlay` if `10.82.0.0/24`
 overlaps Bungee/your LAN/VPN. Supply a publicly reachable endpoint to use phones
 away from home; omitting it produces a clearly labeled LAN-only installation.
-`--udp-port` defaults to 51831, `--web-port` to 9443. Port 8443 belongs to the
-inner device API. The installer prompts for an owner name/password, never a
-command-line password. Review `--plan` before applying.
+The installer asks for **both ports** when run from a terminal:
+
+```text
+Management HTTPS port (LAN only) [9443]:
+WireGuard UDP port (router forwarding) [49272]:
+```
+
+Enter your own values or press Enter to choose each suggestion. Port 8443 is
+reserved for the inner device API. `--plan --interactive` explicitly opens the
+same no-write port wizard. The plan reports `apply_port_options`; repeat those
+`--web-port` and `--udp-port` values with `--apply` to use exactly the reviewed
+choices. Flags skip their corresponding questions. For example:
+
+```sh
+sudo bash scripts/install-server.sh --apply \
+  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
+  --web-port 10443 --udp-port 49272 \
+  --endpoint your-home.example.net
+```
+
+That example serves LAN management at `https://192.168.1.10:10443`. A nonterminal
+`--plan` previews defaults and labels them as a preview. A noninteractive
+`--apply` refuses missing port choices, rather than silently selecting ports.
+Owner name/password prompts remain separate; no command-line password is used.
+Review `--plan` before applying. Supply `--endpoint your-home.example.net`
+without a port to follow your WireGuard selection automatically. An explicit
+`:port` selects the router's external port; if it differs from the local UDP
+listener, the plan prints the exact external-to-internal NAT mapping.
+
+There are three separate listeners:
+
+| Listener | Port | Access |
+| --- | --- | --- |
+| Management HTTPS | Chosen during install; suggested TCP 9443 | Trusted home LAN only |
+| WireGuard transport | Chosen during install; suggested UDP 49272 | The one router-forwarding candidate |
+| Client-to-server HTTPS API | TCP 8443, fixed inside the overlay | Enrolled phone tunnels only; never router-forwarded |
+
+The client API is present separately from management. Enrollment supplies its
+inner address to the phones; choosing a WireGuard UDP port does not change the
+inner API port.
 
 The installer refuses existing directories, accounts, services and WireGuard
 configuration. It is for fresh hosts; it is not an in-place migration from the
@@ -49,15 +86,36 @@ The installer installs WireGuard tools, nftables and OpenSSL. It creates:
 - `field-notes-certificates.timer`: daily offline leaf-renewal check; renews when
   fewer than 30 days remain. Rust loads a new valid certificate/key within 60s.
 
-There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly at
-`https://192.168.1.10:9443`; the separate phone API binds only `10.82.0.1:8443`.
+There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly
+at the LAN address and management port you chose (`https://192.168.1.10:9443`
+with the suggestion); the separate phone API binds only `10.82.0.1:8443`.
 The installer checks login, authenticated snapshot and logout over real TLS.
 It does not install a shell-execution endpoint in the management website.
 
-Forward **one UDP port only**, 51831 by default, to the server. Never forward TCP
-9443/8443. Keep existing host firewall restrictions and permit the selected UDP
-and management LAN as appropriate. Check the [network access matrix](NETWORK.md)
-on your actual host; CGNAT or an upstream UDP filter can prevent remote access.
+Forward **one UDP port only**, **49272** by default, to the Linux server.
+For example, reserve `192.168.1.10` for the server, then add this router rule:
+
+| Purpose | External port/protocol | Internal destination |
+| --- | --- | --- |
+| Field Notes phone tunnel | **49272 / UDP** | **192.168.1.10:49272 / UDP** |
+| Bungee, if using its guide's example | 49271 / UDP | Your Bungee host:49271 / UDP |
+
+The adjacent pair comes from [Bungee's installation example](https://github.com/argentumseven/bungee/blob/ec7c089debf12ddb3541a7e34f993b5e1354f0ac/docs/INSTALL.md).
+Bungee itself has no fixed default. If your actual Bungee listener is different,
+pass `--bungee-port YOUR_BUNGEE_PORT` to choose one higher, and set `--endpoint`
+to your DDNS/IP with that resulting port. For example, Bungee `47937` means
+`--bungee-port 47937 --endpoint your-home.example.net:47938`. Or choose an unused
+port with `--udp-port`. The plan prints the exact forwarding rule. Keep external
+and internal port numbers the same for these examples.
+
+This is an opportunity for remote phone access, not an automatic router change.
+Never forward the chosen management HTTPS port (9443 by suggestion, or your
+custom value) or inner API TCP 8443. Preserve Bungee's own separate rule. Keep existing
+host firewall restrictions and permit the selected UDP and management LAN as
+appropriate. Check the [network access matrix](NETWORK.md) on your actual host;
+CGNAT or an upstream UDP filter can prevent remote access. A port change alone
+is not a security control. Existing installations retain their configured port;
+changing a default does not migrate a live tunnel or its enrolled endpoints.
 
 ## Trust the LAN website
 
@@ -78,7 +136,7 @@ revocation. No manual peer JSON editing is needed.
 ## Install the Android APK
 
 Build output:
-`dist/android/field-notes-0.2.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
+`dist/android/field-notes-0.3.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
 Copy the APK to the phone, verify its hash/signing-certificate fingerprint, and
 open it with your file manager. Temporarily allow installation from that source.
 The debug APK is signed with the development key in the external tool cache;
@@ -91,11 +149,13 @@ The app does not consume Android's system VPN slot; existing VPN/lockdown policy
 still governs its outer UDP sockets. Test home and mobile-data connectivity on
 each phone before relying on background catch-up.
 
-To add the widget, use your launcher's widget picker and choose **Field Notes**.
-It opens the credential-locked app. Task titles are hidden by default; opt in
-under **Workspace menu → Settings & widgets** if you accept launcher-visible
-copies. Notes/images/credentials never enter the widget. Updates use cached data,
-not Google or OS Calendar, and are best-effort.
+After enrollment, allow notifications and review the default-on background mode.
+For widgets, tap **Add Upcoming home-screen widget** in **Settings & widgets**,
+or use the launcher's widget picker. Both Upcoming and Focus are real Android
+home-screen providers; title previews are opt-in. Follow
+[Android delivery and GrapheneOS profiles](ANDROID-DELIVERY.md) for battery,
+alarm/sound permissions, full-user-profile forwarding, the delayed test, and
+clean revocation/uninstall. The app cannot override a stopped profile or DND.
 
 ## Build from source
 

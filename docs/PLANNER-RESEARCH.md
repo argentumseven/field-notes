@@ -66,3 +66,8 @@ connection address and does not trust forwarded identity headers.
 
 This file records the chosen design during implementation. VALIDATION.md is the
 authority for completed checks; screenshots do not establish physical routing.
+
+Assignment is an eligibility filter in ranking version 2. Work assigned to
+another person stays in Tasks/Assignments, while an already-accepted own claim
+remains visible. The score arithmetic stays bounded; assignment never grants a
+claim. Shared Kotlin/JavaScript fixtures now cover 19 cases.

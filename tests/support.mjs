@@ -17,7 +17,7 @@ export async function fixture({enrollment=false}={}){
  let extra=[];
  if(enrollment){
   const ca=join(root,'tls');execFileSync('python3',['scripts/tls.py','init','--directory',ca,'--name','192.168.1.10','--name','10.82.0.1']);
-  writeFileSync(networkFile,JSON.stringify({bootstrap_url:'https://192.168.1.10:9443/api/enrollment',endpoint:'home.example:51831',server_key:randomBytes(32).toString('base64'),api:'https://10.82.0.1:8443',ca_pem:readFileSync(join(ca,'ca.crt'),'utf8'),overlay:'10.82.0.0/24'}),{mode:0o600});
+  writeFileSync(networkFile,JSON.stringify({bootstrap_url:'https://192.168.1.10:9443/api/enrollment',endpoint:'home.example:49272',server_key:randomBytes(32).toString('base64'),api:'https://10.82.0.1:8443',ca_pem:readFileSync(join(ca,'ca.crt'),'utf8'),overlay:'10.82.0.0/24'}),{mode:0o600});
   extra=['--network-config',networkFile,'--peer-status',peerStatus];
  }
  let child,output='';

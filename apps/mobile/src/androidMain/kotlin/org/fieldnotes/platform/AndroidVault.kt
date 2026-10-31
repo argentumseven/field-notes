@@ -29,7 +29,7 @@ class AndroidVault(context: Context, namespace: String = "v1") : Vault {
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(alias, null) as? SecretKey)?.let { return it }
-        check(!stateFile.exists() && !File(stateFile.path + ".bak").exists() && images.listFiles().isNullOrEmpty()) { "Local encryption key is missing. Existing data has not been replaced. Restore device access or recover the encrypted state before resetting the app." }
+        check(!stateFile.exists() && !File(stateFile.path + ".bak").exists() && images.listFiles().isNullOrEmpty() && folder.listFiles().orEmpty().none { it.name.startsWith("effect-") }) { "Local encryption key is missing. Existing data has not been replaced. Restore device access or recover the encrypted state before resetting the app." }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
             init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setKeySize(256).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -66,6 +66,21 @@ class AndroidVault(context: Context, namespace: String = "v1") : Vault {
         try { check(clear.size <= 32*1024*1024); write(stateFile, encrypt("workspace-v1", clear)) } finally { clear.fill(0) }
     } } }
     override suspend fun clearImages() { withContext(Dispatchers.IO) { mutex.withLock { images.listFiles()?.forEach { it.delete() } } } }
+    /** Purpose-separated private effects/receipts use the same nonexportable
+     * profile-local key, without putting titles or credentials in OS extras. */
+    suspend fun readEffect(name:String):ByteArray? = withContext(Dispatchers.IO) { mutex.withLock {
+        require(name.matches(Regex("[a-z0-9-]{1,40}")))
+        val file=File(folder,"effect-$name.encrypted")
+        if(!file.exists()&&!File(file.path+".bak").exists())null
+        else decrypt("effect:$name",AtomicFile(file).readFully())
+    } }
+    suspend fun writeEffect(name:String,bytes:ByteArray) { withContext(Dispatchers.IO) { mutex.withLock {
+        require(name.matches(Regex("[a-z0-9-]{1,40}")));require(bytes.size<=512*1024)
+        write(File(folder,"effect-$name.encrypted"),encrypt("effect:$name",bytes))
+    } } }
+    suspend fun clearEffects() { withContext(Dispatchers.IO) { mutex.withLock {
+        folder.listFiles().orEmpty().filter { it.name.startsWith("effect-") }.forEach { AtomicFile(it).delete() }
+    } } }
     suspend fun readImage(scope: String, id: String): ByteArray? = withContext(Dispatchers.IO) { mutex.withLock {
         require(id.matches(Regex("[a-fA-F0-9-]{36}"))); require(scope.matches(Regex("[a-f0-9]{64}")))
         val file = File(images, "$scope-$id")

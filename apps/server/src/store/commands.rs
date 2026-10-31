@@ -119,6 +119,7 @@ impl Store {
                         "priority",
                         "planned_for",
                         "estimate_minutes",
+                        "assignee",
                         "pinned",
                         "blocked",
                     ],
@@ -141,6 +142,7 @@ impl Store {
                 record.data = json!({"title":text(&c.data,"title",240)?,"notes":notes,"project_id":pid,"quadrant":quadrant,"due":due,"status":"todo","claimant":null,"created_by":actor.user_id,"updated_at":now()});
                 record.data["created_at"] = json!(now());
                 Self::planning(&c.data, &mut record)?;
+                self.assignment(&c.data, &mut record)?;
             }
             "task.update" => {
                 Self::task(&record)?;
@@ -155,6 +157,7 @@ impl Store {
                         "priority",
                         "planned_for",
                         "estimate_minutes",
+                        "assignee",
                         "pinned",
                         "blocked",
                     ],
@@ -168,6 +171,7 @@ impl Store {
                     record.data["project_id"] = json!(container.unwrap_or_default());
                 }
                 Self::planning(&c.data, &mut record)?;
+                self.assignment(&c.data, &mut record)?;
                 if c.data.get("title").is_some() {
                     record.data["title"] = json!(text(&c.data, "title", 240)?);
                 }
@@ -202,6 +206,12 @@ impl Store {
                 }
                 match c.action.as_str() {
                     "task.start" => {
+                        if record.data["assignee"]
+                            .as_str()
+                            .is_some_and(|id| id != actor.user_id)
+                        {
+                            return fail(409, "This task is assigned to another person; reassign it before starting");
+                        }
                         if record.data["status"] != "todo" {
                             return fail(409, "Only an available task can be started");
                         }
@@ -221,11 +231,15 @@ impl Store {
                         }
                         record.data["status"] = json!("done");
                         record.data["claimant"] = Value::Null;
+                        record.data["completed_by"] = json!(actor.user_id);
+                        record.data["completed_at"] = json!(now());
                     }
                     _ => {
                         if record.data["status"] != "done" {
                             return fail(409, "Only completed tasks can be reopened");
                         }
+                        record.data["completed_by"] = Value::Null;
+                        record.data["completed_at"] = Value::Null;
                         record.data["status"] = json!("todo");
                         record.data["claimant"] = Value::Null;
                     }
@@ -364,6 +378,7 @@ impl Store {
             _ => return fail(400, "Unsupported command"),
         }
         if !c.action.ends_with(".delete") {
+            record.data["updated_by"] = json!(actor.user_id);
             record.revision += 1;
             if record.kind == "task" {
                 record.data["updated_at"] = json!(now());

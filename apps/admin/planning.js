@@ -64,6 +64,12 @@
       reasons.push("Already started +12");
     }
     if (d.pinned) reasons.unshift("Pinned");
+    if (
+      d.assignee &&
+      d.assignee !== user &&
+      !(d.status === "in_progress" && d.claimant === user)
+    )
+      reasons.push("Assigned to another person");
     return {
       score,
       reasons,
@@ -71,6 +77,9 @@
         d.status !== "done" &&
         !d.blocked &&
         (!d.claimant || d.claimant === user) &&
+        (!d.assignee ||
+          d.assignee === user ||
+          (d.status === "in_progress" && d.claimant === user)) &&
         !(
           planned !== null &&
           planned > day(today) &&

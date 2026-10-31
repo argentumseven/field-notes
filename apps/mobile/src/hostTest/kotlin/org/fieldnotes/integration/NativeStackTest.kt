@@ -24,6 +24,8 @@ class NativeStackTest {
             val token = WireJson.parseToJsonElement(login.body).jsonObject.text("token")
             val snapshot = native.exchange("/api/snapshot",token,serverKey=peer)
             assertEquals(200,snapshot.status)
+            val directory=native.exchange("/api/people",token,serverKey=peer);assertEquals(200,directory.status)
+            assertEquals("owner",WireJson.parseToJsonElement(directory.body).jsonObject.getValue("people").jsonArray.single().jsonObject.text("name"))
             val state=WireJson.parseToJsonElement(snapshot.body).jsonObject
             suspend fun send(action:String,target:String,data:JsonObject,revision:Long?=null):Reply {
                 val command=Command(UUID.randomUUID().toString(),state.text("epoch"),state.number("generation"),action,target,revision,data)

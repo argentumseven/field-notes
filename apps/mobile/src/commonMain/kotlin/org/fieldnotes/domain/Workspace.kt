@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
+import kotlinx.datetime.Clock
 
 /** Immutable persisted commands are the retry unit. Local display is a projection,
  * never an authoritative grant of ownership. Platform effects stay behind interfaces. */
@@ -17,6 +18,7 @@ class Workspace(
 ) {
     private val writes = Mutex()
     private val connection = Mutex()
+    private var prepared = false
     private val _state = MutableStateFlow(WorkspaceState())
     val state: StateFlow<WorkspaceState> = _state
     private val cache get() = _state.value.cache
@@ -32,8 +34,9 @@ class Workspace(
             val loaded = vault.load()
             _state.update { it.copy(cache = loaded) }
             if (loaded.keys == null) { val keys = transport.keys(); update { it.copy(keys = keys) } }
-            cache.config?.let { transport.configure(it) }
-            _state.update { it.copy(ready = true, needsLogin = cache.token == null, error = null) }
+            var networkError:String?=null
+            cache.config?.let { try { transport.configure(it);prepared=true } catch(e:Exception){if(e is CancellationException)throw e;networkError="Private connection unavailable; cached work and reminders remain available."} }
+            _state.update { it.copy(ready = true, needsLogin = cache.token == null, error = networkError) }
         } catch (e: Exception) {
             _state.update { it.copy(error = e.message ?: "The encrypted local vault is unavailable.") }
         }
@@ -117,24 +120,28 @@ class Workspace(
         check(public.keys.all { it in setOf("address", "endpoint", "server_key", "preshared_key", "api", "ca_pem") }) { "Unexpected pairing fields. Private keys must stay on this device." }
         val private = cache.keys?.get("private_key") ?: error("Generate this device's key first.")
         val configuration = JsonObject(public + ("private_key" to private))
-        transport.configure(configuration)
+        transport.configure(configuration);prepared=true
         vault.clearImages()
-        update { it.copy(config = configuration, token = null, snapshot = null, reminded = emptySet()) }
+        update { it.copy(config = configuration, token = null, snapshot = null, people = emptyList(), reminded = emptySet()) }
         _state.update { it.copy(needsLogin = true, online = false, error = null) }
     }
     suspend fun updateEndpoint(endpoint: String) = connection.withLock {
         val old = cache.config ?: error("Pair this device first.")
         val next = JsonObject(old + ("endpoint" to endpoint.trim().j()))
         // Changing a route never changes the paired server key, CA or identity.
-        transport.configure(next)
+        transport.configure(next);prepared=true
         try { update { it.copy(config = next) } }
         catch (e: Exception) { transport.configure(old); throw e }
         _state.update { it.copy(online = false, error = null) }
     }
     private suspend fun request(path: String, body: JsonObject? = null, token: String? = cache.token): JsonObject {
+        if(!prepared){transport.configure(cache.config?:error("Enroll this device first."));prepared=true}
         val r = transport.exchange(path, token, body, cache.config?.text("server_key"))
         val json = try { WireJson.parseToJsonElement(r.body).jsonObject } catch (_: Exception) { throw ApiError(r.status, "The server returned an invalid response.") }
-        if (r.status == 401) _state.update { it.copy(needsLogin = true) }
+        if (r.status == 401) {
+            _state.update { it.copy(needsLogin = true) }
+            update { it.copy(token = null) } // Retain work, revoke the cached display credential durably.
+        }
         if (r.status >= 400) throw ApiError(r.status, json.text("error", "Request failed"))
         return json
     }
@@ -144,14 +151,23 @@ class Workspace(
         val old = cache.snapshot?.actor?.user_id
         check(old == null || old == actor.user_id || (cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty())) { "Retained edits belong to another account. Sign in to that account before switching." }
         if (old != null && old != actor.user_id) vault.clearImages()
-        update { it.copy(token = r.text("token"), enrollment = null, snapshot = if (old == actor.user_id) it.snapshot else null) }
+        update { it.copy(token = r.text("token"), enrollment = null, snapshot = if (old == actor.user_id) it.snapshot else null, people = if(old == actor.user_id)it.people else emptyList()) }
         _state.update { it.copy(needsLogin = false, error = null) }
+    }
+    suspend fun removeInstallation() = connection.withLock {
+        check(cache.outbox.isEmpty()&&cache.drafts.isEmpty()&&cache.conflicts.isEmpty()) { "Sync or review retained changes before removing this installation." }
+        val result=request("/api/device/revoke-self",obj())
+        check(result["authorization_revoked"]==JsonPrimitive(true)){"The server did not confirm device revocation."}
+        _state.update { it.copy(needsLogin=true) }
+        transport.stop();prepared=false
+        vault.clearImages()
+        update { Cache(preferences=Preferences(backgroundSync=false,reminders=false,liveUpdates=false)) }
     }
     suspend fun logout() = connection.withLock {
         check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Resolve queued changes, drafts and conflicts before signing out." }
         request("/api/logout", obj())
         vault.clearImages()
-        update { it.copy(token = null, snapshot = null, reminded = emptySet()) }
+        update { it.copy(token = null, snapshot = null, people = emptyList(), reminded = emptySet()) }
         _state.update { it.copy(needsLogin = true, online = false) }
     }
     fun enqueueAsync(action: String, target: String, data: JsonObject, revision: Long?, basis: Basis? = null) = scope.launch {
@@ -200,13 +216,15 @@ class Workspace(
         try {
             val fresh = WireJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
             check(fresh.protocol == 1) { "Update this client before using the server's new protocol." }
+            val directoryReply = try { request("/api/people") } catch(e:ApiError) { if(e.status==404)obj("people" to JsonArray(emptyList())) else throw e }
+            val directory=WireJson.decodeFromJsonElement<List<HouseholdPerson>>(directoryReply.getValue("people"))
             update { c ->
                 val ids = fresh.records.map { it.id }.toSet()
                 val orphaned = c.drafts.values.filter { d ->
                     d.epoch != fresh.epoch || d.generation != fresh.generation ||
                         (d.target !in ids && c.outbox.none { it.command.target == d.target && it.command.action.endsWith(".create") && it.command.epoch == fresh.epoch && it.command.generation == fresh.generation })
                 }
-                c.copy(snapshot = fresh, drafts = c.drafts - orphaned.map { it.target }.toSet(), conflicts = c.conflicts + orphaned.map { d ->
+                c.copy(snapshot = fresh, people = directory, directoryRevision=directoryReply.number("revision"), drafts = c.drafts - orphaned.map { it.target }.toSet(), conflicts = c.conflicts + orphaned.map { d ->
                     Conflict(Command(newId(), d.epoch, d.generation, d.action, d.target, d.revision, d.data), "The server item was removed or restored. Copy this draft to a new item if needed.")
                 })
             }
@@ -237,12 +255,29 @@ class Workspace(
                 }
             }
             val final = WireJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
-            update { it.copy(snapshot = final) }
+            update { it.copy(snapshot = final,lastSyncedAt=Clock.System.now().epochSeconds) }
             _state.update { it.copy(online = true, error = null) }
         } catch (e: Exception) {
             report(e); _state.update { it.copy(online = false) }
         } finally { _state.update { it.copy(syncing = false) }; connection.unlock() }
     }
+    /** Cheap background checks keep the private connection alive without
+     * downloading and re-encrypting an unchanged workspace every few seconds. */
+    suspend fun poll(): Boolean {
+        if(!connection.tryLock())return false
+        var changed=false
+        try {
+            if(cache.token==null||cache.config==null||!state.value.ready)return false
+            val head=request("/api/head")
+            changed=cache.snapshot?.let { it.epoch!=head.text("epoch")||it.generation!=head.number("generation")||it.sequence!=head.number("sequence")||cache.directoryRevision!=head.number("directory_revision") }?:true
+            if(cache.outbox.isNotEmpty())changed=true
+            _state.update { it.copy(online=true,error=null) }
+        }catch(e:Exception){report(e);_state.update { it.copy(online=false) }}
+        finally{connection.unlock()}
+        if(changed)sync()
+        return changed&&state.value.online
+    }
+
     private suspend fun reject(id: String, reason: String) = update { c ->
         val pending = c.outbox.first { it.command.operation_id == id }
         val dependentDrafts = c.drafts.values.filter { it.dependsOn == id }
@@ -277,7 +312,7 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
         if (c.action.endsWith(".create")) {
             val kind = c.action.substringBefore('.')
             val data = when (kind) {
-                "task" -> JsonObject(mapOf("priority" to 3.j(), "planned_for" to "".j(), "estimate_minutes" to 0.j(), "pinned" to JsonPrimitive(false), "blocked" to JsonPrimitive(false), "notes" to "".j(), "quadrant" to "do".j(), "due" to "".j(), "status" to "todo".j(), "claimant" to JsonNull) + c.data)
+                "task" -> JsonObject(mapOf("priority" to 3.j(), "planned_for" to "".j(), "estimate_minutes" to 0.j(), "pinned" to JsonPrimitive(false), "blocked" to JsonPrimitive(false), "notes" to "".j(), "quadrant" to "do".j(), "due" to "".j(), "status" to "todo".j(), "claimant" to JsonNull,"assignee" to JsonNull) + c.data)
                 "comment" -> JsonObject(c.data + ("author" to (cache.snapshot?.actor?.name ?: "You").j()))
                 else -> JsonObject(c.data - "bytes")
             }

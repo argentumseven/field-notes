@@ -432,6 +432,35 @@ impl Store {
         self.reconcile_peers()?;
         Ok(json!({"state":self.device(id)?.state,"authorization_revoked":true}))
     }
+    /// A phone may revoke only the enrolled identity bound to its own session.
+    /// The private router independently binds that session to the TCP peer IP.
+    pub fn revoke_self(&mut self, token: &str) -> Result<Value> {
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.db,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let actor = self.actor(token)?;
+        let id: String = self
+            .db
+            .query_row(
+                "SELECT device_id FROM device_sessions WHERE session_id=?",
+                [&actor.session_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or(Fault(
+                403,
+                "This session is not an enrolled installation".into(),
+            ))?;
+        self.db.execute("DELETE FROM sessions WHERE id IN (SELECT session_id FROM device_sessions WHERE device_id=?)",[&id])?;
+        self.db
+            .execute("UPDATE devices SET state='revoking' WHERE id=?", [&id])?;
+        self.audit(&actor, "device.revoke-self", &id, &json!({}))?;
+        tx.commit()?;
+        let reconciliation_failed = self.reconcile_peers().is_err();
+        let peer_pending = reconciliation_failed || self.device(&id)?.state != "revoked";
+        Ok(json!({"authorization_revoked":true,"peer_removal_pending":peer_pending,"device_id":id}))
+    }
     pub fn enrollment_status(&mut self, input: Value) -> Result<Value> {
         fields(&input, &["id", "claim_secret"])?;
         let id = text(&input, "id", 36)?;
@@ -558,6 +587,12 @@ impl Store {
                 "This session is not bound to the connected enrolled device",
             );
         }
+        // Active device-bound sessions renew without retaining the password.
+        // Expired/deleted sessions cannot reach here and are never resurrected.
+        self.db.execute(
+            "UPDATE sessions SET expires=? WHERE id=? AND expires<?",
+            params![now() + 30 * 86400, actor.session_id, now() + 7 * 86400],
+        )?;
         Ok(())
     }
     pub fn login_enrolled(
@@ -750,8 +785,8 @@ mod tests {
             .unwrap();
         s.network = Some(NetworkConfig {
             bootstrap_url: "https://192.168.1.10:9443/api/enrollment".into(),
-            endpoint: "home.example:51831".into(),
-            lan_endpoint: Some("192.168.1.10:51831".into()),
+            endpoint: "home.example:49272".into(),
+            lan_endpoint: Some("192.168.1.10:49272".into()),
             server_key: STANDARD.encode([3; 32]),
             api: "https://10.82.0.1:8443".into(),
             ca_pem: include_str!("../../../../tests/fixtures/enrollment-ca.crt").into(),
@@ -760,6 +795,79 @@ mod tests {
         s.peer_status = Some(dir.0.join("ack"));
         s.development = true;
         (dir, s, owner, actor)
+    }
+    #[test]
+    fn live_sessions_renew_only_from_their_peer_and_self_revoke_only_one_installation() {
+        let (_dir, mut s, owner, actor) = setup();
+        let enroll = |s: &mut Store, key: u8| {
+            let invitation = s.enrollment_invite(&owner, &actor.user_id).unwrap();
+            let raw = invitation["code"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("fieldnotes://enroll#")
+                .unwrap();
+            let payload: Value =
+                serde_json::from_slice(&URL_SAFE_NO_PAD.decode(raw).unwrap()).unwrap();
+            let claim = s.enrollment_claim(json!({"token":payload["token"],"claim_secret":crypto::token(),"public_key":STANDARD.encode([key;32]),"name":"Phone"}), "192.168.1.20").unwrap();
+            let id = claim["id"].as_str().unwrap().to_owned();
+            s.enrollment_approve(&owner, &id, claim["verification"].as_str().unwrap())
+                .unwrap();
+            ack(s);
+            s.reconcile_peers().unwrap();
+            let device = s.device(&id).unwrap();
+            let peer: IpAddr = device.address.unwrap().parse().unwrap();
+            let result = s.activate_device(
+                json!({"id":id,"activation_secret":device.data["activation_secret"]}),
+                peer,
+            );
+            (id, peer, result)
+        };
+        let (first, peer, result) = enroll(&mut s, 20);
+        let active = result.unwrap();
+        let token = active["token"].as_str().unwrap();
+        let (_, other_peer, other) = enroll(&mut s, 21);
+        let other = other.unwrap();
+        let other_token = other["token"].as_str().unwrap();
+        let session = crypto::digest(token.as_bytes());
+        let near_expiry = now() + 60;
+        s.db.execute(
+            "UPDATE sessions SET expires=? WHERE id=?",
+            params![near_expiry, session],
+        )
+        .unwrap();
+        assert_eq!(s.authorize_device(token, other_peer).unwrap_err().0, 403);
+        let expiry = |s: &Store| {
+            s.db.query_row("SELECT expires FROM sessions WHERE id=?", [&session], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(expiry(&s), near_expiry);
+        s.authorize_device(token, peer).unwrap();
+        assert!(expiry(&s) > now() + 29 * 86400);
+        s.db.execute(
+            "UPDATE sessions SET expires=? WHERE id=?",
+            params![now() - 1, session],
+        )
+        .unwrap();
+        assert_eq!(s.authorize_device(token, peer).unwrap_err().0, 401);
+        s.db.execute(
+            "UPDATE sessions SET expires=? WHERE id=?",
+            params![now() + 86400, session],
+        )
+        .unwrap();
+        assert_eq!(s.revoke_self(&owner).unwrap_err().0, 403);
+        let revoked = s.revoke_self(token).unwrap();
+        assert_eq!(revoked["authorization_revoked"], true);
+        assert_eq!(revoked["peer_removal_pending"], true);
+        assert!(s.actor(token).is_err());
+        assert!(s.revoke_self(token).is_err());
+        s.authorize_device(other_token, other_peer).unwrap();
+        assert!(s.actor(&owner).is_ok());
+        ack(&s);
+        s.reconcile_peers().unwrap();
+        assert_eq!(s.device(&first).unwrap().state, "revoked");
+        assert!(s.device(&first).unwrap().address.is_none());
     }
     #[test]
     fn expiry_permissions_and_unacknowledged_removal_do_not_reuse_a_peer_address() {

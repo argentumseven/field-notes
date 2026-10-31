@@ -62,3 +62,19 @@ arm64 APK. Share UI/domain code in commonMain; isolate OS dependencies in
 androidMain. Do not reintroduce Flutter or require Apple tooling for Android.
 The emulator test fixture may clear only the dedicated field-notes-test AVD;
 never run its destructive reset against a physical/user phone.
+
+## Delivery and install verification
+
+Android uses a visible special-use foreground service, cached AlarmManager
+reminders and WorkManager fallback, without Google services or VpnService.
+Cross-user forwarding/sound requires GrapheneOS settings and physical testing.
+Use `scripts/capture-home-widget.mjs` for actual launcher hosting and delivery;
+`11-widget.png` alone is only an in-activity renderer comparison. The guarded
+`test-android-uninstall.mjs` destroys only the disposable field-notes-test AVD's
+app installation; never use it against a user's phone.
+
+Server installation prompts for management HTTPS and WireGuard UDP ports when
+missing. Noninteractive apply requires explicit choices. WireGuard suggests
+49272 (one above Bungee's guide example); `--bungee-port` derives one higher from
+an operator's actual Bungee listener. The inner phone API stays TCP 8443, overlay
+only, and must not be router-forwarded.

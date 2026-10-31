@@ -18,4 +18,20 @@ class OrganizationTest {
         assertEquals("done",workspaceTasks(c,"Completed",null,"",day,1793361600).single().record.id)
         assertFalse(workspaceTasks(c,"Focus",null,"",day,1793361600).any { it.record.kind!="task"||it.record.id in setOf("waiting","done") })
     }
+    @Test fun responsibilityViewsAndRemindersRespectThePersonWithoutLosingClaims() {
+        val tasks=listOf(
+            Record("mine","task",1,obj("title" to "Mine".j(),"status" to "todo".j(),"assignee" to "me".j(),"due" to "2026-10-30".j())),
+            Record("theirs","task",1,obj("title" to "Theirs".j(),"status" to "todo".j(),"assignee" to "sam".j(),"due" to "2026-10-30".j())),
+            Record("free","task",1,obj("title" to "Free".j(),"status" to "todo".j(),"due" to "2026-10-30".j())),
+            Record("working","task",1,obj("title" to "Working".j(),"status" to "in_progress".j(),"claimant" to "me".j())),
+            Record("done","task",1,obj("title" to "Done".j(),"status" to "done".j(),"assignee" to "me".j()))
+        )
+        val cache=Cache(snapshot=Snapshot(1,"e",1,0,tasks,Actor("me","Alex","owner","s")),people=listOf(HouseholdPerson("me","Alex",true),HouseholdPerson("sam","Sam",false)),preferences=Preferences(reminders=true))
+        val day=LocalDate(2026,10,30)
+        assertEquals(setOf("mine","working"),workspaceTasks(cache,"My tasks",null,"",day,1793361600).map { it.record.id }.toSet())
+        assertEquals(setOf("free","working"),workspaceTasks(cache,"Unassigned",null,"",day,1793361600).map { it.record.id }.toSet())
+        assertEquals(setOf("mine","free","working"),workspaceTasks(cache,"Focus",null,"",day,1793361600).map { it.record.id }.toSet())
+        assertEquals(setOf("mine:2026-10-30","free:2026-10-30"),dueReminderKeys(cache,"2026-10-30",10))
+        assertEquals("Sam",personName(cache,"sam"));assertEquals("Unavailable member",personName(cache,"missing"))
+    }
 }

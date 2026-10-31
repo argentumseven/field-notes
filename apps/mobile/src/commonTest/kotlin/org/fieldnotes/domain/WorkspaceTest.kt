@@ -16,6 +16,11 @@ private class MemoryVault(var value: Cache = initial()) : Vault {
     override suspend fun clearImages() {}
 }
 private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Transport {
+    var configureFailure = false
+    var configurations = 0
+    var stopped = false
+    val requests = mutableListOf<String>()
+    var directoryAvailable = true
     var networkFailure = false
     var rejection: Int? = null
     var expired = false
@@ -23,12 +28,17 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
     var results = mutableMapOf<String, JsonObject>()
     var loseReply = false
     override suspend fun keys() = obj("private_key" to "private-test-key".j())
-    override suspend fun configure(configuration: JsonObject) {}
-    override suspend fun stop() {}
+    override suspend fun configure(configuration: JsonObject) { configurations++;if(configureFailure)error("DNS unavailable") }
+    override suspend fun stop() { stopped=true }
     override suspend fun exchange(path: String, token: String?, body: JsonObject?, serverKey: String?): Reply {
+        requests+=path
         if (networkFailure) error("Offline")
         if (path == "/api/login") return Reply(200, obj("token" to "new-token".j(), "actor" to WireJson.encodeToJsonElement(actor)).toString())
         if (expired) return Reply(401, obj("error" to "Session expired".j()).toString())
+        if (path == "/api/device/revoke-self") return Reply(200,"""{"authorization_revoked":true}""")
+        if (path == "/api/people" && !directoryAvailable) return Reply(404, """{"error":"Not available"}""")
+        if (path == "/api/people") return Reply(200,obj("people" to WireJson.encodeToJsonElement(listOf(HouseholdPerson(actor.user_id,actor.name,true)))).toString())
+        if (path == "/api/head") return Reply(200,obj("epoch" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"sequence" to snapshot.sequence.j()).toString())
         if (path == "/api/snapshot") return Reply(200, WireJson.encodeToString(snapshot))
         val c = WireJson.decodeFromJsonElement<Command>(body!!)
         sent += c
@@ -49,6 +59,15 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun assignmentDraftAndDirectorySurviveOfflineRestartAndOlderServerStillSyncs() = runTest {
+        val original=initial().copy(people=listOf(HouseholdPerson(actor.user_id,actor.name,true)))
+        val v=MemoryVault(original);val t=FakeTransport();var m=model(v,t,backgroundScope);m.initialize()
+        t.networkFailure=true;m.saveDraft(task.id,task.revision,obj("assignee" to actor.user_id.j()));m.submitDraft(task.id);m.sync()
+        m=model(v,t,backgroundScope);m.initialize();assertEquals(actor.name,m.state.value.cache.people.single().name)
+        assertEquals(actor.user_id,projectRecords(m.state.value.cache).single().record.data.text("assignee"))
+        t.networkFailure=false;m.sync();assertTrue(m.state.value.cache.outbox.isEmpty());assertEquals(actor.user_id,t.sent.single().data.text("assignee"))
+        t.directoryAvailable=false;m.sync();assertTrue(m.state.value.online);assertTrue(m.state.value.cache.people.isEmpty())
+    }
     @Test fun reenrollmentCannotOverwriteOfflineChanges() = runTest {
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();m.enqueue("task.update","task",obj("notes" to "Retain me".j()),1)
         assertFailsWith<IllegalStateException> { m.resetConnection() };assertNotNull(v.value.config);assertEquals(1,v.value.outbox.size)
@@ -101,7 +120,15 @@ class WorkspaceTest {
     }
     @Test fun expiredSessionPromptsLoginAndKeepsQueuedChanges() = runTest {
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();m.enqueue("task.update","task",obj("notes" to "Retain".j()),1);t.expired=true;m.sync()
-        assertTrue(m.state.value.needsLogin);assertEquals(1,m.state.value.cache.outbox.size);assertTrue(m.state.value.cache.conflicts.isEmpty())
+        assertTrue(m.state.value.needsLogin);assertNull(v.value.token);assertEquals(1,m.state.value.cache.outbox.size);assertTrue(m.state.value.cache.conflicts.isEmpty())
+        val restarted=model(v,t,backgroundScope);restarted.initialize();assertTrue(restarted.state.value.needsLogin);assertEquals(1,restarted.state.value.cache.outbox.size)
+    }
+    @Test fun rejectedSessionFailsClosedEvenWhenCredentialRemovalCannotPersist() = runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();m.enqueue("task.update","task",obj("notes" to "Retain".j()),1)
+        v.failing=true;t.expired=true;m.sync()
+        assertTrue(m.state.value.needsLogin);assertEquals(1,m.state.value.cache.outbox.size)
+        val opted=m.state.value.cache.copy(preferences=Preferences(widgetTitles=true))
+        assertFalse(widgetMayShowTitles(opted,true,!m.state.value.needsLogin))
     }
     @Test fun viewerCannotQueueChangesOffline() = runTest {
         val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(actor=actor.copy(role="viewer"))));val m=model(v,FakeTransport(),backgroundScope);m.initialize()
@@ -132,9 +159,34 @@ class WorkspaceTest {
     @Test fun endpointChangesPreserveIdentityAndOfflineCommands() = runTest {
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
         m.enqueue("task.start","task",obj(),1);val command=m.state.value.cache.outbox.single().command;val keys=m.state.value.cache.keys
-        m.updateEndpoint("192.168.1.10:51831")
+        m.updateEndpoint("192.168.1.10:49272")
         assertEquals(keys,m.state.value.cache.keys);assertEquals(command,m.state.value.cache.outbox.single().command)
-        assertEquals("192.168.1.10:51831",m.state.value.cache.config!!.text("endpoint"));assertEquals("token",m.state.value.cache.token)
+        assertEquals("192.168.1.10:49272",m.state.value.cache.config!!.text("endpoint"));assertEquals("token",m.state.value.cache.token)
+    }
+
+    @Test fun offlineInitializationRetainsCachedWorkAndRetriesTheConnection() = runTest {
+        val v=MemoryVault();val t=FakeTransport();t.configureFailure=true
+        val m=model(v,t,backgroundScope);m.initialize()
+        assertTrue(m.state.value.ready);assertFalse(m.state.value.needsLogin)
+        assertEquals("Kitchen 🪴",m.state.value.cache.snapshot!!.records.single().data.text("title"))
+        t.configureFailure=false;m.poll()
+        assertEquals(2,t.configurations);assertTrue(m.state.value.online)
+    }
+    @Test fun unchangedHeadAvoidsDownloadingSnapshotAndChangedHeadSynchronizes() = runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        assertFalse(m.poll());assertEquals(listOf("/api/head"),t.requests)
+        t.snapshot=t.snapshot.copy(sequence=2);assertTrue(m.poll())
+        assertTrue("/api/snapshot" in t.requests);assertEquals(2,m.state.value.cache.snapshot!!.sequence)
+    }
+    @Test fun removalRequiresReviewedPendingWorkThenRevokesAndClearsLocalSecrets() = runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        m.saveDraft("task",1,obj("notes" to "Keep me".j()))
+        assertFailsWith<IllegalStateException> { m.removeInstallation() }
+        assertFalse("/api/device/revoke-self" in t.requests)
+        m.submitDraft("task");m.sync();m.removeInstallation()
+        assertTrue(t.stopped);assertTrue(m.state.value.needsLogin)
+        assertNull(v.value.token);assertNull(v.value.keys);assertNull(v.value.config)
+        assertFalse(v.value.preferences.liveUpdates);assertFalse(v.value.preferences.reminders)
     }
 
 }

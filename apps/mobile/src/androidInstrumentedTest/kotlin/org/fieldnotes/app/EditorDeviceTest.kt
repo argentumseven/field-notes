@@ -16,7 +16,7 @@ class EditorDeviceTest {
         val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as FieldNotesApplication
         runBlocking {app.initialized.await()}
         val original=app.model
-        val cache=Cache(keys=obj("private_key" to "synthetic".j()),config=obj("server_key" to "fixture".j()),token="synthetic",snapshot=Snapshot(1,"fixture",1,0,listOf(Record("project","project",1,obj("title" to "Garden".j()))),Actor("user","Test","owner","session")))
+        val cache=Cache(preferences=Preferences(backgroundSync=false,reminders=false,liveUpdates=false),keys=obj("private_key" to "synthetic".j()),config=obj("server_key" to "fixture".j()),token="synthetic",snapshot=Snapshot(1,"fixture",1,0,listOf(Record("project","project",1,obj("title" to "Garden".j()))),Actor("user","Test","owner","session")))
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
         val vault=object:Vault{override suspend fun load()=cache;override suspend fun save(cache:Cache){error("Disk is full")};override suspend fun clearImages(){}}
         val transport=object:Transport{override suspend fun keys()=obj();override suspend fun configure(configuration:kotlinx.serialization.json.JsonObject){};override suspend fun stop(){};override suspend fun exchange(path:String,token:String?,body:kotlinx.serialization.json.JsonObject?,serverKey:String?)=error("Offline")}

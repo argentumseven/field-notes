@@ -92,6 +92,13 @@ async function newStandaloneTask() {
         ],
         value: state.project || "",
       },
+      {
+        key: "assignee",
+        label: "Assigned to",
+        options: assignmentOptions(),
+        value: state.page === "mine" ? state.actor.user_id : "",
+        required: false,
+      },
     ],
     async (v) => {
       created = await mutate("task.create", uuid(), v, null);

@@ -5,7 +5,9 @@ package org.fieldnotes.domain
 fun dueReminderKeys(cache: Cache, localDate: String, hour: Int): Set<String> {
     if (!cache.preferences.reminders || hour < 9 || cache.snapshot == null) return emptySet()
     return projectRecords(cache).filter { row ->
-        row.record.kind == "task" && row.record.data.text("status") != "done" &&
+        row.record.kind == "task" &&
+            row.record.data.text("assignee").let { it.isBlank()||it==cache.snapshot.actor.user_id } &&
+            row.record.data.text("claimant").let { it.isBlank()||it==cache.snapshot.actor.user_id } && row.record.data.text("status") != "done" &&
             row.record.data.text("due").let { it.isNotBlank() && it <= localDate }
     }.map { "${it.record.id}:${it.record.data.text("due")}" }.filterNot { it in cache.reminded }.toSet()
 }
