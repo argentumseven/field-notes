@@ -12,8 +12,27 @@ and kernel WireGuard support. See [CONTAINERS.md](CONTAINERS.md) for prerequisit
 and the isolation policy. Build on Linux with local Docker or unpack the matching
 Linux server bundle; both offline images are included:
 
-Build the complete server bundle first, or unpack a matching Linux release bundle.
-Then, as root, launch the guided installation:
+From a complete Field Notes source checkout on Debian/Ubuntu x86_64,
+run as root:
+
+```sh
+bash scripts/install-server.sh
+```
+
+This one-command installer prompts for configuration, prints a reviewable
+no-write plan and requires typing `INSTALL` before preparing toolchains
+and building the matching Android APK, app/gateway Docker images, and
+server bundle. It then installs and starts the stack. Rootful Docker
+Engine/Compose and basic host build prerequisites must already be
+available; it does not change shared Docker daemon settings.
+
+For a no-write planning run:
+
+```sh
+bash scripts/install-server.sh --plan
+```
+
+For a complete prebuilt release bundle (no source build):
 
 ```sh
 bash scripts/install-server.sh --apply
