@@ -119,7 +119,14 @@ def main():
     select_ports(a, interactive)
     lan=ipaddress.IPv4Address(a.lan_ip);prefix=ipaddress.IPv4Network(a.lan_prefix);overlay=ipaddress.IPv4Network(a.overlay)
     private=[ipaddress.IPv4Network(x) for x in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')]
-    if not any(prefix.subnet_of(n) for n in private) or lan not in prefix or not any(overlay.subnet_of(n) for n in private) or overlay.prefixlen!=24 or overlay.overlaps(prefix):raise ValueError('Use a private LAN address within its prefix and a nonoverlapping private /24 overlay.')
+    # The listener address and the administrators' source CIDR may be on
+    # different routed networks or VLANs. Do not require the listener in that CIDR.
+    if not any(lan in network for network in private):
+        raise ValueError('The management bind IP must be private (RFC 1918).')
+    if not any(prefix.subnet_of(network) for network in private):
+        raise ValueError('The administrator source CIDR must be private (RFC 1918).')
+    if overlay.prefixlen != 24 or not any(overlay.subnet_of(network) for network in private) or overlay.overlaps(prefix) or lan in overlay:
+        raise ValueError('Choose a private /24 WireGuard overlay separate from both management networks.')
     if not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)+',a.hostname) or len(a.hostname)>200:raise ValueError('Invalid hostname')
     if not 1024<=a.udp_port<=65535 or not 1024<=a.web_port<=65535 or a.web_port==8443:raise ValueError('Choose unprivileged ports; reserve 8443 for the tunnel API')
     endpoint=a.endpoint or str(lan)
