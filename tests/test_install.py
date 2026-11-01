@@ -12,7 +12,7 @@ class Plan(unittest.TestCase):
   self.assertIn('--apply --build-from-source --interactive',script)
   self.assertIn('if (( $# == 0 ))',script)
  def test_source_build_is_not_attempted_before_confirmation(self):
-  answer='192.168.1.10\\n192.168.1.0/24\\n\\n\\n'+WEB+'\\n'+UDP+'\\nNO\\n'
+  answer='192.168.1.10\n192.168.1.0/24\n\n\n'+WEB+'\n'+UDP+'\nNO\n'
   r=subprocess.run(['python3','scripts/install-server.py','--apply','--build-from-source','--interactive'],cwd=ROOT,text=True,capture_output=True,input=answer)
   self.assertEqual(r.returncode,0,r.stderr)
   self.assertIn('Installation cancelled',r.stdout)
