@@ -60,7 +60,7 @@ class Upgrade(unittest.TestCase):
  def test_preview_preserves_ports_keys_and_has_no_mutations(self):
   before=self.host.path(self.host.record['config']+'/master.key').read_bytes()
   plan=upgrade.preview(self.host.record,self.folder,self.host)
-  self.assertEqual(plan['settings']['web_port'],10443);self.assertEqual(plan['settings']['udp_port'],49272)
+  self.assertEqual(plan['settings']['web_port'],10443);self.assertEqual(plan['settings']['udp_port'],43127)
   self.assertEqual(before,self.host.path(self.host.record['config']+'/master.key').read_bytes());self.assertFalse(self.engine.calls)
  def test_success_keeps_database_identity_users_and_hub_material_and_inventories_new_images(self):
   identities={name:self.host.path(self.host.record['config']+'/'+name).read_bytes() for name in ('gateway/fieldnotes.conf','tls/private/ca.key','network.json')}

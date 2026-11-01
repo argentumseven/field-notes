@@ -12,61 +12,80 @@ and kernel WireGuard support. See [CONTAINERS.md](CONTAINERS.md) for prerequisit
 and the isolation policy. Build on Linux with local Docker or unpack the matching
 Linux server bundle; both offline images are included:
 
-```sh
-bash scripts/build/android.sh debug
-bash scripts/build/server.sh
-# Or extract dist/server/field-notes-0.3.3-linux-x86_64.tar.gz on the Linux host.
+From a complete Field Notes source checkout on Debian/Ubuntu x86_64,
+run as root:
 
-sudo bash scripts/install-server.sh --plan \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net
-sudo bash scripts/install-server.sh --apply \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net
+```sh
+bash scripts/install-server.sh
 ```
 
-Replace example addresses/domain with yours. Reserve the server's LAN address
-on your router. Select a private /24 overlay with `--overlay` if `10.82.0.0/24`
-overlaps Bungee/your LAN/VPN. Supply a publicly reachable endpoint to use phones
-away from home; omitting it produces a clearly labeled LAN-only installation.
-The installer asks for **both ports** when run from a terminal:
+This one-command installer prompts for configuration, prints a reviewable
+no-write plan and requires typing `INSTALL` before preparing toolchains
+and building the matching Android APK, app/gateway Docker images, and
+server bundle. It then installs and starts the stack. Rootful Docker
+Engine/Compose must already work. After confirmation, the guided installer
+installs any missing Debian/Ubuntu build tools (Node/npm, compilers, Make,
+packaging tools) with apt before building. It does not change shared Docker
+daemon settings.
+
+For a no-write planning run:
+
+```sh
+bash scripts/install-server.sh --plan
+```
+
+For a complete prebuilt release bundle (no source build):
+
+```sh
+bash scripts/install-server.sh --apply
+```
+
+The listener IP identifies the private server interface to bind. The trusted
+LAN CIDR identifies the **source addresses allowed to use the admin website**;
+it may be on a different routed network or VLAN. Do not change the allowed
+source CIDR to the server's interface subnet unless those are actually the
+administrator clients you intend to authorize. Ensure routing/firewall rules
+allow those source IPs to reach the server without rewriting their addresses.
+
+The installer prompts for a LAN IPv4 address, trusted LAN CIDR, optional public
+DDNS/IP endpoint (blank for LAN-only), optional WireGuard private /24 overlay
+(blank for the generic `10.82.0.0/24`), and the two required ports:
 
 ```text
-Management HTTPS port (LAN only) [9443]:
-WireGuard UDP port (router forwarding) [49272]:
+Management HTTPS port (LAN only) (1024–65535, required):
+WireGuard UDP port (router forwarding) (1024–65535, required):
 ```
 
-Enter your own values or press Enter to choose each suggestion. Port 8443 is
-reserved for the inner device API. `--plan --interactive` explicitly opens the
-same no-write port wizard. The plan reports `apply_port_options`; repeat those
-`--web-port` and `--udp-port` values with `--apply` to use exactly the reviewed
-choices. Flags skip their corresponding questions. For example:
+Both port numbers must be entered explicitly. Neither has a default or a value
+derived from another application. TCP 8443 is reserved for the inner API and
+cannot be chosen for management. Use an overlay that does not overlap the LAN,
+Docker networks or any other VPN.
+
+Before any changes, `--apply` prints the complete plan and requires typing
+`INSTALL`. An unconfirmed operation exits without changes. To inspect the
+configuration without installing:
 
 ```sh
-sudo bash scripts/install-server.sh --apply \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --web-port 10443 --udp-port 49272 \
-  --endpoint your-home.example.net
+bash scripts/install-server.sh --plan
 ```
 
-That example serves LAN management at `https://192.168.1.10:10443`. A nonterminal
-`--plan` previews defaults and labels them as a preview. A noninteractive
-`--apply` refuses missing port choices, rather than silently selecting ports.
-Owner name/password prompts remain separate; no command-line password is used.
-The owner password is selected and confirmed during installation, using hidden
-terminal input. The server stores a salted Argon2id hash, not a recoverable
-password. It is the login for the web manager as well as the household website.
-Review `--plan` before applying. Supply `--endpoint your-home.example.net`
-without a port to follow your WireGuard selection automatically. An explicit
-`:port` selects the router's external port; if it differs from the local UDP
-listener, the plan prints the exact external-to-internal NAT mapping.
+The no-write preview prompts for missing information too. In automation, provide
+`--lan-ip`, `--lan-prefix`, `--web-port` and `--udp-port`; `--endpoint` and
+`--overlay` are optional. Explicit flags skip the corresponding prompts.
+A bare endpoint hostname automatically uses the WireGuard port you selected.
+An endpoint with an explicit external `:port` causes the plan to show any
+different router NAT mapping.
+
+The initial owner username/password are entered during installation; passwords
+are not passed in command-line flags. A fresh installer refuses to overwrite an
+existing installation or migration state.
 
 There are three separate listeners:
 
 | Listener | Port | Access |
 | --- | --- | --- |
-| Management HTTPS | Chosen during install; suggested TCP 9443 | Trusted home LAN only |
-| WireGuard transport | Chosen during install; suggested UDP 49272 | The one router-forwarding candidate |
+| Management HTTPS | Chosen explicitly during install | Trusted home LAN only |
+| WireGuard transport | Chosen explicitly during install | The one router-forwarding candidate |
 | Client-to-server HTTPS API | TCP 8443, fixed inside the overlay | Enrolled phone tunnels only; never router-forwarded |
 
 The client API is present separately from management. Enrollment supplies its
@@ -104,35 +123,25 @@ shared Docker daemon configuration alone. It creates:
   preserves recovery data, explicit purge deletes it. [Removal guide](UNINSTALL.md).
 
 There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly
-at the LAN address and management port you chose (`https://192.168.1.10:9443`
-with the suggestion); the separate phone API binds only `10.82.0.1:8443`.
+at the LAN address and management port you chose; the separate phone API binds
+only `10.82.0.1:8443`.
 The installer checks login, authenticated snapshot and logout over real TLS.
 It does not install a shell-execution endpoint in the management website.
 
-Forward **one UDP port only**, **49272** by default, to the Linux server.
-For example, reserve `192.168.1.10` for the server, then add this router rule:
-
-| Purpose | External port/protocol | Internal destination |
-| --- | --- | --- |
-| Field Notes phone tunnel | **49272 / UDP** | **192.168.1.10:49272 / UDP** |
-| Bungee, if using its guide's example | 49271 / UDP | Your Bungee host:49271 / UDP |
-
-The adjacent pair comes from [Bungee's installation example](https://github.com/argentumseven/bungee/blob/ec7c089debf12ddb3541a7e34f993b5e1354f0ac/docs/INSTALL.md).
-Bungee itself has no fixed default. If your actual Bungee listener is different,
-pass `--bungee-port YOUR_BUNGEE_PORT` to choose one higher, and set `--endpoint`
-to your DDNS/IP with that resulting port. For example, Bungee `47937` means
-`--bungee-port 47937 --endpoint your-home.example.net:47938`. Or choose an unused
-port with `--udp-port`. The plan prints the exact forwarding rule. Keep external
-and internal port numbers the same for these examples.
+Forward **only the WireGuard UDP port you selected** to the Linux server.
+Reserve the server's LAN address, then create an external-to-internal UDP forwarding
+rule matching the installer's `router_forward` output. No second application's
+port or configuration is needed to choose this value.
 
 This is an opportunity for remote phone access, not an automatic router change.
-Never forward the chosen management HTTPS port (9443 by suggestion, or your
-custom value) or inner API TCP 8443. Preserve Bungee's own separate rule. Keep existing
+Never forward the chosen management HTTPS port or inner API TCP 8443.
+Preserve any existing unrelated forwarding rules. Keep existing
 host firewall restrictions and permit the selected UDP and management LAN as
 appropriate. Check the [network access matrix](NETWORK.md) on your actual host;
 CGNAT or an upstream UDP filter can prevent remote access. A port change alone
 is not a security control. Existing installations retain their configured port;
-changing a default does not migrate a live tunnel or its enrolled endpoints.
+changing an installation's ports requires a reviewed migration of its live
+WireGuard tunnel and enrolled endpoints.
 
 ## Trust the LAN website
 

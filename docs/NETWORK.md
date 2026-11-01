@@ -28,10 +28,10 @@ Established replies remain allowed. See [CONTAINERS.md](CONTAINERS.md).
 
 | Source | Allowed destination |
 | --- | --- |
-| Internet | The selected WireGuard UDP port only (default 49272) |
+| Internet | The selected WireGuard UDP port only (operator-selected) |
 | Enrolled phone peer | Exactly overlay server `.1`, TCP 8443, device routes and device-bound authentication |
 | Phone interface | No LAN/admin, SSH, other host services, peer-to-peer, IPv6 or forwarded Internet traffic |
-| Selected management LAN CIDR | Management IP:chosen HTTPS port (suggested 9443); login, roles, CSRF and recent admin reauthentication still apply |
+| Selected management LAN CIDR | Management IP:chosen HTTPS port (operator-selected); login, roles, CSRF and recent admin reauthentication still apply |
 
 The installer generates nftables input/forward isolation before starting
 WireGuard. Peer traffic to every other host port/address is dropped, including
@@ -56,17 +56,25 @@ through the alternative after a connection failure. HTTP authorization failures
 do not trigger this retry. There is no plaintext, public HTTP or relay fallback.
 Without `--endpoint`, installation is LAN-only and the plan says so.
 
-Forward only that UDP port to the Linux host. Both management HTTPS and WireGuard UDP ports are chosen during installation;
-the terminal installer prompts for each missing choice. Only the selected UDP
-port is a router-forwarding candidate. The suggestion is **UDP 49272**, one
-above Bungee's documented example **UDP 49271**; Bungee requires an explicit
-operator choice. Use `--bungee-port <actual-port>` to select one higher, or
-`--udp-port <port>` for another unused listener. See the concrete
-[router forwarding rule](RUNNING.md#fresh-home-server). CGNAT, double NAT, ISP UDP filtering,
+Forward only that UDP port to the Linux host. Both management HTTPS and
+WireGuard UDP ports are chosen explicitly during installation; the terminal
+installer prompts for each missing choice. No port is suggested or derived
+from another service. Enter both ports interactively or use `--web-port`
+and `--udp-port` explicitly. Only the selected UDP port is a router-forwarding
+candidate. See the [router forwarding rule](RUNNING.md#fresh-home-server).
+CGNAT, double NAT, ISP UDP filtering,
 captive portals, dynamic addresses and an active VPN can prevent reachability.
 A WireGuard hub supplies neither rendezvous nor automatic NAT traversal. DNS for
 DDNS uses the OS network policy and discloses endpoint lookup metadata. Choose a
 nonoverlapping /24 distinct from Bungee, the LAN and your other VPN routes.
+
+The management listener binds a private IPv4 address on the server. The
+administrator source CIDR is an independent private network ACL, **not** the
+subnet of the server's interface. Routed or VLAN-separated administration is
+supported: the router/firewall must allow the chosen administrators' source
+addresses to reach the chosen listener, and the return path must be routable.
+No NAT or source rewrite is configured by Field Notes. Preserve administrator
+source addresses so the source CIDR restriction can work as intended.
 
 The management listener has a private LAN address and explicit source CIDR ACL.
 A browser cannot borrow the Android app's private stack. Linux/Windows browsers

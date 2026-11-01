@@ -17,7 +17,7 @@ def settings():
     return dict(version=1,installation='12345678-1234-4234-8234-123456789abc',project='field-notes',
                 prefix='/opt/field-notes',data='/var/lib/field-notes',config='/etc/field-notes',
                 runtime='/run/field-notes-peers',uid=4242,gid=4242,lan_ip='192.168.1.10',
-                lan_prefix='192.168.1.0/24',overlay='10.82.0.0/24',web_port=10443,udp_port=49272,
+                lan_prefix='192.168.1.0/24',overlay='10.82.0.0/24',web_port=10443,udp_port=43127,
                 images={'app':'sha256:'+'a'*64,'gateway':'sha256:'+'b'*64})
 
 
@@ -65,7 +65,7 @@ class DockerFixture(Engine):
 class Containers(unittest.TestCase):
     def test_spec_has_only_two_ingress_ports_and_no_app_privileges_or_host_secrets(self):
         value=compose(settings());app=value['services']['app'];gateway_=value['services']['gateway']
-        self.assertEqual(gateway_['ports'],['192.168.1.10:10443:10443/tcp','0.0.0.0:49272:49272/udp'])
+        self.assertEqual(gateway_['ports'],['192.168.1.10:10443:10443/tcp','0.0.0.0:43127:43127/udp'])
         self.assertEqual(app['network_mode'],'service:gateway');self.assertNotIn('ports',app)
         self.assertEqual(app['cap_drop'],['ALL']);self.assertNotIn('cap_add',app)
         self.assertEqual(gateway_['cap_add'],['NET_ADMIN']);self.assertNotIn('privileged',gateway_)
@@ -76,6 +76,22 @@ class Containers(unittest.TestCase):
         self.assertNotIn('/etc/field-notes/tls',sources);self.assertIn('/etc/field-notes/tls/issued',sources)
         self.assertEqual(app['environment']['HTTPS_PROXY'],'');self.assertEqual(gateway_['dns'],['127.0.0.1'])
         self.assertIn('--container-network',app['command']);self.assertIn('10.82.0.1:8443',app['command'])
+
+    def test_routed_administrator_vlan_is_independent_of_bind_ip(self):
+        c={**settings(),'lan_ip':'192.168.50.10','lan_prefix':'192.168.20.0/24'}
+        value=compose(c)
+        gateway_=value['services']['gateway']
+        app=value['services']['app']
+        self.assertIn('192.168.50.10:10443:10443/tcp',gateway_['ports'])
+        self.assertEqual(app['command'][app['command'].index('--admin-allow')+1],
+                         '192.168.20.0/24')
+        firewall=gateway.rules(c)
+        self.assertIn('ip saddr 192.168.20.0/24 tcp dport 10443 accept',firewall)
+
+    def test_management_listener_must_still_be_private_and_outside_overlay(self):
+        for ip in ('203.0.113.10','10.82.0.10'):
+            with self.assertRaises(ValueError):
+                validate({**settings(),'lan_ip':ip,'lan_prefix':'192.168.20.0/24'})
 
     def test_invalid_sources_overlay_ports_root_user_and_mutable_images_refuse(self):
         for changes in [{'uid':0},{'lan_prefix':'0.0.0.0/0'},{'overlay':'192.168.1.0/24'}, {'web_port':8443},{'images':{'app':'latest','gateway':'latest'}},{'project':'bungee'}]:

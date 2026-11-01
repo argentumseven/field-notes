@@ -89,8 +89,8 @@ Use `scripts/capture-home-widget.mjs` for actual launcher hosting and delivery;
 `test-android-uninstall.mjs` destroys only the disposable field-notes-test AVD's
 app installation; never use it against a user's phone.
 
-Server installation prompts for management HTTPS and WireGuard UDP ports when
-missing. Noninteractive apply requires explicit choices. WireGuard suggests
-49272 (one above Bungee's guide example); `--bungee-port` derives one higher from
-an operator's actual Bungee listener. The inner phone API stays TCP 8443, overlay
+Server installation requires management HTTPS and WireGuard UDP ports to be
+selected explicitly. Interactive mode prompts for missing values without defaults;
+noninteractive calls require both `--web-port` and `--udp-port`.
+Do not derive either port from another service. The inner phone API stays TCP 8443, overlay
 only, and must not be router-forwarded.

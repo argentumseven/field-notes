@@ -59,7 +59,7 @@ class Fixture(installation.Host):
             self.record['unit_hashes'][unit] = installation.digest(text.encode())
         for timer in installation.TIMERS:
             self.path('/var/lib/systemd/timers/stamp-' + timer).write_text('')
-        self.path(installation.WG_CONFIG).write_text('[Interface]\nAddress = 10.82.0.1/24\nListenPort = 49272\nPrivateKey = ' + PRIVATE + '\n[Peer]\nPublicKey = ' + PUBLIC + '\nAllowedIPs = 10.82.0.2/32\n')
+        self.path(installation.WG_CONFIG).write_text('[Interface]\nAddress = 10.82.0.1/24\nListenPort = 43127\nPrivateKey = ' + PRIVATE + '\n[Peer]\nPublicKey = ' + PUBLIC + '\nAllowedIPs = 10.82.0.2/32\n')
         self.path(installation.WG_CONFIG).chmod(0o600)
         self.bungee = self.path('/etc/wireguard/bungee.conf')
         self.bungee.write_text('BUNGEE MUST SURVIVE\n')

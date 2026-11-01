@@ -22,6 +22,12 @@ active native target; iOS and native desktop packages are deferred.
 | Linux optimized server | Built and API-tested on x86_64; direct Rust TLS with no proxy. Fresh bundle includes offline app/gateway images, matching signed ARM64 APK/checksum/signer/metadata, installer and uninstaller |
 | Container integration | Real Docker shared namespace with production nonroot/read-only app: direct management TLS, account invitation/approval, root-owned peer acknowledgement, actual WireGuard source-bound activation, task/image writes and unavailable private admin routes; modified phone blocked from management/SSH/other peers/LAN; app-UID outbound TCP and Docker DNS hit actual nftables drops; phone tokens rejected on LAN; routine password change preserves the phone while explicit device sign-out invalidates it; anonymous LAN APK bytes match the read-only mount and downloads are absent privately; complete APK metadata/chunk transfer verified over actual private WireGuard/TLS; owned containers/network removed |
 
+The previous installer tests for automatic port suggestions and port adjacency
+were executed against an earlier implementation. Those behaviors have since
+been removed: current installation requires explicit HTTPS and WireGuard UDP
+port selection, with no derived port. The revised installer tests require a
+fresh execution before claiming the new behavior as validated on a host.
+
 The 62 Python checks include 23 scoped uninstall tests (temporary real file trees,
 mocked host commands), six container policy/ownership tests and two real TLS
 checks. They cover retain/purge/later purge, retries, legacy/custom paths, changed

@@ -75,23 +75,28 @@ bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 ```
 
-On your Debian/Ubuntu host, review then apply the installer, using your own LAN
-and reachable home DDNS/IP endpoint:
+On your Debian/Ubuntu x86_64 server, after cloning the repository, run as root:
 
 ```sh
-sudo bash scripts/install-server.sh --plan \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net
-# Choose both ports at the prompts; repeat the reported apply_port_options
-# with --apply after reviewing the plan.
+bash scripts/install-server.sh
 ```
 
-Forward **UDP 49272** to the Linux server (one above Bungee's guide example
-49271), or select `--bungee-port <your-bungee-port>` for an adjacent listener.
-See the [router forwarding example](docs/RUNNING.md#fresh-home-server).
-The installer prompts for **management HTTPS and WireGuard UDP ports**.
-`--web-port` and `--udp-port` supply explicit choices instead.
-LAN management uses direct TLS on your chosen port (suggested 9443), and the isolated
+The guided installer asks for LAN details, optional remote endpoint and private
+overlay, and both ports (no suggested values). Review the plan and type
+`INSTALL`. It then prepares the pinned toolchains, builds the matching
+signed development Android APK and server/offline Docker images, and installs
+the stack. Docker Engine/Compose must already work on the host. Missing Debian/Ubuntu
+build packages are installed automatically after plan confirmation. A no-write preview uses
+`bash scripts/install-server.sh --plan`; for a prebuilt verified server
+bundle use `bash scripts/install-server.sh --apply`.
+Never commit operator signing keys or place installation secrets in Git.
+
+Forward the **WireGuard UDP port you choose** to the Linux server.
+See the [router forwarding instructions](docs/RUNNING.md#fresh-home-server).
+The installer requires **explicit management HTTPS and WireGuard UDP ports**:
+enter both in the interactive prompts, or supply `--web-port` and `--udp-port`.
+There are no suggested or automatic port numbers.
+LAN management uses direct TLS on your chosen port, and the isolated
 WireGuard notes endpoint is 8443. The bundle includes offline Docker images:
 a nonroot, read-only app and a separate WireGuard gateway. New outbound traffic,
 including DNS, is blocked; replies to allowed incoming connections work. Local
