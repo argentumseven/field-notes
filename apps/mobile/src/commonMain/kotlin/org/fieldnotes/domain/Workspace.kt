@@ -19,6 +19,7 @@ class Workspace(
     private val writes = Mutex()
     private val connection = Mutex()
     private var prepared = false
+    private val pairingGeneration=MutableStateFlow(0L)
     private val _state = MutableStateFlow(WorkspaceState())
     val state: StateFlow<WorkspaceState> = _state
     private val cache get() = _state.value.cache
@@ -32,10 +33,13 @@ class Workspace(
     suspend fun initialize() = connection.withLock {
         try {
             val loaded = vault.load()
-            _state.update { it.copy(cache = loaded) }
-            if (loaded.keys == null) { val keys = transport.keys(); update { it.copy(keys = keys) } }
+            _state.update { it.copy(cache = loaded,connectionPaused=loaded.preferences.connectionPaused) }
+            if (loaded.keys == null) {
+                check(loaded.config==null && loaded.enrollment==null && loaded.snapshot==null && loaded.outbox.isEmpty() && loaded.drafts.isEmpty() && loaded.conflicts.isEmpty()) { "Saved phone identity is missing. Original records are preserved; recover the identity or use Android app settings." }
+                val keys = transport.keys(); update { it.copy(keys = keys) }
+            }
             var networkError:String?=null
-            cache.config?.let { try { transport.configure(it);prepared=true } catch(e:Exception){if(e is CancellationException)throw e;networkError="Private connection unavailable; cached work and reminders remain available."} }
+            cache.config?.takeUnless { loaded.preferences.connectionPaused }?.let { try { transport.configure(it);prepared=true } catch(e:Exception){if(e is CancellationException)throw e;networkError="Private connection unavailable; cached work and reminders remain available."} }
             _state.update { it.copy(ready = true, needsLogin = cache.token == null, error = networkError) }
         } catch (e: Exception) {
             _state.update { it.copy(error = e.message ?: "The encrypted local vault is unavailable.") }
@@ -47,13 +51,21 @@ class Workspace(
         require(name.trim().encodeToByteArray().size in 1..80) { "Enter a short phone name." }
         val secret = (newId() + newId()).replace("-", "")
         check(secret.matches(Regex("[a-f0-9]{64}")))
-        update { it.copy(enrollment = Enrollment(invitation, secret, name.trim())) }
+        pairingGeneration.update { it+1 }
+        update { it.copy(enrollment = Enrollment(invitation, secret, name.trim()),preferences=it.preferences.copy(connectionPaused=false)) }
+        _state.update { it.copy(connectionPaused=false,error=null) }
     }
     suspend fun advanceEnrollment() = connection.withLock {
         val pending = cache.enrollment ?: return@withLock
+        if(state.value.connectionPaused)return@withLock
+        val generation=pairingGeneration.value
+        fun currentAttempt(){if(generation!=pairingGeneration.value||state.value.connectionPaused)throw CancellationException("Pairing paused; saved credentials are retained")}
+        suspend fun rememberEnrollment(change:(Cache)->Cache){update { currentAttempt();change(it) }}
+        try {
         val invitation = pending.invitation
         suspend fun bootstrap(path: String, body: JsonObject): JsonObject {
             val reply = transport.bootstrap(invitation.url, invitation.ca, path, body)
+            currentAttempt()
             val result = WireJson.parseToJsonElement(reply.body).jsonObject
             if (reply.status >= 400) throw ApiError(reply.status, result.text("error", "Enrollment failed."))
             return result
@@ -63,7 +75,7 @@ class Workspace(
             val claim = bootstrap("/claim", obj("token" to invitation.token.j(), "claim_secret" to current.claimSecret.j(), "public_key" to cache.keys!!.getValue("public_key"), "name" to current.name.j()))
             current = current.copy(id = claim.text("id"), verification = claim.text("verification"), stage = claim.text("state"))
             check(current.id.length == 36 && current.verification.matches(Regex("[A-F0-9]{8}"))) { "Invalid enrollment response." }
-            update { it.copy(enrollment = current) }
+            rememberEnrollment { it.copy(enrollment = current) }
         }
         if (current.activationSecret == null) {
             val status = bootstrap("/status", obj("id" to current.id.j(), "claim_secret" to current.claimSecret.j()))
@@ -75,19 +87,40 @@ class Workspace(
                 val full = JsonObject(configuration + ("private_key" to cache.keys!!.getValue("private_key")))
                 current = current.copy(stage = "activating", activationSecret = status.text("activation_secret"))
                 // Keep configuration and receipt credential together across process death.
-                update { it.copy(config = full, enrollment = current) }
+                rememberEnrollment { it.copy(config = full, enrollment = current) }
             } else {
                 check(status.text("state") != "active") { "This phone was activated but the receipt is unavailable. Ask the administrator to revoke it and enroll again." }
-                current = current.copy(stage = status.text("state")); update { it.copy(enrollment = current) }
+                current = current.copy(stage = status.text("state")); rememberEnrollment { it.copy(enrollment = current) }
+                _state.update { it.copy(error=null) }
                 return@withLock
             }
         }
         transport.configure(cache.config!!)
+        currentAttempt();prepared=true
         val activation = request("/api/device/activate", obj("id" to current.id.j(), "activation_secret" to current.activationSecret!!.j()), token = null)
         val actor = WireJson.decodeFromJsonElement<Actor>(activation.getValue("actor"))
         check(actor.name == invitation.user && actor.role == invitation.role) { "Activated account does not match your invitation." }
-        update { it.copy(token = activation.text("token"), enrollment = null) }
+        rememberEnrollment { it.copy(token = activation.text("token"), enrollment = null) }
         _state.update { it.copy(needsLogin = false, error = null) }
+        } catch(e:ApiError){
+            if(e.status in setOf(400,401,403,404,409,410,422))pauseConnection()
+            throw e
+        } catch(e:Exception){
+            if(state.value.connectionPaused)throw CancellationException("Pairing paused; saved credentials are retained")
+            throw e
+        }
+    }
+    /** A local stop never needs a server response and never erases queued work. */
+    suspend fun pauseConnection(){
+        pairingGeneration.update { it+1 }
+        _state.update { it.copy(connectionPaused=true,online=false) }
+        try { update { it.copy(preferences=it.preferences.copy(connectionPaused=true)) } }
+        catch(e:Exception){if(e is CancellationException)throw e;throw IllegalStateException("Connection paused for this process, but the pause could not be saved. Use Android app settings to force-stop before restarting.",e)}
+        finally { try { withContext(NonCancellable){transport.stop()} } finally { prepared=false } }
+    }
+    suspend fun resumeConnection()=connection.withLock {
+        update { it.copy(preferences=it.preferences.copy(connectionPaused=false)) }
+        _state.update { it.copy(connectionPaused=false,error=null) }
     }
     suspend fun enrollmentSignIn(enabled: Boolean) = connection.withLock {
         val current = cache.enrollment ?: return@withLock
@@ -98,19 +131,20 @@ class Workspace(
     suspend fun cancelEnrollment() = connection.withLock {
         val current = cache.enrollment ?: return@withLock
         check(cache.snapshot == null && cache.outbox.isEmpty() && cache.drafts.isEmpty())
-        if (current.id.isNotEmpty()) {
-            val result = transport.bootstrap(current.invitation.url, current.invitation.ca, "/cancel", obj("id" to current.id.j(), "claim_secret" to current.claimSecret.j()))
-            check(result.status in 200..299 || result.status == 410) { "Connect to your home LAN to cancel. Your administrator can also revoke this phone." }
-        }
+        val proof = if(current.id.isNotEmpty()) obj("id" to current.id.j(), "claim_secret" to current.claimSecret.j())
+            else obj("token" to current.invitation.token.j(),"claim_secret" to current.claimSecret.j(),"public_key" to cache.keys!!.getValue("public_key"))
+        val result = transport.bootstrap(current.invitation.url, current.invitation.ca, "/cancel", proof)
+        check(result.status in 200..299 || result.status == 410) { "Connect to your home LAN to cancel. Your administrator can also revoke this phone. An older server may need updating to cancel an attempt with a lost claim reply." }
         transport.stop()
-        val keys = transport.keys()
+        prepared=false
+        val keys = cache.keys ?: transport.keys()
         update { it.copy(enrollment = null, config = null, keys = keys, token = null) }
     }
-    suspend fun resetConnection() = connection.withLock {
+    suspend fun resetConnection(newKeys:Boolean=false) = connection.withLock {
         check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Copy and resolve retained changes before enrolling again." }
-        transport.stop(); vault.clearImages()
-        val keys = transport.keys()
-        update { Cache(keys = keys, preferences = it.preferences) }
+        pauseConnection(); vault.clearImages()
+        val keys = if(newKeys)transport.keys() else cache.keys ?: transport.keys()
+        update { Cache(keys = keys, preferences = it.preferences.copy(connectionPaused=true)) }
         _state.update { it.copy(needsLogin = true, online = false, error = null) }
     }
     suspend fun discardRetainedChanges() { update { it.copy(outbox = emptyList(), conflicts = emptyList(), drafts = emptyMap()) } }
@@ -134,15 +168,34 @@ class Workspace(
         catch (e: Exception) { transport.configure(old); throw e }
         _state.update { it.copy(online = false, error = null) }
     }
-    private suspend fun request(path: String, body: JsonObject? = null, token: String? = cache.token): JsonObject {
+    private suspend fun exchange(path: String, body: JsonObject?, token: String?): Reply {
+        check(!state.value.connectionPaused){"Private connection paused. Resume it to contact your server."}
         if(!prepared){transport.configure(cache.config?:error("Enroll this device first."));prepared=true}
-        val r = transport.exchange(path, token, body, cache.config?.text("server_key"))
-        val json = try { WireJson.parseToJsonElement(r.body).jsonObject } catch (_: Exception) { throw ApiError(r.status, "The server returned an invalid response.") }
+        if(state.value.connectionPaused){transport.stop();prepared=false;throw CancellationException("Private connection paused")}
+        val r = try { transport.exchange(path, token, body, cache.config?.text("server_key")) }
+        catch(e:Exception){
+            // Closing only our peer makes the next retry resolve trusted DDNS
+            // again; do not keep retrying a numeric endpoint cached at launch.
+            try { withContext(NonCancellable){transport.stop()} } finally { prepared=false }
+            throw e
+        }
+        if(state.value.connectionPaused)throw CancellationException("Private connection paused; transmitted changes may already have reached home")
         if (r.status == 401) {
             _state.update { it.copy(needsLogin = true) }
             update { it.copy(token = null) } // Retain work, revoke the cached display credential durably.
         }
-        if (r.status >= 400) throw ApiError(r.status, json.text("error", "Request failed"))
+        return r
+    }
+    /** Fixed software routes share the normal connection and session fences. */
+    suspend fun softwareUpdate(path:String):Reply=connection.withLock {
+        require(path=="/api/device/update" || path.matches(Regex("/api/device/update/chunks/[a-f0-9]{64}/[0-9]{1,4}"))){"Only the paired software endpoint is allowed"}
+        check(!state.value.needsLogin&&cache.token!=null){"Sign in before checking updates"}
+        exchange(path,null,cache.token)
+    }
+    private suspend fun request(path: String, body: JsonObject? = null, token: String? = cache.token): JsonObject {
+        val r=exchange(path,body,token)
+        val json = try { WireJson.parseToJsonElement(r.body).jsonObject } catch (_: Exception) { throw ApiError(r.status, "The server returned an invalid response.") }
+        if(r.status>=400)throw ApiError(r.status,json.text("error","Request failed"))
         return json
     }
     suspend fun login(name: String, password: String) = connection.withLock {
@@ -264,6 +317,7 @@ class Workspace(
     /** Cheap background checks keep the private connection alive without
      * downloading and re-encrypting an unchanged workspace every few seconds. */
     suspend fun poll(): Boolean {
+        if(state.value.connectionPaused)return false
         if(!connection.tryLock())return false
         var changed=false
         try {
@@ -298,7 +352,7 @@ class Workspace(
             }
         }
     }
-    suspend fun preferences(preferences: Preferences) { update { it.copy(preferences = preferences) } }
+    suspend fun preferences(preferences: Preferences) { update { it.copy(preferences = preferences.copy(connectionPaused=it.preferences.connectionPaused)) } }
     suspend fun markReminded(ids: Set<String>) { update { it.copy(reminded = it.reminded + ids) } }
     fun newId() = idFactory.invoke()
 }

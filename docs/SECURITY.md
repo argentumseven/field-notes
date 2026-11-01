@@ -25,6 +25,27 @@ private CA/leaf keys and process memory also contain sensitive material. Protect
 host permissions, disk, swap, coherent backups and the recovery key. No claim of
 end-to-end encryption excluding the server is made.
 
+Installation asks for and confirms the initial web owner password using hidden
+input. Per-user passwords are stored only as salted Argon2id PHC strings
+(version 19, 19,456 KiB memory, two iterations, parallelism one, fresh 16-byte
+random salt). Passwords are not data-encryption keys. Each account may change its
+own password from the LAN website with current-password proof. Owners can reset
+other active accounts; administrators can reset member/viewer accounts only,
+after recent reauthentication. No administrator can bypass current-password
+proof for its own account. Hash replacement, browser-session deletion and a password-free audit event commit
+together. Explicitly selecting wider sign-out also removes target phone sessions
+and cancels pending enrollments. Routine password changes preserve paired phones.
+Phone session tokens are refused on all LAN management API routes.
+Failed proof attempts are rate limited outside the rollback transaction. The
+account route is absent from the private device listener; source ACL/origin/CSRF
+checks remain enforced. Browser secret fields clear on completion/cancellation,
+and in-flight submissions cannot be dismissed as if canceled.
+
+The container's master key is owned by its dedicated app UID with mode 0600,
+outside writable application state and mounted read-only. The host CA signing
+key and hub private key remain root-only and are excluded from the app. Retained
+configuration becomes root-only on normal removal, preventing UID-reuse access.
+
 WireGuard uses per-device keys and unique PSKs. Direct Rust TLS requires TLS 1.3
 and validates trusted certificates. Native clients pin the explicitly trusted
 public CA and verify name/expiry. There is no plaintext, redirect, proxy or public
@@ -132,3 +153,19 @@ it never accepts an arbitrary target from the client. Normal Android uninstall
 removes profile-private data/keys, not shared server records or audits. Direct
 uninstall cannot notify the server. See [Android delivery](ANDROID-DELIVERY.md)
 for the exact cleanup and profile limits.
+
+## Software updates
+
+The paired server offers its bundled APK over authenticated, source-bound notes
+routes. It gains no outbound GitHub or DNS exception. Before handing a private
+file to an explicitly selected system installer, the phone verifies its complete
+SHA-256, cryptographic APK signature, exact package/version, supported Android/ABI,
+and the same certificate as the installed app. Only a higher version code is
+accepted. Android installation consent remains mandatory. The FileProvider is
+nonexported and exposes only the software cache with a temporary read grant.
+
+Update failures do not reset pairing, the Keystore alias, cached work or pending
+commands. A signer mismatch requires rebuilding with the original signing key,
+not deleting keys or uninstalling. Compatible Linux upgrades preserve the server
+master/CA/hub keys, peer identities and data, with an encrypted backup and bounded
+program rollback. See [UPDATES.md](UPDATES.md) for rollout and recovery limits.

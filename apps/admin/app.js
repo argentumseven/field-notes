@@ -170,6 +170,7 @@ function brand() {
   return n;
 }
 function renderLogin() {
+  state.dismissDialog?.();
   state.elevatedUntil = 0;
   $("#app").replaceChildren();
   const wrap = el("div", "login"),
@@ -213,7 +214,60 @@ function renderLogin() {
     }
   });
   wrap.append(form);
+  appendAndroidDownload(form);
   $("#app").append(wrap);
+}
+async function appendAndroidDownload(parent, cls = "") {
+  try {
+    const reply = await fetch("/downloads/android", { credentials: "omit" });
+    if (!reply.ok) return;
+    const result = await reply.json();
+    if (!result.available) return;
+    const data = result.artifact,
+      section = el("section", cls);
+    section.append(
+      el("h2", "", "Android app"),
+      el(
+        "p",
+        "muted",
+        `Version ${data.version} · ARM64 · ${data.signing} signing`,
+      ),
+    );
+    for (const [label, file] of [
+      ["Download APK", "field-notes.apk"],
+      ["SHA-256 checksum", "field-notes.apk.sha256"],
+      ["Signing certificate", "field-notes.apk.signer.txt"],
+    ]) {
+      const link = el(
+        "a",
+        "download-link" + (file === "field-notes.apk" ? " primary" : ""),
+        label,
+      );
+      link.href = "/downloads/" + file;
+      link.download = file;
+      section.append(link);
+    }
+    const details = el("details"),
+      summary = el("summary", "", "Verify your download");
+    details.append(
+      summary,
+      el("p", "item-sub", "APK SHA-256: " + data.sha256),
+      el("p", "item-sub", "Signer SHA-256: " + data.signer_sha256),
+    );
+    section.append(details);
+    parent.append(section);
+  } catch {} // Development fixtures may intentionally omit a distributable APK.
+}
+function signedOut() {
+  state.drafts.clear();
+  state.actor = null;
+  state.snapshot = null;
+  state.people = [];
+  state.users = [];
+  state.csrf = "";
+  state.elevatedUntil = 0;
+  closeDetail();
+  renderLogin();
 }
 function visibleTasks() {
   return records("task").filter(
@@ -367,6 +421,7 @@ function render() {
       ),
     );
   bottom.append(
+    button("Change password", changeOwnPassword, "quiet"),
     button(
       "Change theme",
       () => {
@@ -413,12 +468,7 @@ function render() {
           "Sign out",
         );
       await api("/logout", {});
-      state.drafts.clear();
-      state.actor = null;
-      state.snapshot = null;
-      state.people = [];
-      closeDetail();
-      renderLogin();
+      signedOut();
     },
     "quiet",
   );
@@ -1293,6 +1343,16 @@ async function formDialog(
   body.replaceChildren(el("h2", "", title), el("p", "muted", description));
   const nodes = {};
   for (const f of fields) {
+    if (f.type === "checkbox") {
+      const label = el("label", "dialog-choice"),
+        node = el("input");
+      node.type = "checkbox";
+      node.checked = f.value === true;
+      label.append(node, document.createTextNode(f.label));
+      body.append(label);
+      nodes[f.key] = node;
+      continue;
+    }
     nodes[f.key] = addField(
       body,
       f.options
@@ -1301,42 +1361,61 @@ async function formDialog(
     );
     nodes[f.key].required = f.required !== false;
     if (f.max) nodes[f.key].maxLength = f.max;
+    if (f.min) nodes[f.key].minLength = f.min;
+    if (f.autocomplete) nodes[f.key].autocomplete = f.autocomplete;
   }
   $("#dialog-error").textContent = "";
   $("#dialog-submit").textContent = submitText;
   dialog.showModal();
   return new Promise((resolve, reject) => {
-    let done = false;
+    let done = false,
+      submitting = false;
     const finish = (ok) => {
       if (done) return;
       done = true;
       form.onsubmit = null;
       dialog.oncancel = null;
       dialog.onclose = null;
+      if (state.dismissDialog === dismiss) state.dismissDialog = null;
+      for (const node of Object.values(nodes))
+        if (node.type === "password") node.value = "";
+      for (const image of body.querySelectorAll(".invite-qr")) image.remove();
       dialog.close();
       if (ok) resolve();
       else reject(Error("Action canceled."));
     };
-    $("#dialog-cancel").onclick = () => finish(false);
+    const dismiss = () => finish(false);
+    state.dismissDialog = dismiss;
+    $("#dialog-cancel").onclick = () => {
+      if (!submitting) finish(false);
+    };
     dialog.oncancel = (e) => {
       e.preventDefault();
-      finish(false);
+      if (!submitting) finish(false);
     };
     form.onsubmit = async (e) => {
       e.preventDefault();
+      if (submitting) return;
+      submitting = true;
       const submit = $("#dialog-submit");
       submit.disabled = true;
+      $("#dialog-cancel").disabled = true;
       try {
         await onSubmit(
           Object.fromEntries(
-            Object.entries(nodes).map(([k, n]) => [k, n.value]),
+            Object.entries(nodes).map(([k, n]) => [
+              k,
+              n.type === "checkbox" ? n.checked : n.value,
+            ]),
           ),
         );
         finish(true);
       } catch (e) {
-        $("#dialog-error").textContent = e.message;
+        if (!done) $("#dialog-error").textContent = e.message;
       } finally {
+        submitting = false;
         submit.disabled = false;
+        $("#dialog-cancel").disabled = false;
       }
     };
   });

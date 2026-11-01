@@ -10,7 +10,7 @@ const adb=join(root,'android-sdk/platform-tools/adb'),serial=process.env.FIELD_N
 const call=async(args,timeout=180000)=>(await run(adb,['-s',serial,...args],{timeout,maxBuffer:4*1024*1024})).stdout;
 if(!serial.startsWith('emulator-')||(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()!=='field-notes-test')throw Error('Only the disposable field-notes-test AVD may be uninstalled.');
 await mkdir('dist/android-test-results',{recursive:true});
-const apk='apps/mobile/build/outputs/apk/debug/FieldNotes-debug.apk',tests='apps/mobile/build/outputs/apk/androidTest/debug/FieldNotes-debug-androidTest.apk';
+const apk='dist/android-emulator/FieldNotes-debug.apk',tests='dist/android-emulator/FieldNotes-debug-androidTest.apk';
 await call(['install','-r',apk]);await call(['install','-r',tests]);
 await call(['shell','pm','grant','org.fieldnotes.app','android.permission.POST_NOTIFICATIONS']);
 await call(['shell','appops','set','org.fieldnotes.app','SCHEDULE_EXACT_ALARM','allow']);

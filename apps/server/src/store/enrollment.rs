@@ -307,7 +307,7 @@ impl Store {
             |r| r.get(0),
         )?;
         if exists {
-            return fail(409,"This device key was enrolled before; use explicit device recovery or a fresh pairing key");
+            return fail(409,"This phone key already has a binding. Revoke its old server entry, wait for peer removal, then remove the inactive pairing before using a fresh invitation");
         }
         let count: i64 = self.db.query_row(
             "SELECT COUNT(*) FROM devices WHERE user_id=? AND state NOT IN ('revoked','expired')",
@@ -432,6 +432,56 @@ impl Store {
         self.reconcile_peers()?;
         Ok(json!({"state":self.device(id)?.state,"authorization_revoked":true}))
     }
+    /// Remove only an explicitly retired binding after peer removal is confirmed.
+    pub fn enrollment_purge(
+        &mut self,
+        token: &str,
+        identifier: &str,
+        input: Value,
+    ) -> Result<Value> {
+        valid_id(identifier)?;
+        fields(&input, &["confirmation"])?;
+        if input["confirmation"] != "REMOVE PAIRING" {
+            return fail(400, "Type REMOVE PAIRING to remove an inactive binding");
+        }
+        let actor = self.actor(token)?;
+        if !actor.admin() || !actor.elevated {
+            return fail(403, "Administrator and recent reauthentication required");
+        }
+        self.reconcile_peers()?;
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.db,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let actor = self.actor(token)?;
+        if !actor.admin() || !actor.elevated {
+            return fail(403, "Administrator and recent reauthentication required");
+        }
+        let row:Option<(String,Option<String>,String)>=self.db.query_row(
+            "SELECT d.state,d.address,u.role FROM devices d JOIN users u ON u.id=d.user_id WHERE d.id=?", [identifier], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+        if let Some((state, address, role)) = row {
+            if actor.role != "owner" && ["owner", "admin"].contains(&role.as_str()) {
+                return fail(
+                    403,
+                    "Only an owner can remove administrator or owner bindings",
+                );
+            }
+            if !["revoked", "expired"].contains(&state.as_str()) || address.is_some() {
+                return fail(409,"Pairing is still in use or peer removal is unconfirmed. Revoke it and wait for host acknowledgement first");
+            }
+            self.db.execute("DELETE FROM sessions WHERE id IN (SELECT session_id FROM device_sessions WHERE device_id=?)",[identifier])?;
+            self.db.execute(
+                "DELETE FROM enrollment_invites WHERE device_id=?",
+                [identifier],
+            )?;
+            self.db
+                .execute("DELETE FROM devices WHERE id=?", [identifier])?;
+            self.audit(&actor, "device.purge", identifier, &json!({}))?;
+        }
+        tx.commit()?;
+        Ok(json!({"purged":true}))
+    }
+
     /// A phone may revoke only the enrolled identity bound to its own session.
     /// The private router independently binds that session to the TCP peer IP.
     pub fn revoke_self(&mut self, token: &str) -> Result<Value> {
@@ -489,10 +539,48 @@ impl Store {
         Ok(result)
     }
     pub fn enrollment_cancel(&mut self, input: Value) -> Result<Value> {
-        fields(&input, &["id", "claim_secret"])?;
-        let id = text(&input, "id", 36)?;
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.db,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
         let claim = text(&input, "claim_secret", 64)?;
         secret(&claim)?;
+        let id = if input.get("id").is_some() {
+            fields(&input, &["id", "claim_secret"])?;
+            text(&input, "id", 36)?
+        } else {
+            // A lost claim reply leaves no device ID on the phone. Cancel the
+            // saved attempt without issuing a new claim or allocating a peer.
+            fields(&input, &["token", "claim_secret", "public_key"])?;
+            let token = text(&input, "token", 64)?;
+            secret(&token)?;
+            let public = text(&input, "public_key", 44)?;
+            canonical_key(&public)?;
+            let row: Option<(String, Option<String>)> = self
+                .db
+                .query_row(
+                    "SELECT id,device_id FROM enrollment_invites WHERE token_hash=?",
+                    [crypto::digest(token.as_bytes())],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let (invitation, device) =
+                row.ok_or(Fault(410, "Invitation is invalid or expired".into()))?;
+            match device {
+                None => {
+                    self.db
+                        .execute("DELETE FROM enrollment_invites WHERE id=?", [invitation])?;
+                    tx.commit()?;
+                    return Ok(json!({"canceled":true}));
+                }
+                Some(id) => {
+                    if self.device(&id)?.public != public {
+                        return fail(403, "Enrollment credential not accepted");
+                    }
+                    id
+                }
+            }
+        };
         let device = self.device(&id)?;
         if device.claim != crypto::digest(claim.as_bytes()) {
             return fail(403, "Enrollment credential not accepted");
@@ -504,6 +592,7 @@ impl Store {
             );
         }
         self.db.execute("UPDATE devices SET state='revoking' WHERE id=? AND state NOT IN ('revoked','revoking')", [&id])?;
+        tx.commit()?;
         self.reconcile_peers()?;
         Ok(json!({"canceled":true}))
     }
@@ -629,7 +718,7 @@ impl Store {
             return fail(403, "Administrator required");
         }
         self.reconcile_peers()?;
-        let devices=self.db.prepare("SELECT d.id,d.user_id,u.name,d.name,d.state,d.public_key,d.address,d.verification,d.expires FROM devices d JOIN users u ON u.id=d.user_id ORDER BY d.rowid DESC")?.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"user_id":r.get::<_,String>(1)?,"user":r.get::<_,String>(2)?,"name":r.get::<_,String>(3)?,"state":r.get::<_,String>(4)?,"public_key":r.get::<_,String>(5)?,"address":r.get::<_,Option<String>>(6)?,"expires":r.get::<_,i64>(8)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let devices=self.db.prepare("SELECT d.id,d.user_id,u.name,d.name,d.state,d.public_key,d.address,d.verification,d.expires,u.role FROM devices d JOIN users u ON u.id=d.user_id ORDER BY d.rowid DESC")?.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"user_id":r.get::<_,String>(1)?,"user":r.get::<_,String>(2)?,"name":r.get::<_,String>(3)?,"state":r.get::<_,String>(4)?,"public_key":r.get::<_,String>(5)?,"address":r.get::<_,Option<String>>(6)?,"expires":r.get::<_,i64>(8)?,"can_manage":actor.role=="owner" || !["owner","admin"].contains(&r.get::<_,String>(9)?.as_str()),"can_purge":(["revoked","expired"].contains(&r.get::<_,String>(4)?.as_str()) && r.get::<_,Option<String>>(6)?.is_none())})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let ack = self.read_peer_ack();
         let error = ack
             .as_ref()

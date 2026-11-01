@@ -110,3 +110,23 @@ DNS resolver exception. Field Notes uses its own original implementation and no
 runtime DNS exception. No Bungee code or assets were copied; its AGPL license
 still applies to that separate project. Field Notes images include distribution
 runtime dependency notices; the Debian gateway retains installed package notices.
+
+## Updated pairing and APK review
+
+[Bungee at 67ee496](https://github.com/argentumseven/bungee/tree/67ee496) was
+reviewed for current pairing/unpairing, inactive-binding cleanup, QR/key
+handling, local stop/reset, native cancellation/reservations, tunnel ownership,
+request budgets and scoped firewall behavior. Its permanent GitHub APK workflow
+was reviewed at `5e9314b` and checked against this newer revision. No upstream
+source or assets were copied. Field Notes tests establish its own behavior;
+Bungee was not built or tested here. See [the comparison](BUNGEE-PAIRING-REVIEW.md)
+and [APK delivery](ANDROID-DOWNLOADS.md).
+
+## APK signature verification dependency
+
+Android update verification uses AOSP `com.android.tools.build:apksig:8.10.1`
+(Apache License 2.0), pinned by Gradle locks and SHA-256 dependency verification.
+Its original LICENSE is included in
+[`apksig-LICENSE.txt`](../apps/mobile/src/androidMain/assets/licenses/apksig-LICENSE.txt)
+and shipped in Android assets. The verifier checks the actual signed APK rather
+than trusting server metadata alone.

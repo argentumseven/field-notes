@@ -35,6 +35,7 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
         if (networkFailure) error("Offline")
         if (path == "/api/login") return Reply(200, obj("token" to "new-token".j(), "actor" to WireJson.encodeToJsonElement(actor)).toString())
         if (expired) return Reply(401, obj("error" to "Session expired".j()).toString())
+        if(path.startsWith("/api/device/update"))return Reply(200,"""{"available":false}""")
         if (path == "/api/device/revoke-self") return Reply(200,"""{"authorization_revoked":true}""")
         if (path == "/api/people" && !directoryAvailable) return Reply(404, """{"error":"Not available"}""")
         if (path == "/api/people") return Reply(200,obj("people" to WireJson.encodeToJsonElement(listOf(HouseholdPerson(actor.user_id,actor.name,true)))).toString())
@@ -59,6 +60,34 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun softwareUpdatesSharePauseRevocationAndRouteFencesWithoutTouchingQueuedEdits()=runTest{
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        m.enqueue("task.update","task",obj("notes" to "Keep during APK update".j()),1)
+        val keys=v.value.keys;val pending=v.value.outbox
+        assertEquals(200,m.softwareUpdate("/api/device/update").status)
+        for(path in listOf("/api/admin","https://elsewhere.example/apk","/api/device/update/chunks/../0"))assertFailsWith<IllegalArgumentException>{m.softwareUpdate(path)}
+        assertEquals(listOf("/api/device/update"),t.requests)
+        m.pauseConnection();assertFailsWith<IllegalStateException>{m.softwareUpdate("/api/device/update")}
+        m.resumeConnection();t.expired=true;assertEquals(401,m.softwareUpdate("/api/device/update").status)
+        assertNull(v.value.token);assertTrue(m.state.value.needsLogin);assertEquals(keys,v.value.keys);assertEquals(pending,v.value.outbox)
+    }
+    @Test fun missingIdentityPreservesExistingRecordsInsteadOfGeneratingReplacementKeys()=runTest{
+        val original=initial().copy(keys=null);val v=MemoryVault(original);val t=FakeTransport();val m=model(v,t,backgroundScope)
+        m.initialize();assertFalse(m.state.value.ready);assertEquals(original,v.value);assertEquals(0,t.configurations)
+        assertTrue(m.state.value.error!!.contains("identity"))
+    }
+    @Test fun pausedConnectionKeepsOfflineWorkAndRemindersAndNeedsExplicitResumeAfterRestart()=runTest{
+        val v=MemoryVault();val t=FakeTransport();var m=model(v,t,backgroundScope);m.initialize()
+        m.pauseConnection();m.saveDraft(task.id,task.revision,obj("notes" to "Kept while paused".j()));m.submitDraft(task.id)
+        assertFalse(m.poll());assertTrue(t.requests.isEmpty());assertEquals(1,v.value.outbox.size);assertTrue(v.value.preferences.reminders)
+        m=model(v,t,backgroundScope);m.initialize();assertEquals(1,t.configurations);assertTrue(m.state.value.connectionPaused)
+        m.resumeConnection();m.sync();assertTrue(v.value.outbox.isEmpty());assertEquals("Kept while paused",v.value.snapshot!!.records.single().data.text("notes"));assertEquals(2,t.configurations)
+    }
+    @Test fun aFailedTransportIsReconfiguredBeforeRetryingSoTrustedDdnsCanBeResolvedAgain()=runTest{
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        t.networkFailure=true;m.sync();assertTrue(t.stopped);assertEquals(1,t.configurations)
+        t.networkFailure=false;m.sync();assertTrue(m.state.value.online);assertEquals(2,t.configurations)
+    }
     @Test fun assignmentDraftAndDirectorySurviveOfflineRestartAndOlderServerStillSyncs() = runTest {
         val original=initial().copy(people=listOf(HouseholdPerson(actor.user_id,actor.name,true)))
         val v=MemoryVault(original);val t=FakeTransport();var m=model(v,t,backgroundScope);m.initialize()

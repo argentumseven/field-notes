@@ -364,13 +364,14 @@ dependencies = [
 
 [[package]]
 name = "field-notes-server"
-version = "0.3.0"
+version = "0.3.3"
 dependencies = [
  "aes-gcm",
  "argon2",
  "axum",
  "axum-server",
  "base64",
+ "futures-util",
  "getrandom 0.2.16",
  "hex",
  "image",

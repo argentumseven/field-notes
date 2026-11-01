@@ -12,6 +12,10 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | `apps/server/src/main.rs`, `tls.rs` | Configuration, two direct TLS 1.3 listeners, certificate reload, peer reconciliation timer |
 | `apps/server/src/http.rs` | Separate management/device routes, actual-source ACL, CSRF, bounded requests |
 | `apps/server/src/store/` | Auth/roles, transactional commands, typed organization/planning/assignment, device enrollment, administration, backup |
+| `apps/server/src/downloads.rs` | Fixed LAN-only APK routes, startup digest validation, bounded streaming from a read-only program mount |
+| `apps/mobile/src/androidMain/.../ApkUpdates.kt` | Server-selected private APK chunks, independent cryptographic/signing/identity checks, scoped cache, Android installer handoff |
+| `scripts/upgrade-server.py` | Compatible Linux upgrades, identity preservation, encrypted backup, staged programs/images, readiness and rollback |
+| `scripts/android_artifact.py`, `publish-android.py`, `.github/workflows/` | Matching signed APK packaging and draft-first tagged release delivery |
 | `apps/server/src/crypto.rs` | AES-GCM storage encryption, Argon2id passwords, random capabilities |
 | `apps/admin/` | Local assets; compact planner, typed collections/notes, calendar, management, in-tab revision-aware drafts |
 | `apps/mobile/src/commonMain/.../domain/` | Protocol, encrypted-cache model, durable outbox/drafts, enrollment state, typed organization/household directory, ranking/calendar/widget policy |

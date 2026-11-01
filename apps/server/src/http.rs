@@ -21,6 +21,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct App {
+    pub downloads: Option<Arc<crate::downloads::Downloads>>,
     pub store: Arc<Mutex<Store>>,
     pub origin: String,
     pub dev: bool,
@@ -122,6 +123,13 @@ async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> R
                 "Management access is restricted to the configured LAN".into(),
             )
             .into_response();
+        }
+    }
+    if !app.device && path.starts_with("/api/") && path != "/api/login" && !bootstrap {
+        if let Ok(token) = credential(request.headers(), false) {
+            if let Err(error) = blocking(app.clone(), move |s| s.authorize_browser(&token)).await {
+                return error.into_response();
+            }
         }
     }
     let _request_slot = match app.requests.clone().try_acquire_owned() {
@@ -261,6 +269,38 @@ async fn reauth(
     .await?;
     Ok(Json(json!({"ok":true})))
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasswordChange {
+    current_password: String,
+    new_password: String,
+    #[serde(default)]
+    sign_out_devices: bool,
+}
+async fn change_password(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(input): Json<PasswordChange>,
+) -> Result<Response, Fault> {
+    let token = credential(&h, false)?;
+    let dev = app.dev;
+    let result = blocking(app, move |s| {
+        let current = zeroize::Zeroizing::new(input.current_password);
+        let next = zeroize::Zeroizing::new(input.new_password);
+        s.change_password(&token, &current, &next, input.sign_out_devices)
+    })
+    .await?;
+    let mut response = Json(result).into_response();
+    response.headers_mut().insert(
+        "set-cookie",
+        HeaderValue::from_static(if dev {
+            "field_session=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0"
+        } else {
+            "field_session=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0"
+        }),
+    );
+    Ok(response)
+}
 async fn snapshot(
     State(app): State<App>,
     h: HeaderMap,
@@ -380,6 +420,56 @@ async fn devices(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fa
         blocking(app, move |s| s.enrollment_overview(&token)).await?,
     ))
 }
+async fn android_download_info(State(app): State<App>) -> Json<Value> {
+    Json(
+        app.downloads
+            .as_ref()
+            .map_or(json!({"available":false}), |d| d.metadata()),
+    )
+}
+async fn device_update_info(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, true)?;
+    blocking(app.clone(), move |s| s.actor(&token).map(|_| ())).await?;
+    Ok(Json(
+        app.downloads
+            .as_ref()
+            .map_or(json!({"available":false}), |d| d.update_metadata()),
+    ))
+}
+async fn device_update_chunk(
+    State(app): State<App>,
+    h: HeaderMap,
+    Path((digest, index)): Path<(String, u64)>,
+) -> Result<Response, Fault> {
+    let token = credential(&h, true)?;
+    blocking(app.clone(), move |s| s.actor(&token).map(|_| ())).await?;
+    app.downloads
+        .as_ref()
+        .ok_or(Fault(404, "Update unavailable".into()))?
+        .chunk(&digest, index)
+        .await
+}
+async fn android_apk(State(app): State<App>) -> Result<Response, Fault> {
+    app.downloads
+        .as_ref()
+        .ok_or(Fault(404, "Android download unavailable".into()))?
+        .file("field-notes.apk")
+        .await
+}
+async fn android_checksum(State(app): State<App>) -> Result<Response, Fault> {
+    app.downloads
+        .as_ref()
+        .ok_or(Fault(404, "Android download unavailable".into()))?
+        .file("field-notes.apk.sha256")
+        .await
+}
+async fn android_signer(State(app): State<App>) -> Result<Response, Fault> {
+    app.downloads
+        .as_ref()
+        .ok_or(Fault(404, "Android download unavailable".into()))?
+        .file("field-notes.apk.signer.txt")
+        .await
+}
 async fn approve(
     State(app): State<App>,
     h: HeaderMap,
@@ -420,6 +510,17 @@ async fn claim(
             s.enrollment_claim(input, &peer.ip().to_string())
         })
         .await?,
+    ))
+}
+async fn purge_device(
+    State(app): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, false)?;
+    Ok(Json(
+        blocking(app, move |s| s.enrollment_purge(&token, &id, input)).await?,
     ))
 }
 async fn enrollment_status(
@@ -489,15 +590,26 @@ pub fn router(app: App) -> Router {
         .route("/api/images/{id}", get(image));
     if app.device {
         routes = routes
+            .route("/api/device/update", get(device_update_info))
+            .route(
+                "/api/device/update/chunks/{digest}/{index}",
+                get(device_update_chunk),
+            )
             .route("/api/device/activate", post(activate))
             .route("/api/device/revoke-self", post(revoke_self));
     }
     if !app.device {
         routes = routes
+            .route("/downloads/android", get(android_download_info))
+            .route("/downloads/field-notes.apk", get(android_apk))
+            .route("/downloads/field-notes.apk.sha256", get(android_checksum))
+            .route("/downloads/field-notes.apk.signer.txt", get(android_signer))
+            .route("/api/account/password", post(change_password))
             .route("/api/enrollment/invitations", post(invite))
             .route("/api/enrollment/devices", get(devices))
             .route("/api/enrollment/devices/{id}/approve", post(approve))
             .route("/api/enrollment/devices/{id}/revoke", post(revoke_device))
+            .route("/api/enrollment/devices/{id}/purge", post(purge_device))
             .route("/api/enrollment/claim", post(claim))
             .route("/api/enrollment/status", post(enrollment_status))
             .route("/api/enrollment/cancel", post(cancel_enrollment))

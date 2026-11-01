@@ -81,10 +81,19 @@ See [ENROLLMENT.md](ENROLLMENT.md) for retries, expiry, recovery and revocation.
 ![Management, people, sessions, devices and maintenance](screenshots/web/10-management.png)
 ![Add an account with a role](screenshots/web/17-add-person.png)
 ![Change a role and revoke its sessions](screenshots/web/18-change-role.png)
+![Change your password with current-password proof](screenshots/web/29-change-password.png)
+![Reset another user's password and revoke their sessions](screenshots/web/30-reset-password.png)
 ![Single-use invitation for an existing account](screenshots/web/11-enrollment-invitation.png)
 ![Pending phone](screenshots/web/12-device-pending.png)
 ![Enter the code displayed on the actual phone](screenshots/web/13-device-confirmation.png)
 ![Waiting for root peer acknowledgement](screenshots/web/14-provisioning.png)
+![Inactive pairing eligible after acknowledged peer removal](screenshots/web/31-inactive-pairing.png)
+![Explicit inactive-binding cleanup preserves task data](screenshots/web/32-remove-inactive-pairing.png)
+
+The Management and Sign in captures include the locally bundled Android APK,
+checksum and signing-certificate links. Routine password changes keep paired
+phones unless wider sign-out is selected.
+
 ![Explicit workspace clearing](screenshots/web/15-clear-workspace.png)
 ![Audited claim override with a reason](screenshots/web/19-override-claim.png)
 
@@ -116,6 +125,11 @@ peer JSON editing is needed in the normal enrollment flow.
 | Enroll on home Wi-Fi | Confirm the phone code |
 | --- | --- |
 | <img src="screenshots/android/01-enroll.png" width="280" alt="Android enrollment with scan and paste"> | <img src="screenshots/android/02-phone-confirmation.png" width="280" alt="Phone verification code awaiting administrator approval"> |
+
+<img src="screenshots/android/26-pairing-paused.png" width="280" alt="Paused pairing keeps the same phone key and saved attempt for explicit retry">
+
+Pause keeps keys, queued edits and cached reminders; retry resumes the same
+attempt. Reset and new-key generation are separate explicit choices.
 
 | Focus | All tasks | Calendar |
 | --- | --- | --- |
@@ -151,6 +165,26 @@ posting and channel configuration, not physical sound or GrapheneOS forwarding.
 Follow [profile/sound setup and clean uninstall](ANDROID-DELIVERY.md) on the real
 phones. No unconditional timing or cross-profile home-screen sharing is claimed.
 
+## Visible actions
+
+Actions have persistent button borders or a filled surface in both themes.
+Settings keeps Close above its scrolling controls, and Android settings actions
+use full-width targets. Download APK is a filled action on the server website;
+checksum and certificate downloads have outlined controls.
+
+## App updates
+
+The paired server selects the APK. These actual update settings components use
+a synthetic next-version offer to show download and install states; they do not
+claim that 0.3.4 is published. The distributed version is 0.3.3.
+
+| Update offered | Verified and ready for Android installation |
+| --- | --- |
+| <img src="screenshots/android/27-update-available.png" width="280" alt="Paired server offers an APK update while preserving keys and edits"> | <img src="screenshots/android/28-update-ready.png" width="280" alt="Verified APK ready for explicit Android installation"> |
+
+See [UPDATES.md](UPDATES.md) for checks, installation permission, stable signing
+and the actual in-place upgrade test.
+
 ## Browser on a small screen
 
 The responsive LAN website also works in a phone browser. A browser cannot borrow
@@ -163,7 +197,10 @@ the Android app-contained tunnel; the website remains a home-LAN interface.
 ```sh
 source scripts/dev-env.sh
 cargo build --locked
-node scripts/capture-web.mjs
+python3 -B scripts/android_artifact.py \
+  --apk dist/android/field-notes-0.3.3-android-arm64-debug.apk \
+  --output dist/android-download # Fresh destination; do not overwrite an existing bundle.
+FIELD_NOTES_DOWNLOADS="$PWD/dist/android-download" node scripts/capture-web.mjs
 bash scripts/build/android-emulator.sh
 # Only on the disposable field-notes-test AVD:
 node scripts/capture-android.mjs

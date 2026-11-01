@@ -11,7 +11,7 @@ import subprocess
 
 sys.dont_write_bytecode = True
 from server_installation import (Host, HELPER_STATE, PROGRAMS, RECORD, RUNTIME, STOP_ORDER,
-                                 TIMERS, UNITS, WG_CONFIG, digest, load, wireguard_identity)
+                                 TIMERS, UNITS, WG_CONFIG, digest, load, validate, wireguard_identity)
 
 
 def state(host, unit):
@@ -39,6 +39,20 @@ def engine(host):
     return Engine(runner=host.runner)
 
 
+def historical_images(host,record):
+    if record['runtime']!='containers':return []
+    history=[]
+    for directory in host.path(record['config']).glob('upgrade-*'):
+        if not re.fullmatch('upgrade-[a-f0-9]{32}',directory.name):continue
+        for name in ('installation.json','target-installation.json'):
+            logical=record['config']+'/'+directory.name+'/'+name
+            if not host.path(logical).exists():continue
+            previous=validate(json.loads(host.trusted(logical)))
+            if previous['id']!=record['id'] or any(previous[key]!=record[key] for key in ('prefix','data','config','uid','gid')) or previous['runtime']!='containers':
+                raise ValueError('Upgrade history belongs to another installation; review before removal')
+            if previous['docker']!=record['docker'] and previous['docker'] not in history:history.append(previous['docker'])
+    return history
+
 def preflight(host, record, purge):
     host.check_parents(record['config'])
     for key in ('prefix', 'data', 'config'):
@@ -53,6 +67,12 @@ def preflight(host, record, purge):
     prefix = host.path(record['prefix'])
     if prefix.exists():
         for file in prefix.iterdir():
+            if file.name=='downloads' and file.is_dir() and not file.is_symlink():
+                from android_artifact import FILES
+                if file.stat().st_uid!=host.owner or file.stat().st_mode&0o022:raise ValueError('Unsafe Android download directory')
+                for artifact in file.iterdir():
+                    if artifact.name not in FILES or artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_uid!=host.owner or artifact.stat().st_mode&0o022:raise ValueError('Unexpected Android download file; review before removal')
+                continue
             if file.name=='__pycache__' and file.is_dir() and not file.is_symlink():
                 modules={pathlib.Path(name).stem for name in PROGRAMS if name.endswith('.py')}
                 for cached in file.iterdir():
@@ -85,6 +105,7 @@ def preflight(host, record, purge):
     if record['runtime']=='containers':
         runtime=record['docker'];client=engine(host)
         client.objects(runtime['settings']);client.image_inventory(runtime['settings'],runtime['tags'])
+        for previous in historical_images(host,record):client.image_inventory(previous['settings'],previous['tags'])
     else:
         if host.path(WG_CONFIG).exists():
             public = wireguard_identity(host, host.trusted(WG_CONFIG), record)
@@ -151,6 +172,7 @@ def apply(host, record, purge=False):
     if record['runtime']=='containers':
         runtime=record['docker'];client=engine(host)
         client.stop(runtime['settings']);client.remove_images(runtime['settings'],runtime['tags'])
+        for previous in historical_images(host,record):client.remove_images(previous['settings'],previous['tags'])
     else:
         interfaces, table = resources(host)
         if interfaces:

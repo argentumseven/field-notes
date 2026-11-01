@@ -6,6 +6,14 @@ import kotlinx.datetime.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
+/** Successful pending approval polls remain cheap; failed contacts back off. */
+fun pairingRetryDelay(failures:Int,jitter:Double=kotlin.random.Random.nextDouble()):Long {
+    require(jitter in 0.0..1.0)
+    if(failures<=0)return 3_000
+    val ceiling=(15_000L shl (failures-1).coerceAtMost(5)).coerceAtMost(300_000)
+    return (ceiling*(0.8+0.2*jitter)).toLong()
+}
+
 @Serializable data class Invitation(val version: Int, val url: String, val ca: String, val token: String, val user: String, val role: String, val expires: Long)
 @Serializable data class Enrollment(val invitation: Invitation, val claimSecret: String, val name: String, val id: String = "", val verification: String = "", val stage: String = "claiming", val activationSecret: String? = null)
 

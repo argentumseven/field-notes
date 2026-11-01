@@ -15,9 +15,14 @@ mkdir -p "$stage/scripts" "$stage/deploy" "$stage/docs"
 cp scripts/install-server.sh scripts/install-server.py scripts/uninstall-server.sh scripts/uninstall-server.py scripts/server_installation.py scripts/container_deployment.py scripts/container-runtime.py scripts/peer-agent.py scripts/tls.py "$stage/scripts/"
 cp deploy/field-notes.service "$stage/deploy/"
 cp README.md release.json "$stage/"
+apk="${FIELD_NOTES_ANDROID_APK:-dist/android/field-notes-$version-android-arm64-debug.apk}"
+[[ -f "$apk" ]] || { echo 'Build the matching signed Android APK first, or set FIELD_NOTES_ANDROID_APK.' >&2; exit 1; }
+python3 -B scripts/android_artifact.py --apk "$apk" --output "$stage/downloads"
 cp dist/containers/images.json "$stage/images.json"
 cp "dist/containers/field-notes-$version-linux-$arch-images.tar.gz" "$stage/images.tar.gz"
 cp -R docs/. "$stage/docs/"
+cp scripts/android_artifact.py "$stage/scripts/"
+cp scripts/upgrade-server.py scripts/upgrade-server.sh "$stage/scripts/"
 (cd "$stage" && sha256sum images.tar.gz > images.tar.gz.sha256 && sha256sum field-notes-server images.json images.tar.gz > SHA256SUMS)
 "$stage/field-notes-server" help
 artifact="dist/server/field-notes-$version-linux-$arch.tar.gz"

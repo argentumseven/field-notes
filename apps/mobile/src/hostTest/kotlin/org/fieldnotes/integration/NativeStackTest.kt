@@ -2,7 +2,7 @@ package org.fieldnotes.integration
 
 import java.io.File
 import java.util.UUID
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.fieldnotes.domain.*
 import org.fieldnotes.platform.AndroidTransport
@@ -23,6 +23,7 @@ class NativeStackTest {
             assertEquals(200,login.status)
             val token = WireJson.parseToJsonElement(login.body).jsonObject.text("token")
             val snapshot = native.exchange("/api/snapshot",token,serverKey=peer)
+            assertEquals(200,native.exchange("/api/device/update",token,serverKey=peer).status)
             assertEquals(200,snapshot.status)
             val directory=native.exchange("/api/people",token,serverKey=peer);assertEquals(200,directory.status)
             assertEquals("owner",WireJson.parseToJsonElement(directory.body).jsonObject.getValue("people").jsonArray.single().jsonObject.text("name"))
@@ -38,6 +39,18 @@ class NativeStackTest {
             assertEquals(200,send("task.start",task,obj(),1).status);assertEquals(409,send("task.start",task,obj(),1).status)
             assertFailsWith<IllegalStateException>{native.exchange("/api/head",token,serverKey="wrong-server")}
             assertFailsWith<IllegalStateException>{native.exchange("/api/admin",token,serverKey=peer)}
+            val gate=File(System.getenv("FIELD_NOTES_JNI_GATE")?:error("Missing cancellation fixture gate"))
+            File(gate,"armed").writeText("armed")
+            val blocked=async(Dispatchers.IO){runCatching { native.exchange("/api/head",token,serverKey=peer) }}
+            withTimeout(5000){while(!File(gate,"entered").exists())delay(20)}
+            // UNDISPATCHED enters exchange and captures its generation before
+            // the IO dispatcher queues it behind the blocked native exchange.
+            val queued=async(start=CoroutineStart.UNDISPATCHED){runCatching { native.exchange("/api/head",token,serverKey=peer) }}
+            val started=System.nanoTime();withTimeout(3000){native.stop()}
+            assertTrue((System.nanoTime()-started)/1_000_000<3000,"Stop must cancel the active native request before waiting for its Kotlin gate")
+            assertTrue(withTimeout(3000){blocked.await()}.isFailure)
+            val canceled=withTimeout(3000){queued.await()}.exceptionOrNull()
+            assertTrue(canceled is IllegalStateException && canceled.message=="Private connection stopped", "An exchange queued before Stop must fail its generation check without sending")
         } finally {native.stop()}
     }
 }

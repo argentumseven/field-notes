@@ -112,7 +112,7 @@ def main():
         if path.exists():raise ValueError(f'Existing configuration refused: {path}')
     for port,kind in [(a.web_port,socket.SOCK_STREAM),(a.udp_port,socket.SOCK_DGRAM)]:
         with socket.socket(socket.AF_INET,kind) as sock:sock.bind((str(lan),port))
-    password=getpass.getpass('Initial owner password (12+ characters): ')
+    password=getpass.getpass('Initial web management owner password (12+ characters): ')
     if len(password.encode())<12 or len(password.encode())>256:raise ValueError('Password length must be 12–256 bytes')
     if password!=getpass.getpass('Confirm password: '):raise ValueError('Passwords do not match')
     name=input('Owner user name [owner]: ').strip() or 'owner'
@@ -132,6 +132,11 @@ def main():
     if not image_index.is_file() or not image_archive.is_file():
         raise ValueError('Build the current server/container bundle first; both offline runtime images are required')
     images=json.loads(image_index.read_text())
+    from android_artifact import verify as verify_android
+    download_source=root/'downloads'
+    if not download_source.exists():download_source=root/f'dist/server/linux-{os.uname().machine}/downloads'
+    download_info=verify_android(download_source,version)
+    if download_info['version_code']!=json.loads((root/'release.json').read_text())['android_version_code']:raise ValueError('Bundled APK version code does not match')
     if set(images)!={'app','gateway'} or any(images[role].get('tag')!=f'field-notes-{role}:{version}' or not re.fullmatch(r'sha256:[a-f0-9]{64}',images[role].get('id','')) for role in images):
         raise ValueError('Invalid offline image manifest')
     expected=image_archive.with_suffix(image_archive.suffix+'.sha256').read_text().split()[0]
@@ -164,9 +169,12 @@ def main():
     # systemd ProtectHome) or another service's Docker registry/proxy settings.
     (config/'docker').mkdir(mode=0o700)
     shutil.copy2(binary,install/'field-notes-server');(install/'field-notes-server').chmod(0o755)
-    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py'):
+    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py'):
         shutil.copy2(root/'scripts'/helper,install/helper);(install/helper).chmod(0o644 if '_' in helper else 0o755)
     (install/'uninstall-server.sh').write_text(uninstall_wrapper(config));(install/'uninstall-server.sh').chmod(0o755)
+    (install/'upgrade-server.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+str(config)+' "$@"\n');(install/'upgrade-server.sh').chmod(0o755)
+    shutil.copytree(download_source,install/'downloads');(install/'downloads').chmod(0o755)
+    for path in (install/'downloads').iterdir():path.chmod(0o644)
     # Execute initialization with the image's own libc, so the Debian/Ubuntu
     # host does not need to match the builder's dynamic-linker version.
     os.chown(data,user.pw_uid,user.pw_gid)
@@ -183,7 +191,9 @@ def main():
         os.chown(folder,user.pw_uid,user.pw_gid);os.chmod(folder,0o700)
         for filename in files:
             path=pathlib.Path(folder)/filename;os.chown(path,user.pw_uid,user.pw_gid);path.chmod(0o600)
-    os.chown(config/'master.key',0,user.pw_gid);(config/'master.key').chmod(0o640)
+    # The vault requires owner-only keys. Its app-owned key is mounted read-only
+    # and kept outside app-writable state; CA/hub keys remain host-root-only.
+    os.chown(config/'master.key',user.pw_uid,user.pw_gid);(config/'master.key').chmod(0o600)
     gateway=config/'gateway';gateway.mkdir(mode=0o700)
     private=checked(['wg','genkey'],capture_output=True,text=True).stdout.strip()
     server_public=checked(['wg','pubkey'],input=private.encode(),capture_output=True).stdout.decode().strip()
@@ -276,6 +286,8 @@ WantedBy=timers.target
             if login['actor']['role']!='owner':raise ValueError('Authenticated readiness returned an unexpected role')
             with opener.open(f'https://{lan}:{a.web_port}/api/snapshot',timeout=3) as response:snapshot=json.load(response)
             if snapshot['actor']['user_id']!=login['actor']['user_id']:raise ValueError('Readiness account mismatch')
+            with opener.open(f'https://{lan}:{a.web_port}/downloads/android',timeout=3) as response:download=json.load(response)
+            if download.get('available') is not True or download.get('artifact')!=download_info:raise ValueError('Bundled Android download readiness failed')
             logout=urllib.request.Request(f'https://{lan}:{a.web_port}/api/logout',data=b'{}',headers={'Content-Type':'application/json','X-Field-CSRF':login['csrf']})
             with opener.open(logout,timeout=3) as response:response.read()
             failure=None;break
@@ -286,6 +298,7 @@ WantedBy=timers.target
     print('Uninstall preview:',str(install/'uninstall-server.sh'),'--plan')
     print(json.dumps(plan,indent=2));print('Configure the one UDP forward. Verify and trust the public CA on administrator browsers; phones pin it through enrollment.')
     print('Public CA:',config/'tls/ca.crt')
+    print('Android APK:',f'https://{lan}:{a.web_port}/downloads/field-notes.apk','(also on Sign in and in Management)')
     print('Open the management URL, create household users, and use Devices → Enroll device. No Caddy, proxy or load balancer is installed.')
 
 if __name__=='__main__':

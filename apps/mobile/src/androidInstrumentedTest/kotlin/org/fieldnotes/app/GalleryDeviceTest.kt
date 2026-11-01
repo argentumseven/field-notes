@@ -1,6 +1,16 @@
 package org.fieldnotes.app
 
 import android.graphics.Bitmap
+import android.view.PixelCopy
+import android.view.View
+import android.view.ViewGroup
+import android.view.Window
+import android.view.inspector.WindowInspector
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.ui.window.DialogWindowProvider
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
@@ -13,9 +23,6 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import android.os.Build
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import java.security.MessageDigest
@@ -67,6 +74,20 @@ class GalleryDeviceTest {
     private fun awaitText(value: String) = compose.waitUntil(90_000) {
         compose.onAllNodesWithText(value, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     }
+    private fun requireVisibleApp() {
+        // Accessibility roots can be absent while Compose testing owns the
+        // hierarchy. Check the focused system window, including dialog windows.
+        var focus = ""
+        compose.waitUntil(30_000) {
+            dismissEmulatorSystemDialog()
+            focus = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                instrumentation.uiAutomation.executeShellCommand("dumpsys window")
+            ).use { it.bufferedReader().readText() }.lineSequence()
+                .firstOrNull { it.contains("mCurrentFocus=") }.orEmpty()
+            focus.contains("org.fieldnotes.app/")
+        }
+        check(focus.contains("org.fieldnotes.app/")) { "Planner capture requires the visible app: $focus" }
+    }
 
     @Test fun captureSyntheticHouseholdWalkthrough() {
         val args = InstrumentationRegistry.getArguments()
@@ -94,17 +115,34 @@ class GalleryDeviceTest {
             }
             fun shot(name: String) {
                 dismissEmulatorSystemDialog()
+                requireVisibleApp()
                 compose.waitForIdle()
-                val frame = CountDownLatch(1)
-                scenario.onActivity {
-                    it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-                    it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    if (Build.VERSION.SDK_INT >= 29) it.window.decorView.viewTreeObserver.registerFrameCommitCallback { frame.countDown() }
-                    else frame.countDown()
-                    it.window.decorView.invalidate()
+                instrumentation.waitForIdleSync()
+                // Copy the actual focused window, including Compose dialogs.
+                // Copying only the Activity would show the background behind
+                // an open dialog instead of the controls being documented.
+                Thread.sleep(1500)
+                requireVisibleApp()
+                val copied=CountDownLatch(1)
+                var result=-1
+                lateinit var image:Bitmap
+                scenario.onActivity { activity ->
+                    fun dialogWindow(view:View):Window? {
+                        if(view is DialogWindowProvider)return view.window
+                        if(view is ViewGroup)for(i in 0 until view.childCount)dialogWindow(view.getChildAt(i))?.let{return it}
+                        return null
+                    }
+                    val focused=WindowInspector.getGlobalWindowViews().singleOrNull{it.hasWindowFocus()}
+                        ?:error("No unique focused application window for $name")
+                    val window=dialogWindow(focused)?:activity.window.also{
+                        check(focused===it.decorView){"Unknown focused application window for $name"}
+                    }
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    val view=window.decorView
+                    image=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888)
+                    PixelCopy.request(window,image,{status->result=status;copied.countDown()},Handler(Looper.getMainLooper()))
                 }
-                check(frame.await(30, TimeUnit.SECONDS)) { "The emulator did not commit a screenshot frame." }
-                val image = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+                check(copied.await(30,TimeUnit.SECONDS)&&result==PixelCopy.SUCCESS){"The focused app window could not be captured: $result"}
                 File(output, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 image.recycle()
                 println("Captured android/$name")
@@ -122,17 +160,37 @@ class GalleryDeviceTest {
                 val config = WireJson.parseToJsonElement(Base64.decode(checkNotNull(args.getString("fieldNotesConfig")), Base64.NO_WRAP).decodeToString()).jsonObject
                 fun widgetSettings() {
                     compose.onNodeWithContentDescription("Workspace menu").performClick(); text("Settings & widgets").performClick(); awaitText("Settings")
-                    text("Settings").performTouchInput { swipe(center, center.copy(y=center.y-600f),600) }
                     text("Alerts and home screen").performScrollTo(); shot("24-background-settings")
                     text("Alerts in other GrapheneOS profiles").performScrollTo().performClick(); shot("25-profile-help"); compose.onNode(hasText("Close") and hasAnyAncestor(hasAnyDescendant(hasText("GrapheneOS profile alerts"))),useUnmergedTree=true).performClick()
                     text("Add the Field Notes widget from your launcher's widget picker. It opens this locked app and refreshes from the encrypted local cache.").performScrollTo()
-                    shot("09-settings-widgets"); text("Close").performClick()
+                    shot("09-settings-widgets"); text("Close").assertIsDisplayed().performClick(); compose.waitUntil(30_000){compose.onAllNodesWithText("Settings",useUnmergedTree=true).fetchSemanticsNodes().isEmpty()}
                 }
+                fun updatePreview(){
+                    for(ready in listOf(false,true)){
+                        scenario.onActivity { activity->activity.setContent { org.fieldnotes.ui.FieldNotesTheme {
+                            androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
+                                Column(androidx.compose.ui.Modifier.padding(28.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
+                                    androidx.compose.material3.Text("Settings",style=androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+                                    org.fieldnotes.ui.AppUpdatesCard(org.fieldnotes.ui.DeviceActions(update=AppUpdateUi(installed="0.3.3",offered="0.3.4",available=true,ready=ready,message=if(ready)"Verified update 0.3.4. Android will ask before installing; your keys and edits are preserved." else "Update 0.3.4 is available from your paired server. Pairing and queued edits stay in place.")))
+                                }
+                            }
+                        } } }
+                        text(if(ready)"Install update" else "Download update").assertIsDisplayed()
+                        shot(if(ready)"28-update-ready" else "27-update-available")
+                    }
+                }
+                if (args.getString("galleryMode") == "widget-preview") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; widgetPreview(); return }
                 if (args.getString("galleryMode") == "details") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; awaitText("Focus"); compose.onNodeWithTag("nav-focus").assertExists(); widgetSettings(); widgetPreview(); return }
                 if (args.getString("galleryMode") == "light") { compose.onNodeWithTag("nav-focus").assertExists(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
                 awaitText("Enroll this phone"); shot("01-enroll")
                 runBlocking { model.beginEnrollment(Invitation(1,"https://192.168.1.10:9443/api/enrollment",config.text("ca_pem"),"a".repeat(64),"owner","owner",kotlinx.datetime.Clock.System.now().epochSeconds+600), "My GrapheneOS phone"); model.advanceEnrollment() }
                 awaitText("1234 ABCD"); shot("02-phone-confirmation")
+                val pairingKeys=model.state.value.cache.keys;val pairingNonce=model.state.value.cache.enrollment!!.claimSecret
+                text("Pause pairing").performScrollTo().performClick()
+                awaitText("Pairing paused on this phone. Saved credentials are kept; the server invitation can still expire.");shot("26-pairing-paused")
+                check(model.state.value.cache.preferences.connectionPaused)
+                text("Retry saved pairing").performScrollTo().performClick();awaitText("Ask your administrator to enter this phone's code.")
+                check(model.state.value.cache.keys==pairingKeys && model.state.value.cache.enrollment!!.claimSecret==pairingNonce)
                 runBlocking { model.cancelEnrollment(); model.pair(config.toString()); model.login("owner", "household-test-password-only"); model.sync() }
                 val image = seed.records.single { it.kind == "image" }
                 val imageScope = MessageDigest.getInstance("SHA-256").digest("${config.text("server_key")}:${seed.actor.user_id}".toByteArray()).joinToString("") { "%02x".format(it) }
@@ -154,6 +212,7 @@ class GalleryDeviceTest {
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
                 compose.onNodeWithContentDescription("Add").performClick(); awaitText("Add task"); shot("21-new-task"); text("Cancel").performClick()
                 compose.onNodeWithTag("nav-focus").performClick()
+                updatePreview()
                 widgetPreview()
             } finally {
                 scenario.onActivity {

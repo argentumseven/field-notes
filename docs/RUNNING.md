@@ -13,8 +13,9 @@ and the isolation policy. Build on Linux with local Docker or unpack the matchin
 Linux server bundle; both offline images are included:
 
 ```sh
+bash scripts/build/android.sh debug
 bash scripts/build/server.sh
-# Or extract dist/server/field-notes-0.3.0-linux-x86_64.tar.gz on the Linux host.
+# Or extract dist/server/field-notes-0.3.3-linux-x86_64.tar.gz on the Linux host.
 
 sudo bash scripts/install-server.sh --plan \
   --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
@@ -52,6 +53,9 @@ That example serves LAN management at `https://192.168.1.10:10443`. A nontermina
 `--plan` previews defaults and labels them as a preview. A noninteractive
 `--apply` refuses missing port choices, rather than silently selecting ports.
 Owner name/password prompts remain separate; no command-line password is used.
+The owner password is selected and confirmed during installation, using hidden
+terminal input. The server stores a salted Argon2id hash, not a recoverable
+password. It is the login for the web manager as well as the household website.
 Review `--plan` before applying. Supply `--endpoint your-home.example.net`
 without a port to follow your WireGuard selection automatically. An explicit
 `:port` selects the router's external port; if it differs from the local UDP
@@ -78,7 +82,8 @@ The installer installs host WireGuard tools, OpenSSL and kmod, checks the kernel
 module, then loads the bundled app/gateway images by immutable ID. It leaves the
 shared Docker daemon configuration alone. It creates:
 
-- `/opt/field-notes`: server and constrained host helpers.
+- `/opt/field-notes`: server, constrained host helpers and the read-only `downloads/`
+  APK/checksum/signer/metadata bundle. No SDK or signing key is installed on the server.
 - `/var/lib/field-notes`: app-owned encrypted database, event log and private
   desired-peer manifest; `/etc/field-notes/master.key`: server recovery key.
 - `/etc/field-notes/tls`: public CA, root-only `private/ca.key` and separate
@@ -145,10 +150,55 @@ CA in their trusted-source QR invitation and need no system-wide CA installation
 See [enrollment steps](ENROLLMENT.md) for scan, code approval, provisioning and
 revocation. No manual peer JSON editing is needed.
 
+## Management accounts and passwords
+
+Sign in with the owner name/password chosen during installation. **Management →
+People → Add person** creates additional named accounts, each with a separate
+initial password, confirmation and role. There is no fixed two-user limit.
+
+Every role, including Viewer, has **Change password** in the sidebar. Enter the
+current password and confirm a replacement. **Management → People → Reset
+password** resets another person's password after recent administrator
+reauthentication. Owners may reset any other active account, including another
+owner; administrators may reset members/viewers. Administrators cannot reset
+other administrators or owners. Changing your own password always requires
+the current password, including for an owner.
+
+Passwords use random per-password salts and Argon2id. The server never displays
+existing passwords or password hashes. Replacements use the same hashing and
+12–256 UTF-8 byte limit. Browser forms confirm the replacement before sending it.
+No password is written to the install configuration, audit payloads or command
+history. Authentication runs over the direct TLS connection.
+
+A successful change/reset atomically invalidates the affected user's **browser**
+sessions. Paired phones and pending invitations keep working by default. Select
+**Also sign out paired phones and cancel pending enrollments** when that wider
+scope is intended. Phones then need to sign in again; saved offline work remains.
+Removing a phone's tunnel is a separate **Revoke device** action. Routine password
+maintenance does not silently unpair phones or regenerate device keys. Phone
+credentials cannot authorize the LAN website, even if copied to a LAN client.
+
+Copy open web drafts before changing your own password because successful sign-out
+clears those drafts. The app's data-encryption master key is separate and unchanged.
+If a connection drops during submission, try signing in with the replacement
+password before retrying. Self-service proof attempts are limited to five per
+five minutes, including across server restarts.
+
 ## Install the Android APK
 
+On your phone, open the trusted LAN management URL and choose **Download APK**
+on Sign in or in Management. Trust the LAN CA in that browser first, comparing
+its fingerprint, or download on your trusted administrator computer and copy the
+APK to the phone. App enrollment itself needs no system-wide CA. No account
+login is needed to fetch the software;
+household content still requires authentication. SHA-256 and signing-certificate
+links are alongside it. The installed server serves its bundled version locally,
+without a GitHub or Internet connection. The private notes endpoint does not
+serve downloads. See [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for verification,
+stable signing and the permanent-release workflow.
+
 Build output:
-`dist/android/field-notes-0.3.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
+`dist/android/field-notes-0.3.3-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
 Copy the APK to the phone, verify its hash/signing-certificate fingerprint, and
 open it with your file manager. Temporarily allow installation from that source.
 The debug APK is signed with the development key in the external tool cache;
@@ -223,6 +273,13 @@ transport fixture; they do not prove live tunnel enrollment or widget launcher
 lifecycle. The separate launcher-icon capture shows the actual installed icon.
 Production screen-capture protection is not disabled. See [WALKTHROUGH.md](WALKTHROUGH.md).
 
+## Upgrade without re-pairing
+
+Use [UPDATES.md](UPDATES.md) for the in-app **App updates** screen and the
+Linux `scripts/upgrade-server.sh --plan/--apply --bundle PATH` flow. Retain the
+original Android signing key and server CA/hub/master keys. Do not purge and
+reinstall for a routine upgrade.
+
 ## Operation, renewal and recovery
 
 ```sh
@@ -254,7 +311,7 @@ sudo docker --host=unix:///var/run/docker.sock run --rm --network=none \
   --mount type=bind,src=/var/lib/field-notes-recovery,dst=/recovery \
   --mount type=bind,src=/etc/field-notes/master.key,dst=/keys/master.key,readonly \
   --mount type=bind,src=/protected/path/field-notes.backup,dst=/backup,readonly \
-  field-notes-app:0.3.0 restore --data /recovery/restored --key-file /keys/master.key --file /backup
+  field-notes-app:0.3.3 restore --data /recovery/restored --key-file /keys/master.key --file /backup
 ```
 
 The output is `/var/lib/field-notes-recovery/restored`, which must not already

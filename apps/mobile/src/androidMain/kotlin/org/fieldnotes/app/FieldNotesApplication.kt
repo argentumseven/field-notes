@@ -19,6 +19,7 @@ class FieldNotesApplication : Application() {
     lateinit var transport: AndroidTransport
     lateinit var vault: AndroidVault
     lateinit var model: Workspace
+    val updates by lazy { ApkUpdates(this) }
     @Volatile var uiVisible=false
     val deliveryError=MutableStateFlow<String?>(null)
     val initialized = CompletableDeferred<Unit>()

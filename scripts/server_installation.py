@@ -25,6 +25,8 @@ TIMERS = ('field-notes-peers.timer', 'field-notes-certificates.timer')
 STOP_ORDER = (*TIMERS, 'field-notes-peers.service', 'field-notes-certificates.service',
               'field-notes.service', 'wg-quick@fieldnotes.service', 'field-notes-firewall.service')
 PROGRAMS = ('field-notes-server', 'peer-agent.py', 'tls.py', 'firewall.py',
+            'android_artifact.py',
+            'upgrade-server.py', 'upgrade-server.sh',
             'uninstall-server.sh', 'uninstall-server.py', 'server_installation.py',
             'container-runtime.py', 'container_deployment.py')
 WG_CONFIG = '/etc/wireguard/fieldnotes.conf'

@@ -5,6 +5,7 @@ Production images do not include that binary or its device permissions.
 """
 import base64
 import http.cookiejar
+import hashlib
 import importlib.util
 import json
 import os
@@ -13,6 +14,7 @@ import secrets
 import shutil
 import socket
 import ssl
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -47,7 +49,8 @@ def main():
     engine=Engine();suffix=uuid.uuid4().hex[:12];project='field-notes-test-'+suffix
     temporary=pathlib.Path(tempfile.mkdtemp(prefix=project+'-',dir=ROOT/'dist'))
     settings=None;peer_id=None;external_id=None;fixture_tag='field-notes-gateway-fixture:'+suffix
-    gateway_image='field-notes-gateway:0.3.0';peer_dir=temporary/'peer'
+    version=json.loads((ROOT/'release.json').read_text())['version']
+    gateway_image='field-notes-gateway:'+version;peer_dir=temporary/'peer'
     private_dirs=[]
     try:
         build=temporary/'fixture-image';build.mkdir()
@@ -62,12 +65,19 @@ def main():
         images=json.loads((ROOT/'dist/containers/images.json').read_text())
         data=temporary/'data';config=temporary/'config';runtime=temporary/'runtime'
         for p in (data,config,runtime):p.mkdir(mode=0o750)
+        program=pathlib.Path(temporary/'program');program.mkdir()
+        from android_artifact import package
+        package(ROOT/f'dist/android/field-notes-{version}-android-arm64-debug.apk',program/'downloads',ROOT)
         key=config/'master.key'
         engine.call(['run','--interactive','--rm','--network=none','--read-only','--cap-drop=ALL',
             '--security-opt=no-new-privileges:true','--user',f'{os.getuid()}:{os.getgid()}',
             '--mount',f'type=bind,source={data},target=/state',
             '--mount',f'type=bind,source={config},target=/keys',images['app']['id'],
             'init','--data','/state','--key-file','/keys/master.key','--name','owner'],input='container-fixture-password-only')
+        assert key.stat().st_mode&0o777==0o600 and key.stat().st_uid==os.getuid()
+        with sqlite3.connect(data/'field-notes.sqlite3') as db:
+            initial_hash=db.execute('SELECT hash FROM users WHERE name=?',('owner',)).fetchone()[0]
+        assert initial_hash.startswith('$argon2id$v=19$')
         tls=module('container_tls',HERE/'tls.py');tls.provision(config/'tls',['172.17.0.1','10.82.0.1'],issued_subdirectory=True)
         web,udp=port(),port()
         settings=dict(version=1,installation=str(uuid.uuid4()),project=project,prefix=str(temporary/'program'),
@@ -110,6 +120,7 @@ def main():
         assert '/private' not in mounts and '/var/run/docker.sock' not in mounts
         assert mounts['/tls']['Source']==str(config/'tls/issued') and not mounts['/tls']['RW']
         assert mounts['/secrets/master.key']['RW'] is False
+        assert mounts['/downloads']['Source']==str(program/'downloads') and not mounts['/downloads']['RW']
         print('PASS: actual nonroot/read-only app, dropped capabilities, memory bound and private-key mount separation',flush=True)
         external_id=engine.call(['run','--detach','--name',project+'-external','--network=bridge','--cap-drop=ALL','--user=10001:10001','--read-only','--entrypoint=python3',fixture_tag,'-m','http.server','8080','--bind','0.0.0.0']).stdout.strip()
         external_ip=engine.read(['container','inspect',external_id])[0]['NetworkSettings']['Networks']['bridge']['IPAddress']
@@ -118,16 +129,24 @@ def main():
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=context),urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         anonymous=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=context))
         origin=f'https://172.17.0.1:{web}';csrf=None
-        def request(path,body=None):
+        def request(path,body=None,extra_headers=None):
             headers={'Content-Type':'application/json'}
+            headers.update(extra_headers or {})
             bootstrap=path in ('/api/enrollment/claim','/api/enrollment/status','/api/enrollment/cancel')
             if csrf and not bootstrap:headers['X-Field-CSRF']=csrf
             req=urllib.request.Request(origin+path,data=json.dumps(body).encode() if body is not None else None,headers=headers)
             try:
                 with (anonymous if bootstrap else opener).open(req,timeout=10) as response:return response.status,json.load(response)
-            except urllib.error.HTTPError as error:return error.code,json.load(error)
+            except urllib.error.HTTPError as error:
+                raw=error.read();return error.code,json.loads(raw) if raw else {}
         status,login=request('/api/login',{'name':'owner','password':'container-fixture-password-only','device':'Isolated container fixture'})
         assert status==200,'Management TLS/login did not work'
+        with anonymous.open(origin+'/downloads/android',timeout=10) as response:
+            download=json.load(response)['artifact']
+        with anonymous.open(origin+'/downloads/field-notes.apk',timeout=20) as response:
+            checksum=hashlib.file_digest(response,'sha256').hexdigest()
+        assert checksum==download['sha256']
+        print('PASS: anonymous LAN APK download matches the signed read-only bundled artifact',flush=True)
         csrf=login['csrf'];actor=login['actor']
         assert request('/api/reauth',{'password':'container-fixture-password-only'})[0]==200
         status,invitation=request('/api/enrollment/invitations',{'user_id':actor['user_id']});assert status==200
@@ -181,11 +200,29 @@ except urllib.error.HTTPError as e:
                     result=engine.call(['exec',identifier,'wg','show',interface,field]);print(field,result.stdout,file=sys.stderr)
             raise AssertionError('Source-bound activation through real WireGuard failed')
         token=activated['body']['token'];snapshot=peer('/api/snapshot',token=token)['body']
+        offered=peer('/api/device/update',token=token)
+        assert offered['status']==200 and offered['body']['available']
+        assert request('/api/device/update')[0]==404
+        fetch_update='''import hashlib,json,sys,ssl,urllib.request
+c=json.load(sys.stdin);ctx=ssl.create_default_context(cafile='/peer/ca.crt');ctx.minimum_version=ssl.TLSVersion.TLSv1_3
+op=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ctx));info=c['info'];digest=info['artifact']['sha256'];sha=hashlib.sha256();count=0
+for index in range((info['size']+info['chunk_size']-1)//info['chunk_size']):
+ req=urllib.request.Request('https://10.82.0.1:8443/api/device/update/chunks/'+digest+'/'+str(index),headers={'Authorization':'Bearer '+c['token']})
+ with op.open(req,timeout=15) as response:
+  data=response.read(info['chunk_size']+1);assert len(data)==min(info['chunk_size'],info['size']-count);sha.update(data);count+=len(data)
+assert count==info['size'] and sha.hexdigest()==digest
+print('verified')
+'''
+        assert engine.call(['exec','-i',peer_id,'python3','-c',fetch_update],input=json.dumps({'info':offered['body'],'token':token})).stdout.strip()=='verified'
+        print('PASS: paired source-bound phone downloads and verifies the complete APK through private bounded chunks over WireGuard/TLS',flush=True)
+        assert request('/api/admin',extra_headers={'Authorization':'Bearer '+token})[0]==403
         def send(action,target,content):
             return peer('/api/commands',dict(operation_id=str(uuid.uuid4()),epoch=snapshot['epoch'],generation=snapshot['generation'],action=action,target=target,expected_revision=None,data=content),token)
         task=str(uuid.uuid4());assert send('task.create',task,{'title':'Private container task','priority':1})['status']==200
         image=str(uuid.uuid4());assert send('image.create',image,{'task_id':task,'name':'fixture.png','bytes':base64.b64encode(png()).decode()})['status']==200
         assert peer('/api/enrollment/devices',token=token)['status'] in (403,404)
+        assert peer('/api/account/password',{'current_password':'unused','new_password':'unused'},token)['status']==404
+        assert peer('/downloads/android',token=token)['status']==404
         print('PASS: direct management TLS, approval, real private WireGuard activation, task/image writes and private-route enforcement',flush=True)
         deny='''import socket,json
 results=[]
@@ -220,6 +257,22 @@ print('blocked')
             print(error.stderr,file=sys.stderr);raise
         assert counters()>=before+2,'Egress attempts did not hit the enclave deny rules'
         print('PASS: actual app-UID outbound TCP and Docker DNS attempts hit firewall drop counters',flush=True)
+        assert request('/api/account/password',{'current_password':'container-fixture-password-only',
+                       'new_password':'changed-container-fixture-password'})[0]==200
+        assert peer('/api/snapshot',token=token)['status']==200
+        assert request('/api/session')[0]==401
+        status,fresh=request('/api/login',{'name':'owner','password':'changed-container-fixture-password','device':'routine password change fixture'})
+        assert status==200;csrf=fresh['csrf']
+        assert request('/api/account/password',{'current_password':'changed-container-fixture-password',
+                       'new_password':'final-container-fixture-password','sign_out_devices':True})[0]==200
+        assert request('/api/session')[0]==401
+        assert peer('/api/snapshot',token=token)['status']==401
+        assert request('/api/login',{'name':'owner','password':'container-fixture-password-only','device':'old password fixture'})[0]==401
+        assert request('/api/login',{'name':'owner','password':'final-container-fixture-password','device':'new password fixture'})[0]==200
+        with sqlite3.connect(data/'field-notes.sqlite3') as db:
+            updated_hash=db.execute('SELECT hash FROM users WHERE name=?',('owner',)).fetchone()[0]
+        assert updated_hash.startswith('$argon2id$v=19$') and updated_hash!=initial_hash
+        print('PASS: Argon2id owner password, phone-token isolation, routine password change preserves pairing; explicit device sign-out revokes the live WireGuard session',flush=True)
         engine.stop(settings)
         print('PASS: owned app/gateway/network removal leaves no deployment resources',flush=True)
     except Exception:

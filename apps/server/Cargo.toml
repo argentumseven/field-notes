@@ -1,6 +1,6 @@
 [package]
 name = "field-notes-server"
-version = "0.3.0"
+version = "0.3.3"
 edition = "2021"
 rust-version = "1.90"
 
@@ -24,3 +24,4 @@ uuid = { version = "=1.18.1", features = ["v4", "serde"] }
 base64 = "=0.22.1"
 image = { version = "=0.25.8", default-features = false, features = ["png", "jpeg", "webp"] }
 zeroize = "=1.8.2"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }

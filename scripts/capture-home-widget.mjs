@@ -17,8 +17,8 @@ async function instrument(name,extra=[]){
 try{
  await call(['shell','wm','size','540x1200']);await call(['shell','wm','density','210']);
  await call(['shell','input','keyevent','KEYCODE_WAKEUP']);await call(['shell','wm','dismiss-keyguard']);
- await call(['install','-r','apps/mobile/build/outputs/apk/debug/FieldNotes-debug.apk']);
- await call(['install','-r','apps/mobile/build/outputs/apk/androidTest/debug/FieldNotes-debug-androidTest.apk']);
+ await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
+ await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
  await call(['shell','pm','clear','org.fieldnotes.app']);
  // Clear only this disposable AVD's launcher so repeated runs don't accumulate
  // old synthetic widgets on different pages.

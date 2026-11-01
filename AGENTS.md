@@ -33,6 +33,17 @@ Distinguish compiled/tested behavior from physical GrapheneOS verification.
   background timing on Android. Keep platform limitations visible.
 - TLS certificate verification stays enabled. Keep secrets, signing keys,
   enrollment material, and plaintext user data out of Git and logs.
+- Pairing pause is local and durable; it preserves keys/queues. Reset uses the
+  same keys unless replacement is explicit. Never infer that an offline phone
+  is disposable; release its address only after fresh root removal acknowledgement.
+  Routine password maintenance signs out browsers; phone sign-out is explicit.
+- Software updates follow the paired server and require the same installed APK
+  signer, a higher code, full APK/package/hash verification and Android consent.
+  Never reset pairing, Keystore aliases or queued work for an APK/server upgrade.
+  Keep update downloads on fixed authenticated notes routes; no outbound exception.
+- Ship the matching verified APK/checksum/signer metadata in the server bundle,
+  mounted read-only. Full anonymous downloads stay LAN-only; authenticated bounded
+  update chunks use the existing private notes endpoint. Signing keys never enter bundles.
 - The server authorizes every operation. Client clocks do not determine claim
   ownership. Preserve offline edits and explain conflicts; no silent data loss.
 - Separate admin operations from content mutation. Reject stale writes after

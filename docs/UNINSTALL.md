@@ -17,6 +17,14 @@ root-only retained directories. The inventory remains so a later purge has an
 explicit, verifiable scope. It does not modify Bungee, shared Docker services,
 packages, other containers/networks, host forwarding policy or global logs.
 
+Upgraded installations also retain root-private checkpoints with older program
+files, settings and encrypted data backups. Normal removal retains these for
+recovery; purge removes checkpoints within the recorded configuration directory.
+The current uninstaller validates historical and attempted-upgrade image
+inventories against this installation before removing their owned image tags.
+It refuses foreign or shared resources. After rollback to an older helper, use
+the new bundle's uninstaller so this history is inspected.
+
 ## Delete all managed data and keys
 
 Purge includes normal removal and irreversibly deletes the recorded data and
@@ -78,7 +86,8 @@ Unrecognized proxy-era/customized installations are refused, not guessed at.
 Remove this server's UDP forwarding rule from the router. Remove its public CA
 from administrator trust stores if no longer needed. Uninstall Field Notes in
 each Android user profile separately; [ANDROID-DELIVERY.md](ANDROID-DELIVERY.md)
-describes local Android cleanup and revocation. External backups, downloaded
+describes local Android cleanup and revocation. Android removes the app-private
+partial/verified update cache during normal uninstall. External backups, downloaded
 bundles/APKs, browser data, other copies, OS journal history and router settings
 are outside server uninstall scope. No application can erase copies on another
 device merely by removing the server.

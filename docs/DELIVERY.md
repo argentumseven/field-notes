@@ -11,7 +11,7 @@ replaces Flutter; native iOS and desktop packages are deferred. A script is not 
 
 | Active target | Build host | Entry point | Output |
 | --- | --- | --- | --- |
-| Linux server | Linux with local Docker/Compose | `scripts/build/server.sh` | Versioned bundle with both offline images, checksums, installer and uninstaller |
+| Linux server | Linux with local Docker/Compose | `scripts/build/server.sh` | Versioned bundle with both offline images, matching signed ARM64 APK/download metadata, checksums, installer and uninstaller |
 | LAN web/admin | Bundled into Rust server | Server build | Original HTML/CSS/JS with no runtime CDN |
 | Android arm64 | Linux, pinned JDK/SDK/NDK/Go/Gradle | `scripts/build/android.sh` | Signed debug APK or operator-signed release, checksum and signer report |
 
@@ -32,6 +32,13 @@ verification. Parallelism should fit available RAM; avoid building every
 unrelated target during routine server development.
 
 ## Android installation experience
+
+The current server build requires the matching APK first, and SDK build-tools
+on the **builder** to verify signature, package/version and ARM64 ABI. Set
+`FIELD_NOTES_ANDROID_APK` to select an operator-signed release instead of the
+default development artifact. The installed host requires neither SDK nor signing
+keys. See [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for local delivery and the
+draft-first GitHub Releases workflow, which requires stable operator secrets.
 
 For GrapheneOS phones, prioritize arm64 and publish a plainly named APK, such as
 `field-notes-<version>-android-arm64.apk`, together with its hash and signing
@@ -117,8 +124,8 @@ existing isolated checkout rather than creating extra Git worktrees.
 3. **Android household release:** secure local storage, enrollment, sync,
    private WireGuard transport, validated Google-free notification behavior,
    signed installable APK, physical GrapheneOS checks. Current delivery uses
-   scheduled catch-up/local reminders; permanent notification connections are
-   not implemented.
+   a visible private foreground connection with scheduled catch-up and local
+   reminders; physical profile forwarding and sound still need device checks.
 4. **Deployment and recovery:** Linux installer, TLS/private hub-and-spoke path,
    backup/restore/reset fencing, updates and artifact verification.
 5. **Deferred clients:** future iOS or desktop work needs its own platform
@@ -155,3 +162,11 @@ browsers; native desktop and iOS packages are deferred.
 Maintain a current validation record with run commands, versions, counts, and
 actual artifacts. Distinguish pass/fail/skip/unrun and automated versus physical
 results. No security/production-ready label based solely on a successful build.
+
+## Current update implementation
+
+[UPDATES.md](UPDATES.md) defines the implemented server-authoritative Android
+update flow and compatible Linux upgrade/checkpoint/rollback. Main is source;
+only a matching verified signed APK bundled with the paired server is offered.
+No runtime GitHub fetch or private-key regeneration is part of an upgrade.
+Android installation remains an explicit user-confirmed OS action.

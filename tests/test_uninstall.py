@@ -183,6 +183,32 @@ class Removal(unittest.TestCase):
         self.assertFalse(host.path(record['data']).exists() or host.path(record['config']).exists())
         self.unchanged_bungee()
 
+    def test_bundled_android_downloads_are_removed_with_programs(self):
+        from android_artifact import FILES
+        downloads = self.host.path(self.host.record['prefix'] + '/downloads')
+        downloads.mkdir(mode=0o755)
+        for name in FILES:
+            (downloads / name).write_bytes(b'public software fixture')
+        uninstall.apply(self.host, installation.load(self.host))
+        self.assertFalse(downloads.exists())
+        self.assertTrue(self.host.path(self.host.record['data'] + '/household.sqlite3').exists())
+        self.unchanged_bungee()
+
+    def test_unknown_or_symlink_android_downloads_refuse_before_stopping(self):
+        downloads = self.host.path(self.host.record['prefix'] + '/downloads')
+        downloads.mkdir(mode=0o755)
+        extra = downloads / 'unrelated-backup'
+        extra.write_text('keep this')
+        with self.assertRaises(ValueError):
+            uninstall.apply(self.host, installation.load(self.host))
+        self.assertTrue(self.host.interface)
+        extra.unlink()
+        (downloads / 'field-notes.apk').symlink_to(self.host.bungee)
+        with self.assertRaises(ValueError):
+            uninstall.apply(self.host, installation.load(self.host))
+        self.assertTrue(self.host.interface)
+        self.unchanged_bungee()
+
     def test_purge_removes_managed_resources_and_leaves_external_symlink_target(self):
         external = self.host.path('/external-backup')
         external.write_text('DO NOT DELETE')

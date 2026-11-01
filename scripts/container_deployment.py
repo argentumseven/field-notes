@@ -74,12 +74,12 @@ def compose(settings):
          'mem_limit':'512m','memswap_limit':'512m','cpus':1.0,'tmpfs':['/tmp:mode=1777,size=16m,noexec,nosuid'],
          'volumes':[bind(c['data'],'/state'),bind(c['config']+'/master.key','/secrets/master.key',True),
                     bind(c['config']+'/network.json','/config/network.json',True),
-                    bind(c['config']+'/tls/issued','/tls',True),bind(c['runtime'],'/peer-status',True)],
+                    bind(c['config']+'/tls/issued','/tls',True),bind(c['runtime'],'/peer-status',True),bind(c['prefix']+'/downloads','/downloads',True)],
          'command':['serve','--container-network','--data','/state','--key-file','/secrets/master.key',
                     '--admin-bind',f"0.0.0.0:{c['web_port']}",'--admin-allow',c['lan_prefix'],
                     '--device-bind',f'{api}:8443','--origin',f"https://{c['lan_ip']}:{c['web_port']}",
                     '--tls-cert','/tls/server.crt','--tls-key','/tls/server.key',
-                    '--network-config','/config/network.json','--peer-status','/peer-status/status.json']}
+                    '--network-config','/config/network.json','--peer-status','/peer-status/status.json','--downloads','/downloads']}
     return {'name':project,'services':{'gateway':gateway,'app':app},
             'networks':{'private':{'name':project,'driver':'bridge','enable_ipv6':False,
                                    'labels':{**labels,ROLE:'network'}}}}

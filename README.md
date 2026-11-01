@@ -4,12 +4,13 @@ A self-hosted household planner: Inbox, lists, projects, standalone notes, comme
 images, optional dates, priorities and a private calendar. Compact charcoal/paper, teal accents, clean rows.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.3.0.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.3.3.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
 [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
+[Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Bungee review](docs/BUNGEE-PAIRING-REVIEW.md) ·
 [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Compact Focus view with ranked and undated tasks](docs/screenshots/web/02-focus.png)
@@ -36,6 +37,14 @@ services. iOS/native desktop packages are deferred.
   confirmed peer removal separately.
 - LAN management: users/roles, devices/sessions, audited claim overrides, backup,
   workspace clearing and server state. Owner/admin/member/viewer household roles.
+  Installation asks you to choose the initial owner password. Every account uses
+  its own salted Argon2id hash; users can change their password in the website,
+  and authorized administrators can reset other users' passwords in People.
+  Routine password changes preserve phone pairings; signing phones out is explicit.
+- In-app APK updates follow the paired server, with bounded private downloads,
+  full signature/package/hash checks and Android install confirmation. Upgrades
+  keep phone keys and queued edits. Linux upgrades retain the hub/CA/peers and
+  include scoped backup, readiness and rollback. [Update guide](docs/UPDATES.md).
 - Actual Android Upcoming and Focus home-screen widgets, redacted by default.
   Default-on private background connection and cached task/calendar alerts without
   Google services. [GrapheneOS profile/sound setup](docs/ANDROID-DELIVERY.md),
@@ -49,8 +58,12 @@ host configuration. This is not end-to-end encryption excluding the server.
 
 ## Install or build
 
-The signed arm64 development APK, checksum and signer report are under
-`dist/android/field-notes-0.3.0-android-arm64-debug.apk`. Copy it to your phone,
+The server bundle includes the matching signed ARM64 APK. Open the LAN website
+on your phone and choose **Download APK** on Sign in or in Management; checksum
+and signer links are beside it. [Download and release details](docs/ANDROID-DOWNLOADS.md).
+
+The signed arm64 development APK, checksum and signer report are also under
+`dist/android/field-notes-0.3.3-android-arm64-debug.apk`. Copy it to your phone,
 verify hash/signer, and open it to sideload. Preserve the development signer for
 in-place updates. Operator release builds require your separately protected key.
 
@@ -107,6 +120,6 @@ them. It leaves Bungee, Docker and shared packages alone. [Removal guide](docs/U
 Screenshots use synthetic data. Browser captures run against the real Rust server;
 Android captures render actual Compose/RemoteViews using a test-only connection.
 Physical GrapheneOS/VPN coexistence, home routing/isolation and independent review
-remain separate deployment checks. Automatic upgrades and per-project ACLs remain
-future work. Check the validation record before treating any feature as verified
+remain separate deployment checks. Unattended installation and per-project ACLs
+remain future work. Check the validation record before treating any feature as verified
 on your own hardware.

@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -39,6 +40,7 @@ func main() {
 	peerFile := flag.String("peer-file", "", "local test phone public key")
 	configFile := flag.String("config-file", "", "public connection JSON destination")
 	peerAckFile := flag.String("peer-ack-file", "", "optional installed test-peer acknowledgement")
+	requestGate := flag.String("request-gate-directory", "", "optional local JNI cancellation-test gate")
 	flag.Parse()
 	target, e := url.Parse(*backend)
 	if e != nil || target.Scheme != "http" || target.Hostname() != "127.0.0.1" || *peerFile == "" || *configFile == "" {
@@ -89,7 +91,21 @@ func main() {
 	}
 	tlsListener := tls.NewListener(listener, &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: signing}}})
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	server := &http.Server{Handler: proxy, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if *requestGate != "" && r.URL.Path == "/api/head" {
+			if _, err := os.Stat(filepath.Join(*requestGate, "armed")); err == nil {
+				if err = os.WriteFile(filepath.Join(*requestGate, "entered"), []byte("entered"), 0600); err != nil {
+					panic(err)
+				}
+				select {
+				case <-r.Context().Done():
+				case <-time.After(20 * time.Second):
+				}
+				return
+			}
+		}
+		proxy.ServeHTTP(w, r)
+	}), ReadHeaderTimeout: 10 * time.Second}
 	go server.Serve(tlsListener)
 	config := map[string]string{"address": "10.82.0.2/32", "endpoint": net.JoinHostPort(*clientHost, fmt.Sprint(port)), "server_key": keys["public_key"], "api": "https://10.82.0.1:8443", "ca_pem": string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}
 	bytes, _ := json.Marshal(config)

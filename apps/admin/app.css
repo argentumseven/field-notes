@@ -6,6 +6,7 @@
   --text: #e3e6df;
   --muted: #a4b2ab;
   --border: #35413d;
+  --control-border: #73837b;
   --accent: #74c7bb;
   --accent-bg: #243f38;
   --danger: #efa79b;
@@ -24,6 +25,7 @@ html[data-theme="light"] {
   --text: #202927;
   --muted: #5c6d64;
   --border: #d4dcd1;
+  --control-border: #7b8b80;
   --accent: #226d63;
   --accent-bg: #e1ede5;
   --danger: #a33c32;
@@ -41,11 +43,13 @@ textarea {
 }
 button {
   cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--panel);
+  border: 1px solid var(--control-border);
+  background: var(--inset);
   color: var(--text);
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 8px 12px;
+  min-height: 40px;
+  font-weight: 550;
 }
 button:hover {
   background: var(--accent-bg);
@@ -55,6 +59,8 @@ button:disabled {
   cursor: default;
 }
 button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
@@ -71,8 +77,8 @@ select:focus-visible {
   color: var(--danger);
 }
 .quiet {
-  background: transparent;
-  border-color: transparent;
+  background: var(--inset);
+  border-color: var(--control-border);
 }
 .active {
   background: var(--accent-bg);
@@ -120,6 +126,34 @@ p {
 .subtitle,
 .item-sub {
   color: var(--muted);
+}
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  margin: 8px 8px 8px 0;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--inset);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 550;
+}
+.panel details .item-sub,
+.login-card details .item-sub {
+  overflow-wrap: anywhere;
+}
+.dialog-choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+.dialog-choice input {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 4px;
 }
 .subtitle {
   margin: 8px 0 0;
@@ -170,11 +204,12 @@ p {
 }
 .nav button {
   text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 10px 12px;
+  background: var(--inset);
+  border: 1px solid var(--border);
+  padding: 10px 11px;
 }
 .nav .active {
+  border-color: var(--accent);
   background: var(--accent-bg);
   color: var(--accent);
 }
@@ -666,12 +701,16 @@ dialog::backdrop {
   .toolbar h2 {
     font-size: 15px;
   }
+  button,
+  .download-link {
+    min-height: 48px;
+  }
   .toolbar button {
     padding: 6px 9px;
   }
 }
 .create-menu {
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: 5px;
   background: var(--panel);
 }
@@ -768,9 +807,9 @@ dialog::backdrop {
 .sidebar-bottom > button {
   text-align: left;
   justify-content: flex-start;
-  background: transparent;
-  border: 0;
-  padding: 10px 12px;
+  background: var(--inset);
+  border: 1px solid var(--control-border);
+  padding: 10px 11px;
 }
 .sidebar-bottom > button:hover,
 .sidebar-bottom > button.active {
@@ -842,4 +881,26 @@ dialog::backdrop {
 .task-view-select {
   width: auto;
   max-width: 100%;
+}
+
+button:not(:disabled):active,
+.download-link:active {
+  transform: translateY(1px);
+}
+.download-link:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.download-link.primary:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.danger {
+  border-color: var(--danger);
+}
+
+.download-link.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
 }

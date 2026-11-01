@@ -85,6 +85,46 @@ impl Store {
                     .execute("DELETE FROM sessions WHERE user_id=?", [target])?;
                 self.audit(&a, &action, target, &json!({}))?;
             }
+            "user.password" => {
+                fields(&b, &["action", "target", "password", "sign_out_devices"])?;
+                valid_id(target)?;
+                let role: String = self
+                    .db
+                    .query_row(
+                        "SELECT role FROM users WHERE id=? AND active=1",
+                        [target],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .ok_or(Fault(404, "Active user not found".into()))?;
+                if a.role != "owner" && ["owner", "admin"].contains(&role.as_str()) {
+                    return fail(
+                        403,
+                        "Only an owner can reset administrator or owner passwords",
+                    );
+                }
+                if target == a.user_id {
+                    return fail(
+                        403,
+                        "Change your own password with current-password verification",
+                    );
+                }
+                let password = b["password"]
+                    .as_str()
+                    .ok_or(Fault(400, "Password required".into()))?;
+                let sign_out_devices = match b.get("sign_out_devices") {
+                    None => false,
+                    Some(Value::Bool(value)) => *value,
+                    _ => return fail(400, "sign_out_devices must be a boolean"),
+                };
+                self.replace_password(
+                    &a,
+                    target,
+                    password,
+                    "user.password.reset",
+                    sign_out_devices,
+                )?;
+            }
             "session.revoke" => {
                 fields(&b, &["action", "target"])?;
                 let role: Option<String> = self

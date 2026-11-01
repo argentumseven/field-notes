@@ -1,4 +1,92 @@
 // LAN management views. Authorization and mutations remain server enforced.
+function newPasswordFields() {
+  return [
+    {
+      key: "new_password",
+      label: "New password (12+ characters)",
+      type: "password",
+      min: 12,
+      max: 256,
+      autocomplete: "new-password",
+    },
+    {
+      key: "confirmation",
+      label: "Confirm new password",
+      type: "password",
+      min: 12,
+      max: 256,
+      autocomplete: "new-password",
+    },
+  ];
+}
+function deviceSignOutField() {
+  return {
+    key: "sign_out_devices",
+    label: "Also sign out paired phones and cancel pending enrollments",
+    type: "checkbox",
+    required: false,
+  };
+}
+function confirmedPassword(values) {
+  if (values.new_password !== values.confirmation)
+    throw Error("New passwords do not match.");
+  return values.new_password;
+}
+async function changeOwnPassword() {
+  if (state.drafts.size)
+    await confirmDialog(
+      "Change password with open drafts?",
+      "Copy your text before continuing. Signing out clears drafts in this tab.",
+      "Continue",
+    );
+  await formDialog(
+    "Change your password",
+    "This signs out your browsers. Paired phones keep working unless you select the option below. If the connection is lost, try the new password before retrying.",
+    [
+      {
+        key: "current_password",
+        label: "Current password",
+        type: "password",
+        max: 256,
+        autocomplete: "current-password",
+      },
+      ...newPasswordFields(),
+      deviceSignOutField(),
+    ],
+    (v) =>
+      api("/account/password", {
+        current_password: v.current_password,
+        new_password: confirmedPassword(v),
+        sign_out_devices: v.sign_out_devices,
+      }),
+    "Change password",
+  );
+  signedOut();
+  notice("Password changed. Sign in with your new password.");
+}
+async function resetUserPassword(user) {
+  await reauthenticate();
+  await formDialog(
+    "Reset password for " + user.name,
+    "Share the replacement password securely. Their browsers are signed out. Paired phones keep working unless you select the option below. Use Revoke device to remove a phone's tunnel.",
+    [...newPasswordFields(), deviceSignOutField()],
+    (v) =>
+      api("/admin", {
+        action: "user.password",
+        target: user.id,
+        password: confirmedPassword(v),
+        sign_out_devices: v.sign_out_devices,
+      }),
+    "Reset password",
+  );
+  await renderAdmin();
+  notice(
+    "Password reset for " +
+      user.name +
+      ". Their browsers have been signed out.",
+  );
+}
+
 async function renderAdmin() {
   const root = $(".admin-grid");
   if (!root) return;
@@ -23,6 +111,17 @@ async function renderAdmin() {
             key: "password",
             label: "Initial password (12+ characters)",
             type: "password",
+            min: 12,
+            max: 256,
+            autocomplete: "new-password",
+          },
+          {
+            key: "confirmation",
+            label: "Confirm initial password",
+            type: "password",
+            min: 12,
+            max: 256,
+            autocomplete: "new-password",
           },
           {
             key: "role",
@@ -33,6 +132,7 @@ async function renderAdmin() {
                     ["member", "Member"],
                     ["viewer", "Viewer"],
                     ["admin", "Administrator"],
+                    ["owner", "Owner"],
                   ]
                 : [
                     ["member", "Member"],
@@ -40,7 +140,16 @@ async function renderAdmin() {
                   ],
           },
         ],
-        (v) => api("/admin", { action: "user.create", ...v }),
+        (v) => {
+          if (v.password !== v.confirmation)
+            throw Error("Initial passwords do not match.");
+          return api("/admin", {
+            action: "user.create",
+            name: v.name,
+            role: v.role,
+            password: v.password,
+          });
+        },
         "Create user",
       );
       await renderAdmin();
@@ -55,6 +164,15 @@ async function renderAdmin() {
       el("div", "item-sub", u.role + (u.active ? "" : " · disabled")),
     );
     row.append(t);
+    if (u.active) {
+      if (u.id === state.actor.user_id)
+        row.append(button("Change password", changeOwnPassword));
+      else if (
+        state.actor.role === "owner" ||
+        !["owner", "admin"].includes(u.role)
+      )
+        row.append(button("Reset password", () => resetUserPassword(u)));
+    }
     if (state.actor.role === "owner" && u.active) {
       row.append(
         button("Change role", async () => {
@@ -150,20 +268,28 @@ async function renderAdmin() {
           picture = el("img", "invite-qr");
         picture.alt = "Private single-use enrollment invitation";
         picture.src = blob;
-        $("#dialog-body").append(
-          picture,
-          button(
-            "Copy invitation",
-            async () => {
-              await navigator.clipboard.writeText(invite.code);
-              notice("Invitation copied. Treat it as a temporary secret.");
-            },
-            "quiet",
-          ),
+        const copy = button(
+          "Copy invitation",
+          async () => {
+            await navigator.clipboard.writeText(invite.code);
+            notice("Invitation copied. Treat it as a temporary secret.");
+          },
+          "quiet",
+        );
+        $("#dialog-body").append(picture, copy);
+        const expiry = setTimeout(
+          () => {
+            picture.remove();
+            copy.disabled = true;
+            $("#dialog-body p").textContent =
+              "This invitation has expired. Close this dialog and create a fresh one.";
+          },
+          Math.max(0, invite.expires * 1000 - Date.now()),
         );
         try {
           await waiting;
         } finally {
+          clearTimeout(expiry);
           URL.revokeObjectURL(blob);
         }
         await renderAdmin();
@@ -207,7 +333,7 @@ async function renderAdmin() {
       ),
     );
     row.append(label);
-    if (d.state === "pending_approval")
+    if (d.can_manage && d.state === "pending_approval")
       row.append(
         button(
           "Approve",
@@ -225,7 +351,7 @@ async function renderAdmin() {
           "primary",
         ),
       );
-    if (!["revoked", "expired"].includes(d.state))
+    if (d.can_manage && !["revoked", "expired"].includes(d.state))
       row.append(
         button(
           d.state === "revoking" ? "Removal pending" : "Revoke device",
@@ -242,6 +368,24 @@ async function renderAdmin() {
           "danger",
         ),
       );
+    if (d.can_manage && d.can_purge)
+      row.append(
+        button(
+          "Remove inactive pairing",
+          async () => {
+            await reauthenticate();
+            await formDialog(
+              "Remove inactive pairing for " + d.name,
+              "This releases the old phone-key binding. Task data and the phone's local data stay in place. Reusing its key needs a fresh invitation; the old invitation and session cannot be reused.",
+              [{ key: "confirmation", label: "Type REMOVE PAIRING" }],
+              (v) => api("/enrollment/devices/" + d.id + "/purge", v),
+              "Remove pairing",
+            );
+            await renderAdmin();
+          },
+          "quiet",
+        ),
+      );
     devices.append(row);
   }
   if (!enroll.devices.length)
@@ -252,7 +396,9 @@ async function renderAdmin() {
         "No enrolled devices. First create an account, then its invitation.",
       ),
     );
-  root.append(devices, people);
+  root.append(devices);
+  await appendAndroidDownload(root, "panel wide");
+  root.append(people);
   const sessions = el("section", "panel");
   sessions.append(el("h2", "", "Devices & sessions"));
   for (const s of data.sessions) {

@@ -54,7 +54,7 @@ import org.fieldnotes.domain.*
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 OutlinedTextField(title, { title = it.take(240) }, label = { Text("Task title · dates optional") }, enabled = !busy)
                 Box {
-                    OutlinedButton(onClick = { personMenu = true }, enabled = !busy && state.cache.people.isNotEmpty()) {
+                    SecondaryButton(onClick = { personMenu = true }, enabled = !busy && state.cache.people.isNotEmpty()) {
                         Text("Assigned to: " + if (assignee.isBlank()) "Unassigned" else personName(state.cache, assignee))
                     }
                     DropdownMenu(personMenu, { personMenu = false }) {
@@ -65,7 +65,7 @@ import org.fieldnotes.domain.*
                     }
                 }
                 Box {
-                    OutlinedButton(onClick = { collectionMenu = true }, enabled = !busy) {
+                    SecondaryButton(onClick = { collectionMenu = true }, enabled = !busy) {
                         Text("Keep in: " + (workspaceContainers(state.cache).firstOrNull { it.record.id == keepIn }?.record?.data?.text("title") ?: "Inbox"))
                     }
                     DropdownMenu(collectionMenu, { collectionMenu = false }) {
@@ -80,7 +80,7 @@ import org.fieldnotes.domain.*
             }
         },
         confirmButton = {
-            TextButton(enabled = title.isNotBlank() && !busy && !stale, onClick = {
+            Button(enabled = title.isNotBlank() && !busy && !stale, onClick = {
                 busy = true
                 scope.launch {
                     try {
@@ -96,6 +96,6 @@ import org.fieldnotes.domain.*
                 }
             }) { Text("Create") }
         },
-        dismissButton = { TextButton(onClick = close, enabled = !busy) { Text("Cancel") } },
+        dismissButton = { SecondaryButton(onClick = close, enabled = !busy) { Text("Cancel") } },
     )
 }

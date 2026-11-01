@@ -32,6 +32,7 @@ kotlin {
             implementation("junit:junit:4.13.2")
         }
         androidMain.dependencies {
+            implementation("com.android.tools.build:apksig:8.10.1")
             implementation("androidx.activity:activity-compose:1.10.1")
             implementation("androidx.camera:camera-camera2:1.4.2")
             implementation("androidx.camera:camera-lifecycle:1.4.2")
@@ -46,7 +47,7 @@ android {
     namespace = "org.fieldnotes.app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
-    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 3; versionName = "0.3.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
+    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 6; versionName = "0.3.3"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     sourceSets["main"].jniLibs.srcDir("src/androidMain/jniLibs")
     packaging { jniLibs.useLegacyPackaging = false; resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

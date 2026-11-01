@@ -275,7 +275,7 @@ func Exchange(raw string) (string, error) {
 		return "", errors.New("response incomplete or exceeds size limit")
 	}
 	out := Response{Status: response.StatusCode}
-	if response.Header.Get("Content-Type") == "image/png" {
+	if response.Header.Get("Content-Type") == "image/png" || (strings.HasPrefix(r.Path, "/api/device/update/chunks/") && response.Header.Get("Content-Type") == "application/octet-stream") {
 		out.Binary = base64.StdEncoding.EncodeToString(data)
 	} else {
 		out.Body = string(data)
@@ -286,7 +286,24 @@ func Exchange(raw string) (string, error) {
 
 func devicePath(path string) bool {
 	switch path {
-	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/device/activate", "/api/device/revoke-self":
+	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/device/activate", "/api/device/revoke-self", "/api/device/update":
+		return true
+	}
+	if tail, ok := strings.CutPrefix(path, "/api/device/update/chunks/"); ok {
+		parts := strings.Split(tail, "/")
+		if len(parts) != 2 || len(parts[0]) != 64 || len(parts[1]) < 1 || len(parts[1]) > 4 {
+			return false
+		}
+		for _, c := range parts[0] {
+			if !strings.ContainsRune("0123456789abcdef", c) {
+				return false
+			}
+		}
+		for _, c := range parts[1] {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
 		return true
 	}
 	if strings.HasPrefix(path, "/api/images/") {

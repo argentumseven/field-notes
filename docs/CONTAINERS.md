@@ -2,7 +2,7 @@
 
 Fresh installs use two local Docker containers, with Rust serving TLS directly.
 There is no Caddy, reverse proxy, load balancer, public web service or runtime
-download. The build bundle contains both images, their immutable IDs and SHA-256
+fetch from outside the server. The build bundle contains both images, their immutable IDs and SHA-256
 checksums. Installation loads them locally; startup uses `--pull never`.
 
 ## Host requirements
@@ -27,7 +27,7 @@ artifacts are Linux x86_64; building on arm64 needs separate verification.
 | --- | --- |
 | App | Dedicated UID/GID, all capabilities dropped, read-only root, no-new-privileges, 512 MiB memory, one CPU, 64 processes |
 | App writable storage | Only `/state` for encrypted database/attachments and a bounded temporary directory |
-| App read-only inputs | Master key, public network configuration, issued TLS leaf certificate/key, root-written peer status |
+| App read-only inputs | Master key, public network configuration, issued TLS leaf certificate/key, root-written peer status, bundled APK downloads |
 | App excluded inputs | Docker socket, host root, CA signing key, WireGuard hub private key, writable host configuration |
 | Gateway | Separate read-only container, only NET_ADMIN, 128 MiB memory; root-only hub key/listener mount |
 | Host | Root supervisor talks to the local Docker socket; constrained root peer timer and offline CA renewal timer |
@@ -75,12 +75,14 @@ peers. See [UNINSTALL.md](UNINSTALL.md) for permanent removal and purge.
 An application exploit remains able to read authorized content and respond on
 allowed connections. Containers share the kernel; protect the VM and Docker
 socket as root-equivalent administration. No automatic image updates occur:
-patch/rebuild images in a reviewed maintenance window. An in-place upgrade and
-automatic migration from the older native service are not implemented.
+patch/rebuild images in a reviewed maintenance window. [Compatible container upgrades](UPDATES.md) stage matching server/APK artifacts,
+back up data and preserve identities. Automatic migration from the older native
+service is not implemented.
 
 ## Reproduce the integration check
 
 ```sh
+bash scripts/build/android.sh debug
 bash scripts/build/containers.sh
 source scripts/dev-env.sh
 mkdir -p dist/container-test
@@ -93,7 +95,9 @@ The disposable test uses a uniquely named project and synthetic credentials. A
 fixture-only image adds userspace WireGuard, full Python test tooling, a private
 TUN device and MKNOD permission because this cloud kernel lacks WireGuard. Those
 additions are excluded from production. The test checks real enrollment/TLS,
-task/image writes, unauthorized tunnel destinations, actual outbound/DNS drop
+task/image writes, LAN APK/checksum delivery from a read-only mount with no
+private download route, phone-token rejection on management, routine versus
+explicit phone sign-out, unauthorized tunnel destinations, actual outbound/DNS drop
 counters and resource removal. Its Docker-hairpin fixture uses a test-only source
 CIDR; production retains the operator's exact LAN CIDR. This does not establish
 kernel WireGuard installation, physical LAN source preservation, home router

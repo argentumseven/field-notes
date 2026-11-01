@@ -1,4 +1,5 @@
 mod crypto;
+mod downloads;
 mod http;
 mod store;
 mod tls;
@@ -289,6 +290,16 @@ async fn run() -> Result<(), String> {
     }
     let bind_devices = store.network.is_some() || !dev;
     let app = http::App {
+        downloads: match arg(&args, "--downloads", "") {
+            value if value.is_empty() => None,
+            value => match downloads::Downloads::load(PathBuf::from(value)) {
+                Ok(downloads) => Some(Arc::new(downloads)),
+                Err(reason) => {
+                    eprintln!("Field Notes: Android downloads disabled: {reason}");
+                    None
+                }
+            },
+        },
         store: Arc::new(Mutex::new(store)),
         origin,
         dev,

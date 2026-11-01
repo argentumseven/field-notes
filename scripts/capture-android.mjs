@@ -5,7 +5,7 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {demo,illustration} from './screenshots/demo.mjs';
 const run=promisify(execFile);
@@ -14,6 +14,7 @@ const adb=join(tools,'android-sdk/platform-tools/adb');
 const serial=process.env.FIELD_NOTES_EMULATOR||'emulator-5554';
 const launcherOnly=process.argv.includes('--launcher-only');
 const detailsOnly=process.argv.includes('--details-only');
+const widgetOnly=process.argv.includes('--widget-preview-only');
 if(!serial.startsWith('emulator-'))throw Error('Only a disposable emulator is supported.');
 async function call(args,timeout=120000){return(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;}
 const avd=(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()||(await call(['shell','getprop','ro.kernel.qemu.avd_name'])).trim();
@@ -23,6 +24,8 @@ await call(['shell','wm','size','540x1200']);await call(['shell','wm','density',
 await call(['shell','cmd','uimode','night','yes']);
 await call(['shell','input','keyevent','KEYCODE_WAKEUP']);
 await call(['shell','wm','dismiss-keyguard']);
+await call(['shell','cmd','statusbar','collapse']);
+await call(['shell','input','keyevent','KEYCODE_BACK']);
 async function launcher(){
  await call(['shell','input','keyevent','KEYCODE_HOME']);
  await call(['shell','uiautomator','dump','/data/local/tmp/field-notes-launcher.xml'],45000);
@@ -37,8 +40,8 @@ async function launcher(){
  await writeFile(join(output,'17-launcher-icon.png'),stdout);console.log('Captured android/17-launcher-icon (actual AOSP launcher).');
 }
 if(launcherOnly){try{await launcher();}finally{await call(['shell','wm','size','reset']);await call(['shell','wm','density','reset']);}process.exit(0);}
-await call(['install','-r','apps/mobile/build/outputs/apk/debug/FieldNotes-debug.apk']);
-await call(['install','-r','apps/mobile/build/outputs/apk/androidTest/debug/FieldNotes-debug-androidTest.apk']);
+await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
+await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
 await call(['shell','pm','clear','org.fieldnotes.app']);
 for(const pkg of ['org.fieldnotes.app','org.fieldnotes.app.test']){
  const result=await call(['shell','cmd','package','compile','-m','speed',pkg],360000);if(!result.includes('Success'))throw Error('Emulator AOT preparation failed.');
@@ -67,19 +70,29 @@ try{
   const child=spawn(adb,['-s',serial,'shell','-T',"run-as org.fieldnotes.app sh -c 'cat > files/gallery-fixture.json'"],{stdio:['pipe','ignore','pipe']});
   let error='';child.stderr.on('data',b=>error+=b);child.on('error',reject);child.on('close',code=>code===0?resolve():reject(Error('Writing the test fixture failed: '+error)));child.stdin.end(uiFixture);
  });
- for(const mode of (detailsOnly?['details']:['dark','light'])){
+ for(const mode of (widgetOnly?['widget-preview']:detailsOnly?['details']:['dark','light'])){
   if(mode==='light')await call(['shell','cmd','uimode','night','no']);
   await call(['shell','input','keyevent','KEYCODE_WAKEUP']);
+  await call(['shell','wm','dismiss-keyguard']);
+  await call(['shell','cmd','statusbar','collapse']);
   console.log('Capturing Android '+mode+' UI.');
   const result=await call(['shell','am','instrument','-w','-e','class','org.fieldnotes.app.GalleryDeviceTest','-e','fieldNotesGallery','synthetic-only','-e','galleryMode',mode,'-e','fieldNotesConfig',config.toString('base64'),'org.fieldnotes.app.test/androidx.test.runner.AndroidJUnitRunner'],1200000);
   await mkdir('dist/android-test-results',{recursive:true});await writeFile(`dist/android-test-results/gallery-${mode}.txt`,result);
   if(!/OK \(1 test\)/.test(result)||result.includes('FAILURES!!!'))throw Error(result);
  }
  const names=(await call(['shell','run-as','org.fieldnotes.app','ls','files/gallery'])).trim().split(/\s+/);
- if(names.length!==(detailsOnly?4:22)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
- for(const name of names){const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/gallery/'+name],{encoding:'buffer',maxBuffer:8*1024*1024});await writeFile(join(output,name),stdout);}
- if(!detailsOnly)await launcher();
- console.log(detailsOnly?'Captured '+names.length+' updated Android settings/help/renderer screenshots.':'Captured '+(names.length+1)+' Android screenshots, including the actual launcher icon.');
+ if(names.length!==(widgetOnly?1:detailsOnly?4:25)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
+ const captures=[],seen=new Map();
+ for(const name of names){
+  const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/gallery/'+name],{encoding:'buffer',maxBuffer:8*1024*1024});
+  const digest=createHash('sha256').update(stdout).digest('hex');
+  if(seen.has(digest))throw Error('Stale duplicate Android captures: '+seen.get(digest)+' and '+name);
+  seen.set(digest,name);captures.push({name,bytes:stdout});
+ }
+ // Publish only after the complete, distinct capture set has been validated.
+ for(const {name,bytes} of captures)await writeFile(join(output,name),bytes);
+ if(!detailsOnly&&!widgetOnly)await launcher();
+ console.log(widgetOnly?'Captured the current widget renderer.':detailsOnly?'Captured '+names.length+' updated Android settings/help/renderer screenshots.':'Captured '+(names.length+1)+' Android screenshots, including the actual launcher icon.');
 }finally{
  hub?.kill('SIGTERM');await browser.close();await f?.close();
  await call(['shell','wm','size','reset']).catch(()=>{});await call(['shell','wm','density','reset']).catch(()=>{});

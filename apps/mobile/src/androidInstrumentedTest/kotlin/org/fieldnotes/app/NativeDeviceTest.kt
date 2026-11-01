@@ -39,6 +39,15 @@ class NativeDeviceTest {
             assertEquals(200,login.status);val token=WireJson.parseToJsonElement(login.body).jsonObject.text("token")
             val snapshot=transport.exchange("/api/snapshot",token,serverKey=peer);assertEquals(200,snapshot.status)
             val directory=transport.exchange("/api/people",token,serverKey=peer);assertEquals(200,directory.status)
+            val update=transport.exchange("/api/device/update",token,serverKey=peer);assertEquals(200,update.status)
+            val updateInfo=WireJson.parseToJsonElement(update.body).jsonObject
+            if(updateInfo["available"]==JsonPrimitive(true)){
+                val artifact=updateInfo["artifact"]!!.jsonObject
+                val chunk=transport.exchange("/api/device/update/chunks/${artifact.text("sha256")}/0",token,serverKey=peer)
+                assertEquals(200,chunk.status);val bytes=Base64.decode(chunk.binary,Base64.NO_WRAP)
+                assertEquals(minOf(262144L,updateInfo.number("size")).toInt(),bytes.size)
+                assertEquals('P'.code.toByte(),bytes[0]);assertEquals('K'.code.toByte(),bytes[1])
+            }
             assertEquals("owner",WireJson.parseToJsonElement(directory.body).jsonObject.getValue("people").jsonArray.single().jsonObject.text("name"))
             val meta=WireJson.parseToJsonElement(snapshot.body).jsonObject
             suspend fun command(action:String,target:String,data:JsonObject,revision:Long?=null):Reply{

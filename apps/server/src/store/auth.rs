@@ -123,4 +123,94 @@ impl Store {
         )?;
         Ok(())
     }
+
+    pub fn change_password(
+        &mut self,
+        token: &str,
+        current_password: &str,
+        new_password: &str,
+        sign_out_devices: bool,
+    ) -> Result<Value> {
+        let actor = self.actor(token)?;
+        // Keep the attempt counter outside the transaction so failed proof or
+        // validation cannot roll it back and defeat the guessing limit.
+        self.budget(&format!("password-change:{}", actor.user_id), 5)?;
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.db,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let actor = self.actor(token)?;
+        let hash: String = self.db.query_row(
+            "SELECT hash FROM users WHERE id=? AND active=1",
+            [&actor.user_id],
+            |r| r.get(0),
+        )?;
+        if current_password.len() > 256 || !crypto::verify(current_password, &hash) {
+            return fail(403, "Current password not accepted");
+        }
+        if current_password == new_password {
+            return fail(400, "Choose a different new password");
+        }
+        self.replace_password(
+            &actor,
+            &actor.user_id,
+            new_password,
+            "user.password.change",
+            sign_out_devices,
+        )?;
+        tx.commit()?;
+        Ok(json!({"ok":true,"sign_in_required":true}))
+    }
+
+    /// Caller must hold the immediate write transaction and authorize target.
+    /// Passwords never enter records, operation history or audit payloads.
+    pub(super) fn replace_password(
+        &self,
+        actor: &Actor,
+        target: &str,
+        password: &str,
+        action: &str,
+        sign_out_devices: bool,
+    ) -> Result<()> {
+        let hash = crypto::password_hash(password).map_err(|e| Fault(400, e))?;
+        if self.db.execute(
+            "UPDATE users SET hash=? WHERE id=? AND active=1",
+            params![hash, target],
+        )? != 1
+        {
+            return fail(404, "Active user not found");
+        }
+        if sign_out_devices {
+            self.db
+                .execute("DELETE FROM sessions WHERE user_id=?", [target])?;
+            self.db
+                .execute("DELETE FROM enrollment_invites WHERE user_id=?", [target])?;
+            self.db.execute(
+            "UPDATE devices SET state='revoking' WHERE user_id=? AND state IN ('pending_approval','provisioning','ready')",
+            [target],
+            )?;
+        } else {
+            self.db.execute("DELETE FROM sessions WHERE user_id=? AND id NOT IN (SELECT session_id FROM device_sessions)", [target])?;
+        }
+        self.audit(
+            actor,
+            action,
+            target,
+            &json!({"sign_out_devices":sign_out_devices}),
+        )?;
+        Ok(())
+    }
+
+    pub fn authorize_browser(&self, token: &str) -> Result<()> {
+        let actor = self.actor(token)?;
+        let enrolled: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM device_sessions WHERE session_id=?)",
+            [&actor.session_id],
+            |r| r.get(0),
+        )?;
+        if enrolled {
+            return fail(403, "Phone credentials are restricted to their enrolled tunnel; sign in to the LAN website separately");
+        }
+        Ok(())
+    }
 }

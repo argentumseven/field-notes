@@ -21,14 +21,14 @@ val Snapshot.basis get() = Basis(epoch, generation)
 @Serializable data class Pending(val command: Command, val dependsOn: String? = null, val attempted: Boolean = false)
 @Serializable data class Conflict(val command: Command, val reason: String)
 @Serializable data class Draft(val target: String, val epoch: String, val generation: Long, val revision: Long, val data: JsonObject, val dependsOn: String? = null, val action: String = "task.update")
-@Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = false, val liveUpdates: Boolean = true)
+@Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = false, val liveUpdates: Boolean = true, val connectionPaused: Boolean = false)
 @Serializable data class Cache(
     val keys: JsonObject? = null, val config: JsonObject? = null, val token: String? = null,
     val snapshot: Snapshot? = null, val people: List<HouseholdPerson> = emptyList(), val directoryRevision:Long = 0, val lastSyncedAt:Long = 0, val outbox: List<Pending> = emptyList(),
     val conflicts: List<Conflict> = emptyList(), val drafts: Map<String, Draft> = emptyMap(),
     val enrollment: Enrollment? = null, val preferences: Preferences = Preferences(), val reminded: Set<String> = emptySet(),
 )
-data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null)
+data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false)
 data class Reply(val status: Int, val body: String = "", val binary: String? = null)
 interface Transport {
     suspend fun keys(): JsonObject

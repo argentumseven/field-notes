@@ -110,8 +110,15 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = back != null) { back?.invoke() }
                 val workspace by app.model.state.collectAsState()
                 val lifecycleState by lifecycle.currentStateFlow.collectAsState()
-                LaunchedEffect(workspace.cache.token,workspace.needsLogin,workspace.cache.preferences.liveUpdates,lifecycleState){
-                    if(lifecycleState.isAtLeast(Lifecycle.State.STARTED)&&workspace.cache.token!=null&&!workspace.needsLogin&&workspace.cache.preferences.liveUpdates){
+                val updateState by app.updates.state.collectAsState()
+                LaunchedEffect(workspace.cache.token,workspace.cache.config,workspace.connectionPaused,workspace.needsLogin,lifecycleState){
+                    if(lifecycleState.isAtLeast(Lifecycle.State.RESUMED)&&workspace.ready&&!workspace.needsLogin&&!workspace.connectionPaused&&workspace.cache.token!=null){
+                        while(true){app.updates.checkForUpdate(automatic=true);kotlinx.coroutines.delay(6*60*60*1000L)}
+                    }
+                }
+                LaunchedEffect(workspace.cache.token,workspace.needsLogin,workspace.cache.preferences.liveUpdates,workspace.connectionPaused,lifecycleState){
+                    if(workspace.connectionPaused)PrivateUpdatesService.stop(this@MainActivity)
+                    else if(lifecycleState.isAtLeast(Lifecycle.State.STARTED)&&workspace.cache.token!=null&&!workspace.needsLogin&&workspace.cache.preferences.liveUpdates){
                         if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this@MainActivity,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){if(!notificationAsked){notificationAsked=true;requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)}}
                         else PrivateUpdatesService.start(this@MainActivity)
                     }
@@ -119,9 +126,10 @@ class MainActivity : ComponentActivity() {
                 FieldNotesApp(app.model,
                     requestedPage=intent?.getStringExtra("open_page"),
                     deviceActions=DeviceActions(androidDelivery=true,status=deliveryStatus,
+                        update=updateState,checkUpdate={app.updates.checkForUpdate()},downloadUpdate={app.updates.download()},cancelUpdate={app.updates.cancel()},installUpdate={app.updates.install(this)},
                         addUpcomingWidget={DeliverySettings.pin(this)},profileTest={val ok=Alerts.scheduleProfileTest(this);Toast.makeText(this,if(ok)"Test scheduled for 30 seconds. Switch profiles now." else "Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},testAlert={if(!Alerts.test(this))Toast.makeText(this,"Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},
                         notificationSettings={DeliverySettings.open(this,"notifications")},alarmSettings={DeliverySettings.open(this,"alarms")},
-                        batterySettings={DeliverySettings.open(this,"battery")},profileSettings={DeliverySettings.open(this,"profiles")},
+                        batterySettings={DeliverySettings.open(this,"battery")},profileSettings={DeliverySettings.open(this,"profiles")},appSettings={DeliverySettings.open(this,"app")},
                         removeInstallation={DeliverySettings.remove(this@MainActivity)}),
                     enrollmentPolling = lifecycleState.isAtLeast(Lifecycle.State.STARTED),
                     invitationCode = invitationCode,

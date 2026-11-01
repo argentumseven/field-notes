@@ -9,6 +9,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -22,25 +25,25 @@ import org.fieldnotes.domain.*
 
 @Composable internal fun DateField(label: String, value: String, enabled: Boolean = true, changed: (String) -> Unit) {
     var show by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(label, style = MaterialTheme.typography.labelMedium); Text(value.ifBlank { "No date" }, style = MaterialTheme.typography.bodyLarge) }
-        TextButton(onClick = { show = true }, enabled = enabled) { Text("Choose") }
-        if (value.isNotEmpty()) TextButton(onClick = { changed("") }, enabled = enabled) { Text("Clear") }
+        SecondaryButton(onClick = { show = true }, enabled = enabled) { Text("Choose") }
+        if (value.isNotEmpty()) SecondaryButton(onClick = { changed("") }, enabled = enabled) { Text("Clear") }
     }
     if (show) {
         val selected = runCatching { LocalDate.parse(value).atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds() }.getOrNull()
         val state = rememberDatePickerState(initialSelectedDateMillis = selected)
-        DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { TextButton(onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { TextButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
+        DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { Button(onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { SecondaryButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
     }
 }
 @Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, open: (String) -> Unit) {
     var selected by rememberSaveable { mutableStateOf(today.toString()) }; var monthValue by rememberSaveable { mutableStateOf(LocalDate(today.year, today.monthNumber, 1).toString()) }
     val month = LocalDate.parse(monthValue); val records = rows.map { it.record }
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { monthValue = month.minus(1, DateTimeUnit.MONTH).toString() }) { Text("‹") }
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedIconButton(onClick = { monthValue = month.minus(1, DateTimeUnit.MONTH).toString() }) { Icon(Icons.Outlined.KeyboardArrowLeft,"Previous month") }
         Text("${month.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${month.year}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-        TextButton(onClick = { selected = today.toString(); monthValue = LocalDate(today.year, today.monthNumber, 1).toString() }) { Text("Today") }
-        TextButton(onClick = { monthValue = month.plus(1, DateTimeUnit.MONTH).toString() }) { Text("›") }
+        SecondaryButton(onClick = { selected = today.toString(); monthValue = LocalDate(today.year, today.monthNumber, 1).toString() }) { Text("Today") }
+        OutlinedIconButton(onClick = { monthValue = month.plus(1, DateTimeUnit.MONTH).toString() }) { Icon(Icons.Outlined.KeyboardArrowRight,"Next month") }
     }
     Row { listOf("M", "T", "W", "T", "F", "S", "S").forEach { Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.Center) { Text(it, style = MaterialTheme.typography.labelSmall) } } }
     monthCells(month).chunked(7).forEach { week -> Row {
@@ -92,7 +95,7 @@ import org.fieldnotes.domain.*
             OutlinedTextField(startTime, { startTime = it }, label = { Text("Start · ISO time + offset") }, enabled = writable)
             OutlinedTextField(endTime, { endTime = it }, label = { Text("End · ISO time + offset") }, enabled = writable)
         }
-        if (record != null && revision != record.revision) { Text("Changed on another device. Review server: ${record.data}", color = MaterialTheme.colorScheme.error); TextButton(onClick = { revision = record.revision }) { Text("Keep these fields for a new save") } }
+        if (record != null && revision != record.revision) { Text("Changed on another device. Review server: ${record.data}", color = MaterialTheme.colorScheme.error); SecondaryButton(onClick = { revision = record.revision }) { Text("Keep these fields for a new save") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    } }, confirmButton = { if(writable) TextButton(onClick = { busy = true; scope.launch { try { val fields = fields(); if (record == null) model.enqueue("event.create", model.newId(), fields, null, basis) else { model.saveDraft(record.id, revision, fields, basis, "event.update"); model.submitDraft(record.id) }; close(); model.sync() } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message } finally { busy = false } } }, enabled = !busy) { Text("Save event") } }, dismissButton = { Row { if(writable && record != null) TextButton(onClick = { model.enqueueAsync("event.delete", record.id, obj(), record.revision, basis); close() }) { Text("Delete") }; TextButton(onClick = close) { Text("Close") } } })
+    } }, confirmButton = { if(writable) Button(onClick = { busy = true; scope.launch { try { val fields = fields(); if (record == null) model.enqueue("event.create", model.newId(), fields, null, basis) else { model.saveDraft(record.id, revision, fields, basis, "event.update"); model.submitDraft(record.id) }; close(); model.sync() } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message } finally { busy = false } } }, enabled = !busy) { Text("Save event") } }, dismissButton = { Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { if(writable && record != null) SecondaryButton(dangerous=true,onClick = { model.enqueueAsync("event.delete", record.id, obj(), record.revision, basis); close() }) { Text("Delete") }; SecondaryButton(onClick = close) { Text("Close") } } })
 }

@@ -1,0 +1,93 @@
+name: Publish signed Android APK
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing source tag, such as v0.3.3
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: field-notes-android-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == 'argentumseven/field-notes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FIELD_NOTES_TOOLS: ${{ runner.temp }}/field-notes-tools
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Validate tag and stable signing configuration
+        env:
+          KEYSTORE_B64: ${{ secrets.FIELD_NOTES_KEYSTORE_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import json,os
+          release=json.load(open('release.json'))
+          assert os.environ['RELEASE_TAG']=='v'+release['version'], 'Tag/version mismatch'
+          assert os.environ.get('KEYSTORE_B64'), 'Configure a stable operator signing key; no ephemeral signer is published'
+          PY
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake pkg-config unzip zip ca-certificates python3
+          bash scripts/setup/cloud.sh
+          source scripts/dev-env.sh
+          cargo test --locked
+          npm test
+          bash scripts/setup/jdk.sh
+          bash scripts/setup/android.sh
+      - name: Build and verify the signed APK
+        env:
+          KEYSTORE_B64: ${{ secrets.FIELD_NOTES_KEYSTORE_BASE64 }}
+          FIELD_NOTES_KEY_ALIAS: ${{ secrets.FIELD_NOTES_KEY_ALIAS }}
+          FIELD_NOTES_STORE_PASSWORD: ${{ secrets.FIELD_NOTES_STORE_PASSWORD }}
+          FIELD_NOTES_KEY_PASSWORD: ${{ secrets.FIELD_NOTES_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export FIELD_NOTES_KEYSTORE="$RUNNER_TEMP/field-notes-release.jks"
+          trap 'rm -f -- "$FIELD_NOTES_KEYSTORE"' EXIT
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$FIELD_NOTES_KEYSTORE"
+          bash scripts/build/android.sh release
+          source scripts/dev-env.sh
+          version=$(python3 -c 'import json;print(json.load(open("release.json"))["version"])')
+          python3 -B scripts/android_artifact.py --apk "dist/android/field-notes-$version-android-arm64-release.apk" --output dist/android-release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: field-notes-android
+          path: dist/android-release/
+          if-no-files-found: error
+          retention-days: 14
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: field-notes-android
+          path: dist/android-release
+      - name: Verify assets and publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 -B scripts/publish-android.py --directory dist/android-release --tag "$RELEASE_TAG" --apply

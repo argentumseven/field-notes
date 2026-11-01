@@ -39,7 +39,7 @@ cp deploy/containers/app.Dockerfile "$stage/Dockerfile"
 # BuildKit CA secret is transient; registry credentials/proxy settings stay intact.
 "${docker_local[@]}" build --secret id=build_ca,src=/etc/ssl/certs/ca-certificates.crt --file deploy/containers/gateway.Dockerfile --tag "field-notes-gateway:$version" deploy/containers
 "${docker_local[@]}" run --rm --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges:true "field-notes-app:$version" help
-"${docker_local[@]}" image inspect "field-notes-app:$version" "field-notes-gateway:$version" | python3 -c 'import json,sys; rows=json.load(sys.stdin); assert len(rows)==2; print(json.dumps({r["Config"]["Labels"]["org.fieldnotes.component"]:{"id":r["Id"],"tag":r["RepoTags"][0]} for r in rows},indent=2))' > dist/containers/images.json
+"${docker_local[@]}" image inspect "field-notes-app:$version" "field-notes-gateway:$version" | python3 -c 'import json,sys; rows=json.load(sys.stdin); version=sys.argv[1]; assert len(rows)==2; result={r["Config"]["Labels"]["org.fieldnotes.component"]:{"id":r["Id"],"tag":"field-notes-"+r["Config"]["Labels"]["org.fieldnotes.component"]+":"+version} for r in rows}; assert set(result)=={"app","gateway"}; assert all(result[r["Config"]["Labels"]["org.fieldnotes.component"]]["tag"] in r["RepoTags"] for r in rows); print(json.dumps(result,indent=2))' "$version" > dist/containers/images.json
 artifact="dist/containers/field-notes-$version-linux-$arch-images.tar.gz"
 "${docker_local[@]}" save "field-notes-app:$version" "field-notes-gateway:$version" | gzip -1 > "$artifact"
 sha256sum "$artifact" > "$artifact.sha256"

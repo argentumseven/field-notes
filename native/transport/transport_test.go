@@ -77,6 +77,11 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 	var bodies []string
 	var bodyLock sync.Mutex
 	api := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/device/update/chunks/") {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write([]byte("PK binary update chunk"))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/commands" {
 			body, _ := io.ReadAll(r.Body)
@@ -122,6 +127,16 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 	if decoded.Status != 200 || decoded.Body != `{"sequence":42}` {
 		t.Fatalf("unexpected result: %s", response)
 	}
+	chunkPath := "/api/device/update/chunks/" + strings.Repeat("a", 64) + "/0"
+	chunkRequest, _ := json.Marshal(Request{Method: "GET", Path: chunkPath})
+	chunkReply, err := Exchange(string(chunkRequest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var chunk Response
+	if err = json.Unmarshal([]byte(chunkReply), &chunk); err != nil || chunk.Status != 200 || chunk.Binary == "" {
+		t.Fatal("Update chunk did not traverse the pinned peer as bounded binary", err)
+	}
 	if _, err := Exchange(`{"method":"POST","path":"/api/commands","body":"{\"operation_id\":\"same-durable-operation\"}"}`); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +145,7 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 		t.Error("ambiguous response did not retry the identical command")
 	}
 	bodyLock.Unlock()
-	for _, path := range []string{"/api/enrollment/claim", "/api/enrollment/devices", "/api/admin", "/api/../admin", "https://elsewhere.invalid/api/head", "/api/head?redirect=yes"} {
+	for _, path := range []string{"/api/enrollment/claim", "/api/enrollment/devices", "/api/admin", "/api/../admin", "https://elsewhere.invalid/api/head", "/api/head?redirect=yes", "/downloads/field-notes.apk", chunkPath + "?elsewhere=1", "/api/device/update/chunks/../0", "/api/device/update/chunks/" + strings.Repeat("a", 64) + "/10000"} {
 		b, _ := json.Marshal(Request{Method: "GET", Path: path})
 		if _, e = Exchange(string(b)); e == nil {
 			t.Fatalf("accepted forbidden path %s", path)

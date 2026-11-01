@@ -44,7 +44,7 @@ class PrivateUpdatesService:Service(){
             var retry=15_000L
             while(isActive){
                 val before=app.model.state.value
-                if(!before.ready||before.needsLogin||before.cache.token==null||!before.cache.preferences.liveUpdates){stopSelf();break}
+                if(!before.ready||before.connectionPaused||before.needsLogin||before.cache.token==null||!before.cache.preferences.liveUpdates){stopSelf();break}
                 // A bounded lock supports screen-off delivery while live mode is
                 // healthy. It cannot override stopped users, force-stop or DND.
                 if(wake==null)wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"fieldnotes:private-updates").also { it.setReferenceCounted(false) }
@@ -88,7 +88,7 @@ class StartupReceiver:BroadcastReceiver(){
         app.scope.launch {
             try {
                 val cache=app.vault.load()
-                if(cache.token!=null&&cache.preferences.liveUpdates&&!PrivateUpdatesService.start(context))app.deliveryError.value="Open Field Notes to restart background updates."
+                if(cache.token!=null&&!cache.preferences.connectionPaused&&cache.preferences.liveUpdates&&!PrivateUpdatesService.start(context))app.deliveryError.value="Open Field Notes to restart background updates."
                 CatchUpWorker.schedule(context,cache.preferences)
                 LocalAlarms.reconcile(context,true)
             }catch(_:Exception){app.deliveryError.value="Open Field Notes to restore reminder scheduling."}

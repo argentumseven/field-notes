@@ -38,12 +38,12 @@ await mkdir("dist/android-test-results", { recursive: true });
 await call([
   "install",
   "-r",
-  "apps/mobile/build/outputs/apk/debug/FieldNotes-debug.apk",
+  "dist/android-emulator/FieldNotes-debug.apk",
 ]);
 await call([
   "install",
   "-r",
-  "apps/mobile/build/outputs/apk/androidTest/debug/FieldNotes-debug-androidTest.apk",
+  "dist/android-emulator/FieldNotes-debug-androidTest.apk",
 ]);
 await call(["shell", "pm", "clear", "org.fieldnotes.app"]);
 // AOT compilation avoids software-emulation cold-start timeouts. The APK,
@@ -84,7 +84,7 @@ async function instrument(classes, extra = [], report) {
 if (!nativeOnly) {
   console.log("Running Android Keystore and first-launch UI tests.");
   const first = await instrument(
-    "org.fieldnotes.app.VaultDeviceTest,org.fieldnotes.app.InterfaceDeviceTest,org.fieldnotes.app.EditorDeviceTest,org.fieldnotes.app.WidgetDeviceTest",
+    "org.fieldnotes.app.VaultDeviceTest,org.fieldnotes.app.InterfaceDeviceTest,org.fieldnotes.app.EditorDeviceTest,org.fieldnotes.app.WidgetDeviceTest,org.fieldnotes.app.UpdateDeviceTest",
     [],
     "vault-ui.txt",
   );
@@ -191,7 +191,7 @@ try {
   console.log(
     nativeOnly
       ? "Android emulator: 2 native/manifest integration tests passed."
-      : "Android emulator: 4 vault tests, 2 Compose UI tests, 1 widget privacy test, 2 native/manifest integration tests passed.",
+      : "Android emulator: 4 vault tests, 2 Compose UI tests, 1 widget privacy test, 3 APK verifier/provider tests, 2 native/manifest integration tests passed.",
   );
 } finally {
   hub?.kill("SIGTERM");
