@@ -85,8 +85,8 @@ The guided installer asks for LAN details, optional remote endpoint and private
 overlay, and both ports (no suggested values). Review the plan and type
 `INSTALL`. It then prepares the pinned toolchains, builds the matching
 signed development Android APK and server/offline Docker images, and installs
-the stack. Docker Engine/Compose and basic build prerequisites must already
-work on the host. A no-write preview uses
+the stack. Docker Engine/Compose must already work on the host. Missing Debian/Ubuntu
+build packages are installed automatically after plan confirmation. A no-write preview uses
 `bash scripts/install-server.sh --plan`; for a prebuilt verified server
 bundle use `bash scripts/install-server.sh --apply`.
 Never commit operator signing keys or place installation secrets in Git.
