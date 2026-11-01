@@ -68,6 +68,14 @@ A WireGuard hub supplies neither rendezvous nor automatic NAT traversal. DNS for
 DDNS uses the OS network policy and discloses endpoint lookup metadata. Choose a
 nonoverlapping /24 distinct from Bungee, the LAN and your other VPN routes.
 
+The management listener binds a private IPv4 address on the server. The
+administrator source CIDR is an independent private network ACL, **not** the
+subnet of the server's interface. Routed or VLAN-separated administration is
+supported: the router/firewall must allow the chosen administrators' source
+addresses to reach the chosen listener, and the return path must be routable.
+No NAT or source rewrite is configured by Field Notes. Preserve administrator
+source addresses so the source CIDR restriction can work as intended.
+
 The management listener has a private LAN address and explicit source CIDR ACL.
 A browser cannot borrow the Android app's private stack. Linux/Windows browsers
 use LAN HTTPS; remote native desktop and iOS clients are deferred.
