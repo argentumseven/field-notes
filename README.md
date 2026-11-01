@@ -86,12 +86,12 @@ sudo bash scripts/install-server.sh --plan \
 # with --apply after reviewing the plan.
 ```
 
-Forward **UDP 49272** to the Linux server (one above Bungee's guide example
-49271), or select `--bungee-port <your-bungee-port>` for an adjacent listener.
-See the [router forwarding example](docs/RUNNING.md#fresh-home-server).
-The installer prompts for **management HTTPS and WireGuard UDP ports**.
-`--web-port` and `--udp-port` supply explicit choices instead.
-LAN management uses direct TLS on your chosen port (suggested 9443), and the isolated
+Forward the **WireGuard UDP port you choose** to the Linux server.
+See the [router forwarding instructions](docs/RUNNING.md#fresh-home-server).
+The installer requires **explicit management HTTPS and WireGuard UDP ports**:
+enter both in the interactive prompts, or supply `--web-port` and `--udp-port`.
+There are no suggested or automatic port numbers.
+LAN management uses direct TLS on your chosen port, and the isolated
 WireGuard notes endpoint is 8443. The bundle includes offline Docker images:
 a nonroot, read-only app and a separate WireGuard gateway. New outbound traffic,
 including DNS, is blocked; replies to allowed incoming connections work. Local
