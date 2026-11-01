@@ -9,8 +9,11 @@ from server_installation import Host, inventory, digest, UNITS, uninstall_wrappe
 
 def arguments():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--apply', action='store_true')
-    p.add_argument('--plan', action='store_true')
+    action = p.add_mutually_exclusive_group()
+    action.add_argument('--apply', action='store_true')
+    action.add_argument('--plan', action='store_true')
+    p.add_argument('--build-from-source', action='store_true',
+                   help='After confirmation, prepare toolchains and build the matching app, gateway and APK from this checkout')
     p.add_argument('--lan-ip', help='Server LAN IPv4 address (prompted in terminal)')
     p.add_argument('--lan-prefix', help='Trusted LAN subnet in CIDR notation (prompted in terminal)')
     p.add_argument('--web-port', type=int, help='Chosen LAN management HTTPS port (no default)')
@@ -86,6 +89,29 @@ def select_network(a, interactive):
         a.overlay = '10.82.0.0/24'
 
 def checked(cmd,**kwargs):return subprocess.run(cmd,check=True,**kwargs)
+
+def build_from_source(root):
+    """Build the complete verified server/APK bundle before mutating installed state."""
+    if os.uname().sysname != 'Linux' or os.uname().machine != 'x86_64':
+        raise ValueError('The guided source build currently requires Linux x86_64.')
+    if not (root/'scripts/setup/cloud.sh').is_file() or not (root/'scripts/build/server.sh').is_file():
+        raise ValueError('Source build requires a complete repository checkout. Use the bundled installer for a prebuilt release.')
+    required = ('bash', 'curl', 'npm', 'docker', 'cc', 'make')
+    missing = [name for name in required if shutil.which(name) is None]
+    if missing:
+        raise ValueError('Source build prerequisites missing: ' + ', '.join(missing) +
+                         '. Install the distribution packages and rerun the installer.')
+    checked(['docker', '--host=unix:///var/run/docker.sock', 'info'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    checked(['docker', '--host=unix:///var/run/docker.sock', 'compose', 'version'],
+            stdout=subprocess.DEVNULL)
+    env = os.environ.copy()
+    env.setdefault('FIELD_NOTES_TOOLS', str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
+    print('Preparing the Field Notes Android and Linux build toolchains...', flush=True)
+    checked(['bash', 'scripts/setup/cloud.sh', '--android'], cwd=root, env=env)
+    print('Building the verified server bundle and offline Docker images...', flush=True)
+    checked(['bash', 'scripts/build/server.sh'], cwd=root, env=env)
+
 def main():
     a=arguments()
     interactive = a.interactive if a.interactive is not None else sys.stdin.isatty()
@@ -120,6 +146,8 @@ def main():
         return
     if os.geteuid()!=0:
         raise ValueError('--apply requires root; review --plan first')
+    if a.build_from_source and a.plan:
+        raise ValueError('Source builds cannot run in a no-write plan.')
     if interactive:
         print('Installation plan (no changes made yet):')
         print(json.dumps(plan,indent=2))
@@ -130,6 +158,8 @@ def main():
         if confirmation != 'INSTALL':
             print('Installation cancelled; no changes made.')
             return
+    if a.build_from_source:
+        build_from_source(root)
     for destination in destinations:host.check_parents(str(destination))
     if not binary.is_file():raise ValueError('Build or unpack the complete server bundle first')
     for name in ('fieldnotes',):
