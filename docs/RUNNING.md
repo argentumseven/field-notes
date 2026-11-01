@@ -23,8 +23,10 @@ This one-command installer prompts for configuration, prints a reviewable
 no-write plan and requires typing `INSTALL` before preparing toolchains
 and building the matching Android APK, app/gateway Docker images, and
 server bundle. It then installs and starts the stack. Rootful Docker
-Engine/Compose and basic host build prerequisites must already be
-available; it does not change shared Docker daemon settings.
+Engine/Compose must already work. After confirmation, the guided installer
+installs any missing Debian/Ubuntu build tools (Node/npm, compilers, Make,
+packaging tools) with apt before building. It does not change shared Docker
+daemon settings.
 
 For a no-write planning run:
 
