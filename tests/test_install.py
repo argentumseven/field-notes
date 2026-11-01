@@ -61,6 +61,22 @@ class Plan(unittest.TestCase):
   self.assertEqual(plan['wireguard_endpoint'],'home.example.net:'+UDP)
   r=self.explicit('--endpoint','home.example.net:43128');self.assertEqual(r.returncode,0,r.stderr)
   self.assertEqual(json.loads(r.stdout)['router_forward'],'UDP 43128 to 192.168.1.10:'+UDP)
+ def test_routed_admin_subnet_can_differ_from_listener_subnet(self):
+  r=self.run_plan('--lan-ip','192.168.50.10','--lan-prefix','192.168.20.0/24',
+                  '--web-port',WEB,'--udp-port',UDP)
+  self.assertEqual(r.returncode,0,r.stderr)
+  plan=json.loads(r.stdout)
+  self.assertEqual(plan['lan_admin'],'https://192.168.50.10:'+WEB+' (source 192.168.20.0/24)')
+ def test_public_listener_refused_even_with_private_admin_sources(self):
+  r=self.run_plan('--lan-ip','203.0.113.10','--lan-prefix','192.168.20.0/24',
+                  '--web-port',WEB,'--udp-port',UDP)
+  self.assertNotEqual(r.returncode,0)
+  self.assertIn('management bind IP must be private',r.stderr)
+ def test_overlay_conflicting_with_listener_is_rejected_even_if_admin_cidr_differs(self):
+  r=self.run_plan('--lan-ip','10.82.0.10','--lan-prefix','192.168.20.0/24',
+                  '--web-port',WEB,'--udp-port',UDP)
+  self.assertNotEqual(r.returncode,0)
+  self.assertIn('overlay',r.stderr)
  def test_overlapping_subnets_rejected(self):self.assertNotEqual(self.explicit('--overlay','192.168.1.0/24').returncode,0)
  def test_malicious_hostname_rejected(self):self.assertNotEqual(self.explicit('--hostname','bad\nreverse_proxy attacker').returncode,0)
  def test_existing_directory_not_overwritten(self):self.assertNotEqual(self.explicit('--prefix',str(ROOT)).returncode,0)
