@@ -50,7 +50,8 @@ sudo bash scripts/install-server.sh --apply \
   --endpoint your-home.example.net
 ```
 
-That example serves LAN management at `https://192.168.1.10:10443`. A nonterminal plan or apply call requires both explicit port options; neither
+That example serves LAN management at `https://192.168.1.10:10443`.
+A nonterminal plan or apply call requires both explicit port options; neither
 command chooses defaults.
 Owner name/password prompts remain separate; no command-line password is used.
 The owner password is selected and confirmed during installation, using hidden
@@ -104,7 +105,8 @@ shared Docker daemon configuration alone. It creates:
   preserves recovery data, explicit purge deletes it. [Removal guide](UNINSTALL.md).
 
 There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly
-at the LAN address and management port you chose; the separate phone API binds only `10.82.0.1:8443`.
+at the LAN address and management port you chose; the separate phone API binds
+only `10.82.0.1:8443`.
 The installer checks login, authenticated snapshot and logout over real TLS.
 It does not install a shell-execution endpoint in the management website.
 
@@ -120,7 +122,8 @@ host firewall restrictions and permit the selected UDP and management LAN as
 appropriate. Check the [network access matrix](NETWORK.md) on your actual host;
 CGNAT or an upstream UDP filter can prevent remote access. A port change alone
 is not a security control. Existing installations retain their configured port;
-changing a default does not migrate a live tunnel or its enrolled endpoints.
+changing an installation's ports requires a reviewed migration of its live
+WireGuard tunnel and enrolled endpoints.
 
 ## Trust the LAN website
 
