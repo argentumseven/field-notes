@@ -11,8 +11,8 @@ def arguments():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--apply', action='store_true')
     p.add_argument('--plan', action='store_true')
-    p.add_argument('--lan-ip', required=True)
-    p.add_argument('--lan-prefix', required=True)
+    p.add_argument('--lan-ip', help='Server LAN IPv4 address (prompted in terminal)')
+    p.add_argument('--lan-prefix', help='Trusted LAN subnet in CIDR notation (prompted in terminal)')
     p.add_argument('--web-port', type=int, help='Chosen LAN management HTTPS port (no default)')
     p.add_argument('--endpoint', help='Reachable home DDNS/IP, optionally :external-port; omitted port follows your WireGuard choice')
     p.add_argument('--hostname', default='notes.home.arpa')
@@ -20,11 +20,11 @@ def arguments():
     p.add_argument('--prefix', default='/opt/field-notes')
     p.add_argument('--data', default='/var/lib/field-notes')
     p.add_argument('--config', default='/etc/field-notes')
-    p.add_argument('--overlay', default='10.82.0.0/24')
+    p.add_argument('--overlay', help='Private WireGuard /24 overlay (default 10.82.0.0/24)')
     p.add_argument('--binary')
     mode = p.add_mutually_exclusive_group()
-    mode.add_argument('--interactive', dest='interactive', action='store_true', default=None, help='Ask for missing port choices, including in --plan')
-    mode.add_argument('--non-interactive', dest='interactive', action='store_false', help='Require explicit port options; never choose defaults in --plan or --apply')
+    mode.add_argument('--interactive', dest='interactive', action='store_true', default=None, help='Prompt for missing network settings and ports, including in --plan')
+    mode.add_argument('--non-interactive', dest='interactive', action='store_false', help='Require explicit LAN settings and both ports; do not prompt')
     return p.parse_args()
 
 def prompt_port(label, management=False):
@@ -38,8 +38,7 @@ def prompt_port(label, management=False):
             return int(raw)
         print('Enter a port from 1024 to 65535; management cannot use the reserved inner API port 8443.', file=sys.stderr)
 
-def select_ports(a):
-    interactive = a.interactive if a.interactive is not None else sys.stdin.isatty()
+def select_ports(a, interactive):
     if interactive:
         if a.web_port is None:
             a.web_port = prompt_port('Management HTTPS port (LAN only)', management=True)
@@ -48,10 +47,48 @@ def select_ports(a):
     if a.web_port is None or a.udp_port is None:
         raise ValueError('Choose both ports: use a terminal/--interactive or provide --web-port and --udp-port explicitly.')
 
+def prompt_required(label, validator):
+    while True:
+        try:
+            raw = input(f'{label} (required): ').strip()
+        except EOFError as error:
+            raise ValueError('Network settings require a terminal, or explicit --lan-ip and --lan-prefix options.') from error
+        if raw:
+            try:
+                validator(raw)
+                return raw
+            except ValueError:
+                pass
+        print(f'Enter a valid {label.lower()}.', file=sys.stderr)
+
+def prompt_optional(label):
+    try:
+        return input(label).strip() or None
+    except EOFError as error:
+        raise ValueError('Complete the interactive network questions, or supply the settings explicitly.') from error
+
+def select_network(a, interactive):
+    missing_network = a.lan_ip is None or a.lan_prefix is None
+    if interactive:
+        if a.lan_ip is None:
+            a.lan_ip = prompt_required('Server LAN IPv4 address', ipaddress.IPv4Address)
+        if a.lan_prefix is None:
+            a.lan_prefix = prompt_required('Trusted LAN subnet in CIDR notation', ipaddress.IPv4Network)
+        if missing_network and a.endpoint is None:
+            a.endpoint = prompt_optional('Public DDNS/IP endpoint (blank for LAN-only): ')
+        if missing_network and a.overlay is None:
+            a.overlay = prompt_optional('Private WireGuard /24 overlay (blank for 10.82.0.0/24): ')
+    if a.lan_ip is None or a.lan_prefix is None:
+        raise ValueError('Choose both LAN settings: use a terminal/--interactive or provide --lan-ip and --lan-prefix explicitly.')
+    if a.overlay is None:
+        a.overlay = '10.82.0.0/24'
+
 def checked(cmd,**kwargs):return subprocess.run(cmd,check=True,**kwargs)
 def main():
     a=arguments()
-    select_ports(a)
+    interactive = a.interactive if a.interactive is not None else sys.stdin.isatty()
+    select_network(a, interactive)
+    select_ports(a, interactive)
     lan=ipaddress.IPv4Address(a.lan_ip);prefix=ipaddress.IPv4Network(a.lan_prefix);overlay=ipaddress.IPv4Network(a.overlay)
     private=[ipaddress.IPv4Network(x) for x in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')]
     if not any(prefix.subnet_of(n) for n in private) or lan not in prefix or not any(overlay.subnet_of(n) for n in private) or overlay.prefixlen!=24 or overlay.overlaps(prefix):raise ValueError('Use a private LAN address within its prefix and a nonoverlapping private /24 overlay.')
@@ -76,8 +113,21 @@ def main():
     root=pathlib.Path(__file__).resolve().parents[1]
     binary=pathlib.Path(a.binary) if a.binary else (root/'field-notes-server' if (root/'field-notes-server').exists() else root/'target/release/field-notes-server')
     plan={'port_selection':'Chosen','apply_port_options':f'--web-port {a.web_port} --udp-port {a.udp_port}','runtime':'containers','requires':['Docker Engine (rootful)','Docker Compose 2.24+','WireGuard kernel support'],'binary':str(binary),'lan_admin':f'https://{lan}:{a.web_port} (source {prefix})','device_api':f'https://{overlay.network_address+1}:8443','wireguard_endpoint':endpoint,'router_forward':f'UDP {external_port} to {lan}:{a.udp_port}','directories':[str(p) for p in destinations],'services':['field-notes','field-notes-peers.timer','field-notes-certificates.timer'],'no_public_web':True,'remote_access':bool(a.endpoint),'endpoint_note':f'Provide --endpoint your-home-DDNS:{a.udp_port} for access away from home; the LAN UDP alternative is enrolled automatically.'}
-    if not a.apply:print(json.dumps(plan,indent=2));return
-    if os.geteuid()!=0:raise ValueError('--apply requires root; review --plan first')
+    if not a.apply:
+        print(json.dumps(plan,indent=2))
+        return
+    if os.geteuid()!=0:
+        raise ValueError('--apply requires root; review --plan first')
+    if interactive:
+        print('Installation plan (no changes made yet):')
+        print(json.dumps(plan,indent=2))
+        try:
+            confirmation = input('Type INSTALL to apply this plan (anything else cancels): ').strip()
+        except EOFError as error:
+            raise ValueError('Installation not confirmed; no changes made.') from error
+        if confirmation != 'INSTALL':
+            print('Installation cancelled; no changes made.')
+            return
     for destination in destinations:host.check_parents(str(destination))
     if not binary.is_file():raise ValueError('Build or unpack the complete server bundle first')
     for name in ('fieldnotes',):
