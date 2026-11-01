@@ -24,7 +24,7 @@ def arguments():
     p.add_argument('--binary')
     mode = p.add_mutually_exclusive_group()
     mode.add_argument('--interactive', dest='interactive', action='store_true', default=None, help='Ask for missing port choices, including in --plan')
-    mode.add_argument('--non-interactive', dest='interactive', action='store_false', help='Use explicit port options for --apply; preview defaults in --plan')
+    mode.add_argument('--non-interactive', dest='interactive', action='store_false', help='Require explicit port options; never choose defaults in --plan or --apply')
     return p.parse_args()
 
 def prompt_port(label, management=False):
