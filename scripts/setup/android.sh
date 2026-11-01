@@ -36,5 +36,9 @@ if u.hostname: print(u.hostname);print(u.port or 80)
 PY
 )
 if [[ ${#proxy_parts[@]} == 2 ]]; then args+=(--proxy=http "--proxy_host=${proxy_parts[0]}" "--proxy_port=${proxy_parts[1]}"); fi
-export SDKMANAGER_OPTS="-Duser.home=$FIELD_NOTES_TOOLS/java-home -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts"
+export SDKMANAGER_OPTS="-Duser.home=$FIELD_NOTES_TOOLS/java-home"
+if [[ -n "${FIELD_NOTES_JAVA_TRUSTSTORE:-}" ]]; then
+  [[ -r "$FIELD_NOTES_JAVA_TRUSTSTORE" ]] || { echo "Unreadable Java trust store: $FIELD_NOTES_JAVA_TRUSTSTORE" >&2; exit 1; }
+  SDKMANAGER_OPTS+=" -Djavax.net.ssl.trustStore=$FIELD_NOTES_JAVA_TRUSTSTORE"
+fi
 "$ANDROID_HOME/cmdline-tools/19.0/bin/sdkmanager" "${args[@]}" 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools' 'ndk;28.2.13676358' < <(printf 'y\n%.0s' {1..30})
