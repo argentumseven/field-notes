@@ -7,22 +7,16 @@ import argparse, fcntl, getpass, grp, hashlib, ipaddress, json, os, pathlib, pwd
 sys.dont_write_bytecode = True
 from server_installation import Host, inventory, digest, UNITS, uninstall_wrapper
 
-DEFAULT_WIREGUARD_PORT = 49272  # One above Bungee's documented example, 49271.
-
 def arguments():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--apply', action='store_true')
     p.add_argument('--plan', action='store_true')
     p.add_argument('--lan-ip', required=True)
     p.add_argument('--lan-prefix', required=True)
-    p.add_argument('--web-port', type=int, help='LAN management HTTPS port (suggested: 9443)')
+    p.add_argument('--web-port', type=int, help='Chosen LAN management HTTPS port (no default)')
     p.add_argument('--endpoint', help='Reachable home DDNS/IP, optionally :external-port; omitted port follows your WireGuard choice')
     p.add_argument('--hostname', default='notes.home.arpa')
-    ports = p.add_mutually_exclusive_group()
-    ports.add_argument('--udp-port', type=int,
-                       help=f'WireGuard UDP port (default: {DEFAULT_WIREGUARD_PORT})')
-    ports.add_argument('--bungee-port', type=int,
-                       help='Choose the WireGuard port immediately above this Bungee UDP port')
+    p.add_argument('--udp-port', type=int, help='Chosen WireGuard transport UDP port (no default)')
     p.add_argument('--prefix', default='/opt/field-notes')
     p.add_argument('--data', default='/var/lib/field-notes')
     p.add_argument('--config', default='/etc/field-notes')
@@ -33,44 +27,31 @@ def arguments():
     mode.add_argument('--non-interactive', dest='interactive', action='store_false', help='Use explicit port options for --apply; preview defaults in --plan')
     return p.parse_args()
 
-def prompt_port(label, suggested, management=False):
+def prompt_port(label, management=False):
     while True:
-        print(f'{label} [{suggested}]: ', end='', file=sys.stderr, flush=True)
+        print(f'{label} (1024–65535, required): ', end='', file=sys.stderr, flush=True)
         try:
-            raw = input().strip() or str(suggested)
+            raw = input().strip()
         except EOFError as error:
-            raise ValueError('Port selection needs a terminal, or explicit --web-port and --udp-port/--bungee-port options.') from error
+            raise ValueError('Port selection requires a terminal, or explicit --web-port and --udp-port options.') from error
         if raw.isascii() and raw.isdigit() and 1024 <= int(raw) <= 65535 and not (management and int(raw) == 8443):
             return int(raw)
-        print('Choose a port from 1024 to 65535; management cannot use the reserved inner API port 8443.', file=sys.stderr)
+        print('Enter a port from 1024 to 65535; management cannot use the reserved inner API port 8443.', file=sys.stderr)
 
 def select_ports(a):
     interactive = a.interactive if a.interactive is not None else sys.stdin.isatty()
-    web_chosen = a.web_port is not None
-    udp_chosen = a.udp_port is not None or a.bungee_port is not None
     if interactive:
-        if not web_chosen:
-            a.web_port = prompt_port('Management HTTPS port (LAN only)', 9443, management=True)
-            web_chosen = True
-        if not udp_chosen:
-            a.udp_port = prompt_port('WireGuard UDP port (router forwarding)', DEFAULT_WIREGUARD_PORT)
-            udp_chosen = True
-    if a.apply and not (web_chosen and udp_chosen):
-        raise ValueError('Choose both ports during install: use a terminal/--interactive, or provide --web-port plus --udp-port (or --bungee-port).')
-    if a.web_port is None:
-        a.web_port = 9443
-    if a.bungee_port is not None:
-        if not 1023 <= a.bungee_port < 65535:
-            raise ValueError('Bungee port must leave an adjacent unprivileged port above it; otherwise choose --udp-port explicitly')
-        a.udp_port = a.bungee_port + 1
-    elif a.udp_port is None:
-        a.udp_port = DEFAULT_WIREGUARD_PORT
-    return web_chosen and udp_chosen
+        if a.web_port is None:
+            a.web_port = prompt_port('Management HTTPS port (LAN only)', management=True)
+        if a.udp_port is None:
+            a.udp_port = prompt_port('WireGuard UDP port (router forwarding)')
+    if a.web_port is None or a.udp_port is None:
+        raise ValueError('Choose both ports: use a terminal/--interactive or provide --web-port and --udp-port explicitly.')
 
 def checked(cmd,**kwargs):return subprocess.run(cmd,check=True,**kwargs)
 def main():
     a=arguments()
-    ports_chosen=select_ports(a)
+    select_ports(a)
     lan=ipaddress.IPv4Address(a.lan_ip);prefix=ipaddress.IPv4Network(a.lan_prefix);overlay=ipaddress.IPv4Network(a.overlay)
     private=[ipaddress.IPv4Network(x) for x in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')]
     if not any(prefix.subnet_of(n) for n in private) or lan not in prefix or not any(overlay.subnet_of(n) for n in private) or overlay.prefixlen!=24 or overlay.overlaps(prefix):raise ValueError('Use a private LAN address within its prefix and a nonoverlapping private /24 overlay.')
@@ -94,7 +75,7 @@ def main():
         if ipaddress.ip_address(ip) in overlay:raise ValueError('Overlay conflicts with host addresses')
     root=pathlib.Path(__file__).resolve().parents[1]
     binary=pathlib.Path(a.binary) if a.binary else (root/'field-notes-server' if (root/'field-notes-server').exists() else root/'target/release/field-notes-server')
-    plan={'port_selection':'Chosen' if ports_chosen else 'Default preview; choose both ports interactively or with explicit flags before --apply','apply_port_options':f'--web-port {a.web_port} --udp-port {a.udp_port}','runtime':'containers','requires':['Docker Engine (rootful)','Docker Compose 2.24+','WireGuard kernel support'],'binary':str(binary),'lan_admin':f'https://{lan}:{a.web_port} (source {prefix})','device_api':f'https://{overlay.network_address+1}:8443','wireguard_endpoint':endpoint,'router_forward':f'UDP {external_port} to {lan}:{a.udp_port}','directories':[str(p) for p in destinations],'services':['field-notes','field-notes-peers.timer','field-notes-certificates.timer'],'no_public_web':True,'remote_access':bool(a.endpoint),'endpoint_note':f'Provide --endpoint your-home-DDNS:{a.udp_port} for access away from home; the LAN UDP alternative is enrolled automatically.'}
+    plan={'port_selection':'Chosen','apply_port_options':f'--web-port {a.web_port} --udp-port {a.udp_port}','runtime':'containers','requires':['Docker Engine (rootful)','Docker Compose 2.24+','WireGuard kernel support'],'binary':str(binary),'lan_admin':f'https://{lan}:{a.web_port} (source {prefix})','device_api':f'https://{overlay.network_address+1}:8443','wireguard_endpoint':endpoint,'router_forward':f'UDP {external_port} to {lan}:{a.udp_port}','directories':[str(p) for p in destinations],'services':['field-notes','field-notes-peers.timer','field-notes-certificates.timer'],'no_public_web':True,'remote_access':bool(a.endpoint),'endpoint_note':f'Provide --endpoint your-home-DDNS:{a.udp_port} for access away from home; the LAN UDP alternative is enrolled automatically.'}
     if not a.apply:print(json.dumps(plan,indent=2));return
     if os.geteuid()!=0:raise ValueError('--apply requires root; review --plan first')
     for destination in destinations:host.check_parents(str(destination))
