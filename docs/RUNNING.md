@@ -12,55 +12,45 @@ and kernel WireGuard support. See [CONTAINERS.md](CONTAINERS.md) for prerequisit
 and the isolation policy. Build on Linux with local Docker or unpack the matching
 Linux server bundle; both offline images are included:
 
-```sh
-bash scripts/build/android.sh debug
-bash scripts/build/server.sh
-# Or extract dist/server/field-notes-0.3.3-linux-x86_64.tar.gz on the Linux host.
+Build the complete server bundle first, or unpack a matching Linux release bundle.
+Then, as root, launch the guided installation:
 
-sudo bash scripts/install-server.sh --plan \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net
-sudo bash scripts/install-server.sh --apply \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net
+```sh
+bash scripts/install-server.sh --apply
 ```
 
-Replace example addresses/domain with yours. Reserve the server's LAN address
-on your router. Select a private /24 overlay with `--overlay` if `10.82.0.0/24`
-overlaps Bungee/your LAN/VPN. Supply a publicly reachable endpoint to use phones
-away from home; omitting it produces a clearly labeled LAN-only installation.
-The installer asks for **both ports** when run from a terminal:
+The installer prompts for a LAN IPv4 address, trusted LAN CIDR, optional public
+DDNS/IP endpoint (blank for LAN-only), optional WireGuard private /24 overlay
+(blank for the generic `10.82.0.0/24`), and the two required ports:
 
 ```text
 Management HTTPS port (LAN only) (1024–65535, required):
 WireGuard UDP port (router forwarding) (1024–65535, required):
 ```
 
-Enter both port numbers yourself; blank input is rejected. Port 8443 is
-reserved for the inner device API and cannot be used for management HTTPS.
-`--plan --interactive` opens the same no-write port wizard.
-The plan reports `apply_port_options`; repeat those
-`--web-port` and `--udp-port` values with `--apply` to use exactly the reviewed
-choices. Flags skip their corresponding questions. For example:
+Both port numbers must be entered explicitly. Neither has a default or a value
+derived from another application. TCP 8443 is reserved for the inner API and
+cannot be chosen for management. Use an overlay that does not overlap the LAN,
+Docker networks or any other VPN.
+
+Before any changes, `--apply` prints the complete plan and requires typing
+`INSTALL`. An unconfirmed operation exits without changes. To inspect the
+configuration without installing:
 
 ```sh
-sudo bash scripts/install-server.sh --apply \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --web-port 10443 --udp-port 43127 \
-  --endpoint your-home.example.net
+bash scripts/install-server.sh --plan
 ```
 
-That example serves LAN management at `https://192.168.1.10:10443`.
-A nonterminal plan or apply call requires both explicit port options; neither
-command chooses defaults.
-Owner name/password prompts remain separate; no command-line password is used.
-The owner password is selected and confirmed during installation, using hidden
-terminal input. The server stores a salted Argon2id hash, not a recoverable
-password. It is the login for the web manager as well as the household website.
-Review `--plan` before applying. Supply `--endpoint your-home.example.net`
-without a port to follow your WireGuard selection automatically. An explicit
-`:port` selects the router's external port; if it differs from the local UDP
-listener, the plan prints the exact external-to-internal NAT mapping.
+The no-write preview prompts for missing information too. In automation, provide
+`--lan-ip`, `--lan-prefix`, `--web-port` and `--udp-port`; `--endpoint` and
+`--overlay` are optional. Explicit flags skip the corresponding prompts.
+A bare endpoint hostname automatically uses the WireGuard port you selected.
+An endpoint with an explicit external `:port` causes the plan to show any
+different router NAT mapping.
+
+The initial owner username/password are entered during installation; passwords
+are not passed in command-line flags. A fresh installer refuses to overwrite an
+existing installation or migration state.
 
 There are three separate listeners:
 
