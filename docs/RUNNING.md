@@ -38,6 +38,13 @@ For a complete prebuilt release bundle (no source build):
 bash scripts/install-server.sh --apply
 ```
 
+The listener IP identifies the private server interface to bind. The trusted
+LAN CIDR identifies the **source addresses allowed to use the admin website**;
+it may be on a different routed network or VLAN. Do not change the allowed
+source CIDR to the server's interface subnet unless those are actually the
+administrator clients you intend to authorize. Ensure routing/firewall rules
+allow those source IPs to reach the server without rewriting their addresses.
+
 The installer prompts for a LAN IPv4 address, trusted LAN CIDR, optional public
 DDNS/IP endpoint (blank for LAN-only), optional WireGuard private /24 overlay
 (blank for the generic `10.82.0.0/24`), and the two required ports:
