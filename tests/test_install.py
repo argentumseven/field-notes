@@ -8,17 +8,17 @@ class Plan(unittest.TestCase):
  def explicit(self,*extra):
   return self.run_plan('--web-port',WEB,'--udp-port',UDP,*extra)
  def test_fully_interactive_plan_prompts_for_network_and_ports(self):
-  answer='192.168.1.10\\n192.168.1.0/24\\n\\n\\n'+WEB+'\\n'+UDP+'\\n'
+  answer='192.168.1.10\n192.168.1.0/24\n\n\n'+WEB+'\n'+UDP+'\n'
   r=subprocess.run(['python3','scripts/install-server.py','--plan','--interactive'],cwd=ROOT,text=True,capture_output=True,input=answer)
   self.assertEqual(r.returncode,0,r.stderr);plan=json.loads(r.stdout)
-  self.assertIn('Server LAN IPv4 address',r.stdout)
+  self.assertIn('Server LAN IPv4 address',r.stderr)
   self.assertIn('Management HTTPS port',r.stderr)
   self.assertEqual(plan['router_forward'],'UDP '+UDP+' to 192.168.1.10:'+UDP)
  def test_missing_network_requires_flags_in_noninteractive_mode(self):
   r=subprocess.run(['python3','scripts/install-server.py','--plan','--non-interactive'],cwd=ROOT,text=True,capture_output=True)
   self.assertNotEqual(r.returncode,0);self.assertIn('Choose both LAN settings',r.stderr)
  def test_unconfirmed_apply_makes_no_changes(self):
-  answer='192.168.1.10\\n192.168.1.0/24\\n\\n\\n'+WEB+'\\n'+UDP+'\\nNO\\n'
+  answer='192.168.1.10\n192.168.1.0/24\n\n\n'+WEB+'\n'+UDP+'\nNO\n'
   r=subprocess.run(['python3','scripts/install-server.py','--apply','--interactive'],cwd=ROOT,text=True,capture_output=True,input=answer)
   # Safe cancellation occurs before any privileged install work.
   self.assertEqual(r.returncode,0,r.stderr);self.assertIn('Installation cancelled',r.stdout)
