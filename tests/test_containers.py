@@ -77,6 +77,22 @@ class Containers(unittest.TestCase):
         self.assertEqual(app['environment']['HTTPS_PROXY'],'');self.assertEqual(gateway_['dns'],['127.0.0.1'])
         self.assertIn('--container-network',app['command']);self.assertIn('10.82.0.1:8443',app['command'])
 
+    def test_routed_administrator_vlan_is_independent_of_bind_ip(self):
+        c={**settings(),'lan_ip':'192.168.50.10','lan_prefix':'192.168.20.0/24'}
+        value=compose(c)
+        gateway_=value['services']['gateway']
+        app=value['services']['app']
+        self.assertIn('192.168.50.10:10443:10443/tcp',gateway_['ports'])
+        self.assertEqual(app['command'][app['command'].index('--admin-allow')+1],
+                         '192.168.20.0/24')
+        firewall=gateway.rules(c)
+        self.assertIn('ip saddr 192.168.20.0/24 tcp dport 10443 accept',firewall)
+
+    def test_management_listener_must_still_be_private_and_outside_overlay(self):
+        for ip in ('203.0.113.10','10.82.0.10'):
+            with self.assertRaises(ValueError):
+                validate({**settings(),'lan_ip':ip,'lan_prefix':'192.168.20.0/24'})
+
     def test_invalid_sources_overlay_ports_root_user_and_mutable_images_refuse(self):
         for changes in [{'uid':0},{'lan_prefix':'0.0.0.0/0'},{'overlay':'192.168.1.0/24'}, {'web_port':8443},{'images':{'app':'latest','gateway':'latest'}},{'project':'bungee'}]:
             with self.assertRaises(ValueError):validate({**settings(),**changes})
