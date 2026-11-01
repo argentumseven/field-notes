@@ -35,8 +35,12 @@ def validate(settings):
     lan=ipaddress.IPv4Address(settings['lan_ip']);prefix=ipaddress.IPv4Network(settings['lan_prefix'])
     overlay=ipaddress.IPv4Network(settings['overlay'])
     private=[ipaddress.IPv4Network(value) for value in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')]
-    if lan not in prefix or not any(prefix.subnet_of(value) for value in private) or overlay.prefixlen!=24 or not any(overlay.subnet_of(value) for value in private) or overlay.overlaps(prefix):
-        raise ValueError('Use separate private management and tunnel networks')
+    # Bind on the host's private LAN address; authorize clients by their
+    # independent, possibly routed VLAN/source network.
+    if not any(lan in value for value in private) or not any(prefix.subnet_of(value) for value in private):
+        raise ValueError('Management bind IP and allowed source CIDR must be private (RFC 1918)')
+    if overlay.prefixlen != 24 or not any(overlay.subnet_of(value) for value in private) or overlay.overlaps(prefix) or lan in overlay:
+        raise ValueError('Use a separate private WireGuard /24 overlay')
     for field in ('uid','gid'):
         if type(settings[field]) is not int or settings[field]<=0:
             raise ValueError('App must run as a nonroot identity')
