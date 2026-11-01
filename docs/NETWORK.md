@@ -56,11 +56,13 @@ through the alternative after a connection failure. HTTP authorization failures
 do not trigger this retry. There is no plaintext, public HTTP or relay fallback.
 Without `--endpoint`, installation is LAN-only and the plan says so.
 
-Forward only that UDP port to the Linux host. Both management HTTPS and WireGuard UDP ports are chosen during installation;
-the terminal installer prompts for each missing choice. Only the selected UDP
-port is a router-forwarding candidate. No port is suggested or derived from another service. Enter both ports
-interactively or use `--web-port` and `--udp-port` explicitly.
-See the [router forwarding rule](RUNNING.md#fresh-home-server). CGNAT, double NAT, ISP UDP filtering,
+Forward only that UDP port to the Linux host. Both management HTTPS and
+WireGuard UDP ports are chosen explicitly during installation; the terminal
+installer prompts for each missing choice. No port is suggested or derived
+from another service. Enter both ports interactively or use `--web-port`
+and `--udp-port` explicitly. Only the selected UDP port is a router-forwarding
+candidate. See the [router forwarding rule](RUNNING.md#fresh-home-server).
+CGNAT, double NAT, ISP UDP filtering,
 captive portals, dynamic addresses and an active VPN can prevent reachability.
 A WireGuard hub supplies neither rendezvous nor automatic NAT traversal. DNS for
 DDNS uses the OS network policy and discloses endpoint lookup metadata. Choose a
