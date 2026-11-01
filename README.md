@@ -75,16 +75,19 @@ bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 ```
 
-On your Debian/Ubuntu host, review then apply the installer, using your own LAN
-and reachable home DDNS/IP endpoint:
+On your Debian/Ubuntu host, launch the interactive installer as root after building
+or unpacking the complete server bundle:
 
 ```sh
-sudo bash scripts/install-server.sh --plan \
-  --lan-ip 192.168.1.10 --lan-prefix 192.168.1.0/24 \
-  --endpoint your-home.example.net
-# Choose both ports at the prompts; repeat the reported apply_port_options
-# with --apply after reviewing the plan.
+bash scripts/install-server.sh --apply
 ```
+
+Enter your LAN address/subnet, optional reachable DDNS/IP and overlay subnet, and
+both management HTTPS and WireGuard UDP ports when prompted. Neither port has a
+suggested/default value. Review the printed plan and type `INSTALL` to proceed.
+For a no-write preview use `bash scripts/install-server.sh --plan`.
+Noninteractive installations may pass explicit `--lan-ip`, `--lan-prefix`,
+`--web-port` and `--udp-port` flags, plus optional `--endpoint`/`--overlay`.
 
 Forward the **WireGuard UDP port you choose** to the Linux server.
 See the [router forwarding instructions](docs/RUNNING.md#fresh-home-server).
