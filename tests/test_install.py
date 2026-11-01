@@ -7,6 +7,15 @@ class Plan(unittest.TestCase):
   return subprocess.run(['python3','scripts/install-server.py','--plan','--lan-ip','192.168.1.10','--lan-prefix','192.168.1.0/24',*extra],cwd=ROOT,text=True,capture_output=True,input=input)
  def explicit(self,*extra):
   return self.run_plan('--web-port',WEB,'--udp-port',UDP,*extra)
+ def test_no_argument_entrypoint_launches_guided_source_install(self):
+  script=(ROOT/'scripts/install-server.sh').read_text()
+  self.assertIn('--apply --build-from-source --interactive',script)
+  self.assertIn('if (( $# == 0 ))',script)
+ def test_source_build_is_not_attempted_before_confirmation(self):
+  answer='192.168.1.10\\n192.168.1.0/24\\n\\n\\n'+WEB+'\\n'+UDP+'\\nNO\\n'
+  r=subprocess.run(['python3','scripts/install-server.py','--apply','--build-from-source','--interactive'],cwd=ROOT,text=True,capture_output=True,input=answer)
+  self.assertEqual(r.returncode,0,r.stderr)
+  self.assertIn('Installation cancelled',r.stdout)
  def test_fully_interactive_plan_prompts_for_network_and_ports(self):
   answer='192.168.1.10\n192.168.1.0/24\n\n\n'+WEB+'\n'+UDP+'\n'
   r=subprocess.run(['python3','scripts/install-server.py','--plan','--interactive'],cwd=ROOT,text=True,capture_output=True,input=answer)
