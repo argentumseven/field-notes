@@ -75,19 +75,21 @@ bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 ```
 
-On your Debian/Ubuntu host, launch the interactive installer as root after building
-or unpacking the complete server bundle:
+On your Debian/Ubuntu x86_64 server, after cloning the repository, run as root:
 
 ```sh
-bash scripts/install-server.sh --apply
+bash scripts/install-server.sh
 ```
 
-Enter your LAN address/subnet, optional reachable DDNS/IP and overlay subnet, and
-both management HTTPS and WireGuard UDP ports when prompted. Neither port has a
-suggested/default value. Review the printed plan and type `INSTALL` to proceed.
-For a no-write preview use `bash scripts/install-server.sh --plan`.
-Noninteractive installations may pass explicit `--lan-ip`, `--lan-prefix`,
-`--web-port` and `--udp-port` flags, plus optional `--endpoint`/`--overlay`.
+The guided installer asks for LAN details, optional remote endpoint and private
+overlay, and both ports (no suggested values). Review the plan and type
+`INSTALL`. It then prepares the pinned toolchains, builds the matching
+signed development Android APK and server/offline Docker images, and installs
+the stack. Docker Engine/Compose and basic build prerequisites must already
+work on the host. A no-write preview uses
+`bash scripts/install-server.sh --plan`; for a prebuilt verified server
+bundle use `bash scripts/install-server.sh --apply`.
+Never commit operator signing keys or place installation secrets in Git.
 
 Forward the **WireGuard UDP port you choose** to the Linux server.
 See the [router forwarding instructions](docs/RUNNING.md#fresh-home-server).
