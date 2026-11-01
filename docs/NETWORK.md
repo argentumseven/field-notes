@@ -28,10 +28,10 @@ Established replies remain allowed. See [CONTAINERS.md](CONTAINERS.md).
 
 | Source | Allowed destination |
 | --- | --- |
-| Internet | The selected WireGuard UDP port only (default 49272) |
+| Internet | The selected WireGuard UDP port only (operator-selected) |
 | Enrolled phone peer | Exactly overlay server `.1`, TCP 8443, device routes and device-bound authentication |
 | Phone interface | No LAN/admin, SSH, other host services, peer-to-peer, IPv6 or forwarded Internet traffic |
-| Selected management LAN CIDR | Management IP:chosen HTTPS port (suggested 9443); login, roles, CSRF and recent admin reauthentication still apply |
+| Selected management LAN CIDR | Management IP:chosen HTTPS port (operator-selected); login, roles, CSRF and recent admin reauthentication still apply |
 
 The installer generates nftables input/forward isolation before starting
 WireGuard. Peer traffic to every other host port/address is dropped, including
@@ -58,11 +58,9 @@ Without `--endpoint`, installation is LAN-only and the plan says so.
 
 Forward only that UDP port to the Linux host. Both management HTTPS and WireGuard UDP ports are chosen during installation;
 the terminal installer prompts for each missing choice. Only the selected UDP
-port is a router-forwarding candidate. The suggestion is **UDP 49272**, one
-above Bungee's documented example **UDP 49271**; Bungee requires an explicit
-operator choice. Use `--bungee-port <actual-port>` to select one higher, or
-`--udp-port <port>` for another unused listener. See the concrete
-[router forwarding rule](RUNNING.md#fresh-home-server). CGNAT, double NAT, ISP UDP filtering,
+port is a router-forwarding candidate. No port is suggested or derived from another service. Enter both ports
+interactively or use `--web-port` and `--udp-port` explicitly.
+See the [router forwarding rule](RUNNING.md#fresh-home-server). CGNAT, double NAT, ISP UDP filtering,
 captive portals, dynamic addresses and an active VPN can prevent reachability.
 A WireGuard hub supplies neither rendezvous nor automatic NAT traversal. DNS for
 DDNS uses the OS network policy and discloses endpoint lookup metadata. Choose a
