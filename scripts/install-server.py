@@ -50,7 +50,8 @@ def select_ports(a, interactive):
 def prompt_required(label, validator):
     while True:
         try:
-            raw = input(f'{label} (required): ').strip()
+            print(f'{label} (required): ', end='', file=sys.stderr, flush=True)
+            raw = input().strip()
         except EOFError as error:
             raise ValueError('Network settings require a terminal, or explicit --lan-ip and --lan-prefix options.') from error
         if raw:
@@ -63,7 +64,8 @@ def prompt_required(label, validator):
 
 def prompt_optional(label):
     try:
-        return input(label).strip() or None
+        print(label, end='', file=sys.stderr, flush=True)
+        return input().strip() or None
     except EOFError as error:
         raise ValueError('Complete the interactive network questions, or supply the settings explicitly.') from error
 
