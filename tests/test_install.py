@@ -7,6 +7,23 @@ class Plan(unittest.TestCase):
   return subprocess.run(['python3','scripts/install-server.py','--plan','--lan-ip','192.168.1.10','--lan-prefix','192.168.1.0/24',*extra],cwd=ROOT,text=True,capture_output=True,input=input)
  def explicit(self,*extra):
   return self.run_plan('--web-port',WEB,'--udp-port',UDP,*extra)
+ def test_missing_build_prerequisites_are_installed_after_confirmation(self):
+  import sys
+  from unittest import mock
+  sys.path.insert(0,str(ROOT/'scripts'))
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('fieldnotes_installer',ROOT/'scripts/install-server.py')
+  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  installed=[False]
+  def which(name):
+   return None if not installed[0] and name in ('npm','cc','make') else '/usr/bin/'+name
+  def fake_checked(cmd):
+   if cmd[:3]==['apt-get','install','-y']:installed[0]=True
+  with mock.patch.object(module.shutil,'which',side_effect=which):
+   with mock.patch.object(module,'checked',side_effect=fake_checked) as run:
+    module.ensure_build_prerequisites()
+    self.assertEqual(run.call_args_list[0].args[0],['apt-get','update'])
+    self.assertEqual(run.call_args_list[1].args[0],['apt-get','install','-y','--no-install-recommends','npm','build-essential'])
  def test_no_argument_entrypoint_launches_guided_source_install(self):
   script=(ROOT/'scripts/install-server.sh').read_text()
   self.assertIn('--apply --build-from-source --interactive',script)
