@@ -26,9 +26,24 @@ unexported, screenshot-protected and does not save barcode images or upload fram
 
 The first new emulator camera-return check queried Compose before its root had
 reattached and the suite timed out. Its polling now waits through that transition;
-the disposable AVD was rebooted without wiping. That runtime rerun is pending.
+the disposable AVD was rebooted without wiping. The rerun was blocked by missing
+emulated Wi-Fi, failed Android service calls and a subsequent APK-install timeout;
+the three new camera/review runtime checks are **not recorded as passing**. The
+prior four vault checks and first-launch UI check completed before that failure.
 Physical GrapheneOS camera optics/permissions remain unverified. Existing
 single-use, approval, TLS pinning and tunnel restrictions are not bypassed.
+
+The clean `v0.3.5` source is `6519e66227e6df9f7283f9a8e1f654af9bc16cd6`.
+[Public APK publication run 41460013187](https://github.com/argentumseven/field-notes/actions/runs/41460013187)
+succeeded. All four downloaded release assets matched their verified local
+counterparts byte for byte; the README's latest-download URL returned the same
+APK. Its SHA-256 is
+`e223190adda1134e9130d60c749f00f7b21ab4e0e76ccc91b724c780cd103890`,
+with the retained public signer, release variant, code 8 and clean source metadata.
+The downloaded package independently passed signature and native/manifest checks.
+The offline server bundle carries matching APK metadata. Signing keys are absent
+from both payload branch and release assets. Existing operators with a different
+original signer must use their paired server's same-signer source build.
 
 ## 0.3.4 browser sessions and public APK delivery
 
