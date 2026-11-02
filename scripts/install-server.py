@@ -215,8 +215,8 @@ def main():
     password=prompt('Initial web management owner password (12+ characters): ',secret=True)
     if len(password.encode())<12 or len(password.encode())>256:raise ValueError('Password length must be 12–256 bytes')
     if password!=prompt('Confirm password: ',secret=True):raise ValueError('Passwords do not match')
-    name=prompt('Owner user name [admin]: ').strip() or 'admin'
-    if not re.fullmatch(r'[A-Za-z0-9._ -]{2,64}',name):raise ValueError('Use an owner name with 2–64 letters, numbers, spaces, dots, underscores or hyphens')
+    owner_name=prompt('Owner user name [admin]: ').strip() or 'admin'
+    if not re.fullmatch(r'[A-Za-z0-9._ -]{2,64}',owner_name):raise ValueError('Use an owner name with 2–64 letters, numbers, spaces, dots, underscores or hyphens')
     from container_deployment import Engine,compose,validate as validate_deployment
     engine=Engine()
     info=engine.read(['info','--format','{{json .}}'])
@@ -243,9 +243,9 @@ def main():
     with image_archive.open('rb') as archive:
         if hashlib.file_digest(archive,'sha256').hexdigest()!=expected:raise ValueError('Offline container archive checksum does not match')
     # A selected namespace must be free; never adopt or remove another project.
-    for kind,name in [('container','field-notes-app'),('container','field-notes-gateway'),('network','field-notes')]:
-        docker_args=[kind,'ls']+(['--all'] if kind=='container' else [])+['--filter','name=^'+('/' if kind=='container' else '')+name+'$','--format','{{.ID}}']
-        if engine.call(docker_args).stdout.strip():raise ValueError('Existing container resource refused: '+name)
+    for resource_kind,resource_name in [('container','field-notes-app'),('container','field-notes-gateway'),('network','field-notes')]:
+        docker_args=[resource_kind,'ls']+(['--all'] if resource_kind=='container' else [])+['--filter','name=^'+('/' if resource_kind=='container' else '')+resource_name+'$','--format','{{.ID}}']
+        if engine.call(docker_args).stdout.strip():raise ValueError('Existing container resource refused: '+resource_name)
     checked(['apt-get','update']);checked(['apt-get','install','-y','wireguard-tools','openssl','kmod'])
     checked(['modprobe','wireguard'])
     install,data,config=destinations
@@ -284,7 +284,7 @@ def main():
             '--security-opt=no-new-privileges:true','--user',f'{user.pw_uid}:{user.pw_gid}',
             '--mount',f'type=bind,source={data},target=/state',
             '--mount',f'type=bind,source={key_directory},target=/keys',settings['images']['app'],
-            'init','--data','/state','--key-file','/keys/master.key','--name',name],input=password)
+            'init','--data','/state','--key-file','/keys/master.key','--name',owner_name],input=password)
         os.replace(pathlib.Path(key_directory)/'master.key',config/'master.key')
     # Directories need traversal; attachments must remain writable by the app.
     for folder,dirs,files in os.walk(data):
@@ -374,6 +374,7 @@ WantedBy=timers.target
         with os.fdopen(fd,'w') as unit_file:unit_file.write(contents)
     checked(['systemd-analyze','verify',*[str(systemd/filename) for filename in units]])
     print('Management:',f'https://{lan}:{a.web_port}',flush=True)
+    print('Owner sign-in name:',owner_name,flush=True)
     print('Android APK:',f'https://{lan}:{a.web_port}/downloads/field-notes.apk',flush=True)
     print('Public CA:',config/'tls/ca.crt',flush=True)
     checked(['systemctl','daemon-reload']);checked(['systemctl','enable','--now','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
@@ -387,7 +388,7 @@ WantedBy=timers.target
             if lan not in prefix:
                 engine.check_management_locally(settings,(config/'tls/ca.crt').read_text(),version)
                 failure=None;break
-            request=urllib.request.Request(f'https://{lan}:{a.web_port}/api/login',data=json.dumps({'name':name,'password':password,'device':'Installer readiness check'}).encode(),headers={'Content-Type':'application/json'})
+            request=urllib.request.Request(f'https://{lan}:{a.web_port}/api/login',data=json.dumps({'name':owner_name,'password':password,'device':'Installer readiness check'}).encode(),headers={'Content-Type':'application/json'})
             with opener.open(request,timeout=3) as response:login=json.load(response)
             if login['actor']['role']!='owner':raise ValueError('Authenticated readiness returned an unexpected role')
             with opener.open(f'https://{lan}:{a.web_port}/api/snapshot',timeout=3) as response:snapshot=json.load(response)

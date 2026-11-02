@@ -74,6 +74,11 @@ def main():
             '--mount',f'type=bind,source={data},target=/state',
             '--mount',f'type=bind,source={config},target=/keys',images['app']['id'],
             'init','--data','/state','--key-file','/keys/master.key','--name','owner'],input='container-fixture-password-only')
+        # Match the installer's explicit post-init modes. Docker's default
+        # umask otherwise leaves SQLite at 0644 despite a private parent.
+        for folder,dirs,files in os.walk(data):
+            os.chmod(folder,0o700)
+            for filename in files:pathlib.Path(folder,filename).chmod(0o600)
         assert key.stat().st_mode&0o777==0o600 and key.stat().st_uid==os.getuid()
         with sqlite3.connect(data/'field-notes.sqlite3') as db:
             initial_hash=db.execute('SELECT hash FROM users WHERE name=?',('owner',)).fetchone()[0]
@@ -305,6 +310,31 @@ print('blocked')
         assert key.read_bytes()==saved_key and (config/'tls/ca.crt').read_bytes()==saved_ca
         print('PASS: root-owned TLS directory with a distinct app UID/GID serves pinned HTTPS and retains encrypted data, password and master/CA keys',flush=True)
         engine.stop(settings)
+        # Host-root account inspection drops to the app UID. A root-private
+        # ancestor must not prevent access through its deliberately passed FD.
+        read_settings={**settings,'prefix':'/program/field-notes','data':'/state/data','config':'/config/field-notes'}
+        read_code='''import importlib.util,json,sys
+sys.dont_write_bytecode=True
+sys.path.insert(0,'/helpers')
+from server_installation import Host
+spec=importlib.util.spec_from_file_location('recovery','/helpers/reset-password.py');recovery=importlib.util.module_from_spec(spec);spec.loader.exec_module(recovery)
+c=json.load(sys.stdin)
+record=dict(runtime='containers',phase='installed',docker={'settings':c},data=c['data'])
+rows=recovery.accounts(Host(root='/fixture'),record)
+assert rows==[dict(name='owner',role='owner',active=True)],rows
+print('names, roles and status only')
+'''
+        try:
+            result=engine.call(['run','--interactive','--rm','--network=none','--read-only','--cap-drop=ALL',
+                '--cap-add=DAC_OVERRIDE','--cap-add=SETUID','--cap-add=SETGID','--cap-add=SYS_CHROOT',
+                '--security-opt=no-new-privileges:true','--tmpfs=/fixture:mode=0700,size=8m',
+                '--mount','type=bind,source='+str(data)+',target=/fixture/state/data',
+                '--mount','type=bind,source='+str(HERE)+',target=/helpers,readonly',
+                '--entrypoint=python3',fixture_tag,'-B','-c',read_code],input=json.dumps(read_settings))
+        except subprocess.CalledProcessError as error:
+            print(error.stderr,file=sys.stderr);raise
+        assert result.stdout.strip()=='names, roles and status only'
+        print('PASS: root recovery lists the real store through a root-private ancestor as the app UID, without passwords, hashes or Docker socket access',flush=True)
         print('PASS: owned app/gateway/network removal leaves no deployment resources',flush=True)
     except Exception:
         if settings:

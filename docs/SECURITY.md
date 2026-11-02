@@ -48,6 +48,14 @@ browser sessions. It records a password-free event in the host authentication
 journal, separately from the encrypted in-app audit. It requires root and never
 exposes a network recovery endpoint. See [recovery](TROUBLESHOOTING.md).
 
+Recovery can inspect existing account names/roles/status without stopping the
+app or reading password hashes. Its reader confines its filesystem root to the
+data directory and drops to the app UID/GID with no supplementary groups before
+querying SQLite read-only. An explicit account rename and password replacement
+commit together, keep the original account ID/role/phone sessions, and refuse a
+name already held by an active or disabled account. Wrong names are rejected
+before password entry or service interruption.
+
 The container's master key is owned by its dedicated app UID with mode 0600,
 outside writable application state and mounted read-only. The host CA signing
 key and hub private key remain root-only and are excluded from the app. Retained

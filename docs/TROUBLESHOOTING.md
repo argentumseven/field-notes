@@ -12,6 +12,34 @@ accounts keep their selected names and roles; earlier installations may use
 does not pass through a shell. After repeated failures, login attempts are
 limited for five minutes.
 
+Earlier container installers reused the owner-name variable for Docker
+resource names. They could create the owner as **`field-notes`** even when
+`admin` or another name was entered. This is an installer bug, unrelated to
+password punctuation. The current installer preserves the chosen name.
+
+Inspect existing account names without entering a password or stopping services:
+
+```bash
+python3 /usr/local/src/field-notes/scripts/reset-password.py --list-users
+```
+
+This prints names, roles and active/disabled status only. It reads the database
+as the app UID and does not create an installation or reveal password hashes.
+Update the checkout with `git pull --ff-only` first if the option is unavailable.
+To repair the affected account and use the intended `admin` login:
+
+```bash
+cd /usr/local/src/field-notes
+git pull --ff-only
+python3 scripts/reset-password.py --name field-notes --rename-to admin
+```
+
+It prompts twice for a new password and changes the existing account's name
+and hash in one transaction. Its account ID, owner role, tasks, assignments,
+phone sessions and keys remain. It rejects another user's active or disabled
+name instead of taking it over, and never silently enables a disabled account.
+A wrong target name is rejected before password entry or service interruption.
+
 An authenticated user can use **Change password** in the website. Owners can
 reset another account in **Management → People** after confirming their own
 password. For a lost password, use local host-root recovery:

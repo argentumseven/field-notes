@@ -182,7 +182,10 @@ other administrators or owners. Changing your own password in the website requir
 the current password, including for an owner.
 
 The installer's suggested owner name is `admin`; existing accounts retain their
-selected names. A lost password can be reset locally by host root with
+selected names. Older container installers could accidentally create the owner
+as `field-notes`; inspect with `--list-users` and repair with
+`--name field-notes --rename-to admin` as described in the recovery guide.
+A lost password can be reset locally by host root with
 `python3 /opt/field-notes/reset-password.py --name admin`. Older installs can run
 the helper from the current source checkout without rebuilding. See
 [account/startup recovery](TROUBLESHOOTING.md).

@@ -10,6 +10,7 @@ import fcntl
 import json
 import os
 import pathlib
+import re
 import sqlite3
 import stat
 import subprocess
@@ -23,7 +24,68 @@ from server_installation import Host, load, digest, TIMERS
 from terminal_input import prompt, Cancelled
 
 
-def recover(host,record,name,password,engine=None):
+def accounts(host,record):
+    """Read names/roles/status as the app UID, without stopping it or reading hashes."""
+    if record is None or record['runtime']!='containers' or record['phase'] not in ('installing','installed'):
+        raise ValueError('An existing inventoried container installation is required')
+    settings=validate(record['docker']['settings'])
+    folder=os.open(host.path(record['data']),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        info=os.fstat(folder)
+        if info.st_uid!=settings['uid'] or info.st_mode&0o022:raise ValueError('Unsafe data directory ownership or permissions')
+        code='''import json,os,sqlite3,stat,sys
+from contextlib import closing
+os.fchdir(int(sys.argv[1]))
+if os.geteuid()==0:
+ try:
+  os.chroot('.');os.chdir('/')
+  os.setgroups([]);os.setgid(int(sys.argv[3]));os.setuid(int(sys.argv[2]))
+ except OSError:raise SystemExit(71)
+os.close(int(sys.argv[1]))
+info=os.stat('field-notes.sqlite3',follow_symlinks=False)
+if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_uid!=os.geteuid() or info.st_mode&0o077:
+ raise SystemExit(72)
+try:
+ with closing(sqlite3.connect('file:field-notes.sqlite3?mode=ro',uri=True,timeout=5)) as db:
+  db.execute('PRAGMA trusted_schema=OFF')
+  db.execute('PRAGMA temp_store=MEMORY')
+  rows=db.execute('SELECT name,role,active FROM users ORDER BY name COLLATE NOCASE').fetchall()
+except sqlite3.Error as error:
+ print(getattr(error,'sqlite_errorname','SQLITE_ERROR'));raise SystemExit(73)
+print(json.dumps([dict(name=n,role=r,active=bool(a)) for n,r,a in rows]))
+'''
+        if os.geteuid() not in (0,settings['uid']):raise ValueError('Run account inspection as host root')
+        try:
+            # Load the interpreter/SQLite before restricting its root to the
+            # data directory, then discard root and all supplementary groups.
+            # SQLite canonicalizes paths, so fchdir alone cannot support data
+            # beneath a root-private ancestor. No outside directory FDs or
+            # terminal input remain; only result/error pipes are inherited.
+            result=subprocess.run(['/usr/bin/python3','-I','-B','-c',code,str(folder),str(settings['uid']),str(settings['gid'])],pass_fds=(folder,),stdin=subprocess.DEVNULL,capture_output=True,text=True,check=True,timeout=10)
+        except subprocess.CalledProcessError as error:
+            if error.returncode==71:raise ValueError('Account inspection requires host-root permission to isolate the reader and drop privileges') from None
+            if error.returncode==72:raise ValueError('Unsafe database ownership, mode or link count') from None
+            if error.returncode==73:
+                reason=error.stdout.strip()
+                if not re.fullmatch(r'SQLITE_[A-Z_]+',reason):reason='SQLITE_ERROR'
+                raise ValueError('Cannot read installed accounts ('+reason+'); no installation was created') from None
+            raise ValueError('Cannot read installed accounts; check database ownership and schema. No installation was created.') from None
+        return json.loads(result.stdout)
+    finally:os.close(folder)
+
+
+def select_account(rows,name,rename_to=None):
+    # Match SQLite NOCASE: ASCII folds, other Unicode letters stay distinct.
+    def key(value):return ''.join(c.lower() if c.isascii() else c for c in value)
+    target=next((row for row in rows if key(row['name'])==key(name) and row['active']),None)
+    if target is None:raise ValueError('No active account with that name; no password changed. Use --list-users to see existing names.')
+    if rename_to is not None:
+        if not re.fullmatch(r'[A-Za-z0-9._ -]{2,64}',rename_to):raise ValueError('Use a new name with 2–64 letters, numbers, spaces, dots, underscores or hyphens')
+        if any(key(row['name'])==key(rename_to) and row is not target for row in rows):raise ValueError('That account name is already in use; no changes made')
+    return target
+
+
+def recover(host,record,name,password,engine=None,rename_to=None):
     if record is None or record['runtime']!='containers' or record['phase'] not in ('installing','installed'):
         raise ValueError('An existing inventoried container installation is required')
     if not 12<=len(password.encode())<=256 or '\n' in password or '\r' in password:
@@ -34,6 +96,8 @@ def recover(host,record,name,password,engine=None):
     for unit,expected in record['unit_hashes'].items():
         if digest(host.trusted('/etc/systemd/system/'+unit))!=expected:
             raise ValueError('Review changed service configuration before recovery: '+unit)
+    target=select_account(accounts(host,record),name,rename_to)
+    original_name=target['name'];final_name=rename_to if rename_to is not None else original_name
     engine=engine or Engine(runner=host.runner)
     engine.objects(settings);engine.verify_images(settings)
     # Hash in a disposable, disconnected container. No secret appears in argv,
@@ -62,12 +126,14 @@ def recover(host,record,name,password,engine=None):
             with closing(sqlite3.connect(database.as_uri()+'?mode=rw',uri=True,timeout=10)) as db:
                 with db:
                     db.execute('PRAGMA foreign_keys=ON');db.execute('BEGIN IMMEDIATE')
-                    target=db.execute('SELECT id FROM users WHERE name=? AND active=1',(name,)).fetchone()
+                    target=db.execute('SELECT id FROM users WHERE name=? AND active=1',(original_name,)).fetchone()
                     if target is None:raise ValueError('No active account with that name; no password changed')
                     uid=target[0]
-                    db.execute('UPDATE users SET hash=? WHERE id=?',(hashed,uid))
+                    conflict=db.execute('SELECT id FROM users WHERE name=?',(final_name,)).fetchone()
+                    if conflict is not None and conflict[0]!=uid:raise ValueError('That account name is already in use; no changes made')
+                    db.execute('UPDATE users SET name=?,hash=? WHERE id=?',(final_name,hashed,uid))
                     db.execute('DELETE FROM sessions WHERE user_id=? AND id NOT IN (SELECT session_id FROM device_sessions)',(uid,))
-                    db.execute('DELETE FROM login_limits WHERE key=?',('name:'+name.lower(),))
+                    db.execute('DELETE FROM login_limits WHERE key IN (?,?)',('name:'+original_name.lower(),'name:'+final_name.lower()))
         finally:
             # A stopped store may acquire root-created SQLite sidecars. Keep
             # these bounded known files usable by the original app identity.
@@ -81,23 +147,33 @@ def recover(host,record,name,password,engine=None):
         syslog.syslog(syslog.LOG_AUTHPRIV|syslog.LOG_NOTICE,'Field Notes: local root password recovery completed; browser sessions invalidated, phone pairings retained')
     finally:
         if restart:host.command(['/usr/bin/systemctl','start',*reversed(restart)])
+    return final_name
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',default='/etc/field-notes')
     parser.add_argument('--name',default='admin',help='Existing account name (default: admin)')
+    parser.add_argument('--list-users',action='store_true',help='Read existing names, roles and active status; no passwords or service interruption')
+    parser.add_argument('--rename-to',help='Also rename the selected account, keeping its ID, role and pairings')
     args=parser.parse_args()
     if os.geteuid()!=0:raise ValueError('Run local password recovery as root')
     host=Host();record=load(host,args.config)
+    if args.list_users:
+        if args.rename_to is not None:raise ValueError('--list-users cannot rename an account')
+        rows=accounts(host,record)
+        for row in rows:print(json.dumps(row['name'])+' · '+row['role']+' · '+('active' if row['active'] else 'disabled'))
+        if not rows:print('No existing accounts. No installation was created.')
+        return
+    select_account(accounts(host,record),args.name,args.rename_to)
     password=prompt('New password (12+ characters; Escape cancels): ',secret=True)
     if password!=prompt('Confirm new password: ',secret=True):raise ValueError('Passwords do not match; nothing changed')
     lock=os.open(host.path(args.config+'/lifecycle.lock'),os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o600)
     try:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        recover(host,record,args.name,password)
+        final_name=recover(host,record,args.name,password,rename_to=args.rename_to)
     finally:os.close(lock)
-    print('Password changed. Sign in as '+args.name+'. Existing phone pairings and tasks are retained.')
+    print('Password changed. Sign in as '+final_name+'. Existing phone pairings and tasks are retained.')
 
 
 if __name__=='__main__':
