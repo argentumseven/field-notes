@@ -1,11 +1,9 @@
 name: Publish signed Android APK
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing source tag, such as v0.3.3
+        description: Existing source tag, such as v0.3.4 (manual operator-key build)
         required: true
 permissions:
   contents: read
@@ -21,7 +19,7 @@ jobs:
       FIELD_NOTES_TOOLS: ${{ runner.temp }}/field-notes-tools
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
@@ -77,7 +75,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0

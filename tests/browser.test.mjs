@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {mkdir} from 'node:fs/promises';
 import {fixture,password} from './support.mjs';
+test('an accepted password without a retained session shows an error and keeps the username',async()=>{
+ const f=await fixture({enrollment:true});let browser;
+ try{
+  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+  const page=await browser.newPage();
+  await page.route('**/api/session',route=>route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({error:'Sign in required'})}));
+  await page.goto(f.admin);await page.getByLabel('User name',{exact:true}).fill('owner');await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Your password was accepted, but the browser session could not be confirmed.'}).waitFor();
+  assert.equal(await page.getByLabel('User name',{exact:true}).inputValue(),'owner');
+  assert.equal(await page.getByLabel('Password',{exact:true}).inputValue(),'','accepted secret is cleared');
+  await page.unroute('**/api/session');await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('heading',{name:'Focus',exact:true}).waitFor();
+ }finally{await browser?.close();await f.close();}
+});
 test('APK action stays visible on sign-in when metadata fails or the bundle is absent',async()=>{
  const f=await fixture({downloads:null});let browser;
  try{

@@ -1,5 +1,11 @@
 # Get the Android app
 
+[**Download the latest public APK**](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk) · [Release/checksums](https://github.com/argentumseven/field-notes/releases/latest)
+
+Existing phones should use their paired server's APK updates when it uses a
+different signing key. A public APK cannot replace another signer in place;
+keep the original signer and queued work.
+
 The Linux server bundle includes its matching signed ARM64 Android APK. On home
 Wi-Fi, open your trusted management URL in the phone browser. **Download APK**
 appears on Sign in and in Management, with checksum and signing-certificate
@@ -7,14 +13,15 @@ links. Download, verify, temporarily allow installation from that browser/file
 manager, install, then [enroll the phone](ENROLLMENT.md). No SDK, developer mode,
 Google account, store or public service is required on the installed server or phone.
 
-The standalone build is also available at
-`dist/android/field-notes-0.3.3-android-arm64-debug.apk`, with `.sha256` and
+The public APK uses the release variant and the pinned public certificate. A
+local development build is also available at
+`dist/android/field-notes-0.3.4-android-arm64-debug.apk`, with `.sha256` and
 `.signer.txt` alongside. This is a signed **development** build. Keep the same
 signing key for in-place updates; changing signers normally requires uninstall
 and loses phone-local keys and unsynchronized edits. Never uninstall over retained
 work just to resolve a signature mismatch. Existing installations use
 **Settings & widgets → App updates** through their paired server starting with
-0.3.2. For an older app, install 0.3.3 over it using the same signer, without
+0.3.2. For an older app, install 0.3.4 over it using the same signer, without
 uninstalling or clearing storage; see
 [UPDATES.md](UPDATES.md) for in-place upgrades and stable signing.
 
@@ -74,14 +81,13 @@ The release workflow can publish APK/checksum/signer files as GitHub Release
 assets. A permanent public download is available only after a release has
 actually been published; the paired server always provides its own matching APK.
 
-Build Android before the server. An operator release can replace the default
-development APK in a bundle:
+Build Android before the server. A release build can replace the default development APK in a bundle:
 
 ```sh
 bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 # After a separately configured stable-key release build:
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.3-android-arm64-release.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.4-android-arm64-release.apk \
   bash scripts/build/server.sh
 ```
 
@@ -89,8 +95,8 @@ The builder needs Android build-tools 35.0.0. It is not needed on the target hos
 The server tarball includes both offline images, APK/checksum/signer/metadata,
 installer, uninstaller and documentation.
 
-The release workflow runs on an existing `v<version>` source tag (or manual
-selection of that tag). It requires these repository Actions secrets, supplied
+The optional operator-key build workflow is started manually for an existing
+`v<version>` source tag. It requires these repository Actions secrets, supplied
 by the operator outside chat and source control:
 
 - `FIELD_NOTES_KEYSTORE_BASE64`: the stable release keystore encoded as Base64.
@@ -109,7 +115,30 @@ them, then publishes. Interrupted drafts can resume; differing or unrelated
 assets are never silently overwritten. Published releases are not mutated to
 repair mismatches. An Actions artifact alone is not a permanent release.
 
-This workflow needs repository secret configuration and a successful hosted run
-before a GitHub Release download can be claimed. The local server download is
+The optional operator-key workflow needs repository secret configuration and a
+successful hosted run. The prebuilt publication path below does not upload a key. The local server download is
 independent of that publishing step. Current executed evidence is in
 [VALIDATION.md](VALIDATION.md).
+
+## Publish an already compiled public APK
+
+The public release certificate is pinned in `release.json`. Build and package
+from a clean source tag, then queue the verified payload through GitHub Actions:
+
+```bash
+python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.3.4-android-arm64-debug.apk --output dist/android-release
+python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.3.4 --queue --apply
+```
+
+The existing tag must already be pushed and point to this clean checkout on
+`main`. Queueing creates a single `release-assets/v<version>` branch over that
+source with the four public download files; it never changes the working tree
+or overwrites an existing payload branch. Binaries stay off `main`. The workflow
+checks the parent/source tag, verifies the actual APK signature, package/version
+and architecture, and matches the pinned public certificate before publication.
+No private key is uploaded. The job publishes through a draft, downloads and
+compares all assets, and marks the verified release as latest.
+
+`--latest` makes a normal GitHub Release so `/releases/latest/download/field-notes.apk`
+resolves. The release notes still identify development builds; this label is not
+a security-audit or production-readiness claim.

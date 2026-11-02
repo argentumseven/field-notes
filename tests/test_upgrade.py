@@ -34,6 +34,21 @@ class FakeEngine:
  def stop(self,*a):self.objects(a[0]);self.calls.append(['stop-owned'])
 
 class Upgrade(unittest.TestCase):
+ def test_source_build_refuses_missing_original_signer_before_building(self):
+  installed=self.host.path(self.host.record['prefix']+'/downloads');installed.mkdir();artifacts.AndroidArtifact().bundle(installed)
+  with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(pathlib.Path(self.tmp.name)/'tools')}):
+   with self.assertRaisesRegex(ValueError,'Original Android signing key is missing'):
+    upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:self.fail('must not build'))
+  self.assertFalse(self.engine.calls)
+ def test_source_upgrade_uses_persistent_signer_and_checks_preview_before_apply(self):
+  installed=self.host.path(self.host.record['prefix']+'/downloads');installed.mkdir();artifacts.AndroidArtifact().bundle(installed)
+  tools=pathlib.Path(self.tmp.name)/'tools';key=tools/'android-user/debug.keystore';key.parent.mkdir(parents=True);key.write_bytes(b'private disposable signing fixture')
+  calls=[]
+  with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(tools)}),mock.patch.object(upgrade,'preview',return_value={}) as preview:
+   folder=upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:calls.append((a,k)))
+  self.assertEqual([row[0][0] for row in calls],[['bash','scripts/build/android.sh','debug'],['bash','scripts/build/server.sh']])
+  self.assertEqual(key.read_bytes(),b'private disposable signing fixture');self.assertEqual(key.stat().st_mode&0o777,0o600)
+  preview.assert_called_once_with(self.host.record,folder,self.host);self.assertFalse(self.engine.calls)
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.host=UpgradeHost(self.tmp.name);self.engine=FakeEngine()
   r=self.host.record;r.update(runtime='containers',legacy=False)

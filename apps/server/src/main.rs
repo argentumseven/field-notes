@@ -332,9 +332,16 @@ async fn run() -> Result<(), String> {
         let config = tls::start(PathBuf::from(cert), PathBuf::from(key))?;
         let mut device_app = app.clone();
         device_app.device = true;
+        let guard = tls::HttpsOnly {
+            origin: app.origin.clone(),
+            allowed: app.admin_allow.clone(),
+        };
         println!("Field Notes: direct LAN HTTPS {admin}; private device HTTPS {device}. TLS 1.3; no HTTP or reverse proxy.");
         tokio::try_join!(
-            axum_server::bind_rustls(admin, config.clone())
+            axum_server::bind(admin)
+                .acceptor(
+                    axum_server::tls_rustls::RustlsAcceptor::new(config.clone()).acceptor(guard)
+                )
                 .serve(http::router(app).into_make_service_with_connect_info::<SocketAddr>()),
             axum_server::bind_rustls(device, config).serve(
                 http::router(device_app).into_make_service_with_connect_info::<SocketAddr>()

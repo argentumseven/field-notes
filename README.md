@@ -1,10 +1,14 @@
 # Field Notes
 
+[**Download latest Android APK (ARM64)**](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk) · [Release notes and checksums](https://github.com/argentumseven/field-notes/releases/latest)
+
+For updates to an existing phone, use its paired server's APK when it has a different signing certificate.
+
 A self-hosted household planner: Inbox, lists, projects, standalone notes, comments,
 images, optional dates, priorities and a private calendar. Compact charcoal/paper, teal accents, clean rows.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.3.3.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.3.4.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -63,7 +67,7 @@ on your phone and choose **Download APK** on Sign in or in Management; checksum
 and signer links are beside it. [Download and release details](docs/ANDROID-DOWNLOADS.md).
 
 The signed arm64 development APK, checksum and signer report are also under
-`dist/android/field-notes-0.3.3-android-arm64-debug.apk`. Copy it to your phone,
+`dist/android/field-notes-0.3.4-android-arm64-debug.apk`. Copy it to your phone,
 verify hash/signer, and open it to sideload. Preserve the development signer for
 in-place updates. Operator release builds require your separately protected key.
 

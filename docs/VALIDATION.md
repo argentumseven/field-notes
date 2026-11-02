@@ -1,5 +1,36 @@
 # Implementation and validation record
 
+## 0.3.4 browser sessions and public APK delivery
+
+A production TLS 1.3/HTTP2 test reproduced the login loop: a valid Field Notes
+session in a later Cookie header returned 401, while the same joined header
+returned 200. The parser now reads every Cookie field and rejects conflicting
+session values. The test now passes for session, snapshot, directory and
+CSRF-protected reauthentication, without weakening TLS or using an insecure
+certificate exception. The fixture trusts its generated CA explicitly.
+
+The browser confirms its cookie session before entering the workspace. A
+controlled post-login 401 now leaves a visible error and the username while
+clearing the accepted password; a subsequent retry succeeds. Five Chromium
+workflows and all 32 Node checks pass. Plain HTTP sent to the management TLS
+port gets a source-restricted, readable HTTPS-required error with no application
+route, cookie, Host reflection or alternate listener. The phone API stays TLS.
+
+The 98 Python checks include refusal to build an upgrade without the original
+APK key and refusing to overwrite an existing public release-payload branch.
+The 0.3.4 ARM64 APK (code 7) has a release variant signed with the same protected
+cloud certificate as prior builds. It passed release lint/shared host checks and
+native/manifest/16 KiB inspection; the public package is not debuggable.
+The offline server bundle and full Docker/WireGuard/TLS fixture pass with the
+new code. Web screenshots were refreshed against that bundle.
+
+Public publication uses a dedicated payload branch over an existing clean tag.
+GitHub Actions re-verifies APK signature/package/source and the pinned public
+certificate, then verifies uploaded bytes before marking the release latest.
+The private signing key is not part of that branch or its release assets.
+Public certificate pinning identifies the public build; a self-hosted operator
+may have a different signer and must preserve it for existing phones.
+
 ## Owner-name installation and recovery regression (November 2)
 
 The user's real reset output rejected both `admin` and `owner`. A new test
@@ -48,7 +79,7 @@ real host service stop/restart remains covered through simulated host commands,
 not a privileged Debian installation. Password recovery writes a host journal
 event rather than adding an encrypted in-app audit entry.
 
-Field Notes **0.3.3**, protocol 1, database schema 2, Android version code 6.
+Field Notes **0.3.4**, protocol 1, database schema 2, Android version code 7.
 This is a development implementation without an independent security audit.
 Server-readable encryption is intentional. Android/Kotlin Multiplatform is the
 active native target; iOS and native desktop packages are deferred.
@@ -61,8 +92,8 @@ active native target; iOS and native desktop packages are deferred.
 | Shared ranking contract | 19 golden cases independently checked in Kotlin and JavaScript, including priorities without dates, blocked/other-claimed/future work, waiting cap and continuing own work, own/other assignments and retaining an own active claim |
 | Rust tests | 7 passed: container-only listener validation rejects missing Docker context, public/source/overlay/port mismatches; authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation; source-bound session renewal, expiry refusal, per-installation self-revocation and unaffected other devices; APK tampering rejection and streaming permits retained until response-body drop |
 | Node real-process API/planning/enrollment/organization/assignment | 31 passed against both debug and optimized server: roles/CSRF, simultaneous claim winner, persistence/replay/restart, stale timestamps/revisions, normalized images, injected rollback, clear/restore, optional planning fields, calendar intervals and two-client calendar visibility/update/deletion with author enforcement; typed Inbox/List/Project/Note moves, revisions and deletion fences; minimal authenticated directory, competing assignments, recipient validation, safe handoff, completion identity and disabled-person history; LAN enrollment with mocked root acknowledgement; seven password/hash/role/session/CSRF/rollback/rate/race checks, three inactive-pairing cleanup/uncertain cancellation checks with stale root acknowledgements/key reuse/authorization, and three LAN/private APK/fallback/digest/chunk/route-boundary checks |
-| Chromium workflow | 4 passed: actual login/project/list/Inbox task/shared note/comment/claim, task moves/assignment/recipient views, aligned sidebar baselines, priority with cleared date, calendar event, board, management, responsive layout and mobile Task view filters, no third-party page requests; real account/password forms, confirmation, role controls, no secret fields after success/cancel/session loss, in-flight dismissal veto, invitation expiry/replacement and QR removal on session loss |
-| Linux installer/helper/TLS/uninstall/container policy | 93 passed: no-argument source installer, complete interactive network wizard, explicit manual ports with retries/no derived defaults, no-write cancellation before root/build work, missing build prerequisites, routed administrator CIDRs, namespace TLS/source-policy readiness and routed upgrade rollback; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected; APK metadata/checksum/signer/file-set validation, draft release resumption/source mismatch/dirty preview checks and scoped download-directory removal/refusal; eight server upgrade/backup/rollback/signer/identity/history tests in temporary trees |
+| Chromium workflow | 5 passed: actual login/project/list/Inbox task/shared note/comment/claim, task moves/assignment/recipient views, aligned sidebar baselines, priority with cleared date, calendar event, board, management, responsive layout and mobile Task view filters, no third-party page requests; real account/password forms, confirmation, role controls, no secret fields after success/cancel/session loss, in-flight dismissal veto, invitation expiry/replacement and QR removal on session loss |
+| Linux installer/helper/TLS/uninstall/container policy | 98 passed: no-argument source installer, complete interactive network wizard, explicit manual ports with retries/no derived defaults, no-write cancellation before root/build work, missing build prerequisites, routed administrator CIDRs, namespace TLS/source-policy readiness and routed upgrade rollback; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected; APK metadata/checksum/signer/file-set validation, draft release resumption/source mismatch/dirty preview checks and scoped download-directory removal/refusal; eight server upgrade/backup/rollback/signer/identity/history tests in temporary trees |
 | Go transport under race detection | 3 passed: real userspace WireGuard peers and HTTPS, boundary paths/CA/stop/bounds; identical command replay after an ambiguous response through trusted alternate endpoint; pinned LAN bootstrap rejects redirects, public/escaped origins, wrong host and oversized replies |
 | Actual JVM/Android JNI adapter on Linux | 1 passed through real Go WireGuard peers → pinned HTTPS → Rust API: Unicode, authenticated people directory, claim authority, stale server identity and admin-path refusal; controlled blocked-request cancellation completes within three seconds, and a queued exchange fails before sending after Stop. This uses the explicit legacy-development fixture, not production enrollment/kernel provisioning |
 | Android arm64 build | Signed sideloadable development APK built; strict lock/verification metadata, host tests and lint passed (0 errors, 22 warnings) |

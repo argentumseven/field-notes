@@ -69,11 +69,24 @@ fn credential(h: &HeaderMap, device: bool) -> crate::store::Result<String> {
         return Ok(b.into());
     }
     if !device {
-        if let Some(t) = h.get("cookie").and_then(|x| x.to_str().ok()).and_then(|s| {
-            s.split(';')
-                .find_map(|c| c.trim().strip_prefix("field_session="))
-        }) {
-            return Ok(t.into());
+        // HTTP/2 permits Cookie fields to be split for compression. Reading
+        // only the first field drops our session when another site's cookie
+        // comes first (cookies on the same host are shared across ports).
+        let mut session: Option<&str> = None;
+        for value in h.get_all("cookie") {
+            if let Ok(value) = value.to_str() {
+                for part in value.split(';') {
+                    if let Some(token) = part.trim().strip_prefix("field_session=") {
+                        if session.is_some_and(|previous| previous != token) {
+                            return Err(Fault(401, "Conflicting browser session cookies; clear the Field Notes session cookie and sign in again".into()));
+                        }
+                        session = Some(token);
+                    }
+                }
+            }
+        }
+        if let Some(token) = session {
+            return Ok(token.into());
         }
     }
     Err(Fault(401, "Sign in required".into()))

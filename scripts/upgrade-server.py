@@ -2,7 +2,7 @@
 """Upgrade an inventoried container installation without changing its identities.
 Preview by default. Supports schema-2/protocol-1 releases only; no migration or erasure.
 """
-import argparse,copy,fcntl,hashlib,importlib.util,ipaddress,json,os,pathlib,re,shlex,shutil,ssl,subprocess,sys,tempfile,time,urllib.request,uuid
+import argparse,copy,fcntl,hashlib,importlib.util,ipaddress,json,os,pathlib,pwd,re,shlex,shutil,ssl,subprocess,sys,tempfile,time,urllib.request,uuid
 sys.dont_write_bytecode=True
 from android_artifact import verify as verify_android
 from container_deployment import Engine,compose,validate
@@ -10,6 +10,23 @@ from server_installation import Host,load,RECORD,uninstall_wrapper
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('field_notes_removal',HERE/'uninstall-server.py');removal=importlib.util.module_from_spec(spec);spec.loader.exec_module(removal)
 HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py')
+
+def build_from_source(host,record,root=HERE.parent,runner=subprocess.run):
+ if record is None or record['phase']!='installed' or record['runtime']!='containers':raise ValueError('Complete the retained installation check before upgrading')
+ installed=verify_android(host.path(record['prefix']+'/downloads'))
+ if installed['signing']!='development':raise ValueError('Operator-signed installations need a matching --bundle built with the original signing key')
+ env=os.environ.copy();env.setdefault('FIELD_NOTES_TOOLS',str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
+ signing=pathlib.Path(env['FIELD_NOTES_TOOLS'])/'android-user/debug.keystore'
+ if signing.is_symlink() or not signing.is_file():raise ValueError('Original Android signing key is missing. Restore it; no replacement key or new pairing will be created')
+ if signing.stat().st_uid!=os.geteuid():raise ValueError('Original Android signing key must belong to the build user')
+ signing.parent.chmod(0o700);signing.chmod(0o600)
+ version=json.loads((root/'release.json').read_text())['version']
+ env['FIELD_NOTES_ANDROID_APK']=str(root/f'dist/android/field-notes-{version}-android-arm64-debug.apk')
+ runner(['bash','scripts/build/android.sh','debug'],cwd=root,env=env,check=True)
+ runner(['bash','scripts/build/server.sh'],cwd=root,env=env,check=True)
+ folder=root/('dist/server/linux-'+os.uname().machine)
+ preview(record,folder,host) # Verify the signer before any service is stopped.
+ return folder
 
 def wrapper(config):
  return '#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+shlex.quote(config)+' "$@"\n'
@@ -20,7 +37,7 @@ def bundle_info(folder,current):
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3') or version(release['version'])<=version(current):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4') or version(release['version'])<=version(current):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -133,8 +150,14 @@ def apply(host,record,folder,engine=None,health=readiness):
   if stage.exists():shutil.rmtree(stage)
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--bundle',required=True);parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');args=parser.parse_args()
- host=Host();record=load(host,args.config);print(json.dumps(preview(record,args.bundle),indent=2))
+ parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next bundle using the existing development APK signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');args=parser.parse_args()
+ host=Host();record=load(host,args.config)
+ if args.build_from_source:
+  if not args.apply or os.geteuid()!=0:raise ValueError('--build-from-source requires --apply as root; it never creates a fresh installation')
+  if record is None or record['phase']!='installed' or record['runtime']!='containers':raise ValueError('Complete container-runtime.py check --complete-installation before upgrading')
+  removal.preflight(host,record,False)
+  args.bundle=str(build_from_source(host,record))
+ print(json.dumps(preview(record,args.bundle),indent=2))
  removal.preflight(host,record,False)
  if not args.apply:return
  if os.geteuid()!=0:raise ValueError('--apply requires root')

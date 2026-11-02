@@ -1,0 +1,70 @@
+name: Publish verified prebuilt Android APK
+on:
+  push:
+    branches: ['release-assets/v*']
+permissions:
+  contents: read
+concurrency:
+  group: field-notes-android-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'argentumseven/field-notes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: payload
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate payload and source reference
+        id: source
+        env:
+          PAYLOAD_BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 -B - <<'PY'
+          import json,os,pathlib,re,subprocess
+          info=json.loads(pathlib.Path('payload/release-assets/android.json').read_text())
+          assert re.fullmatch(r'\d+\.\d+\.\d+',info['version'])
+          assert re.fullmatch(r'[a-f0-9]{40}',info['source_commit']) and info['source_dirty'] is False
+          tag='v'+info['version']
+          assert os.environ['PAYLOAD_BRANCH']=='release-assets/'+tag
+          parent=subprocess.check_output(['git','-C','payload','rev-parse','HEAD^'],text=True).strip()
+          assert parent==info['source_commit'], 'Payload must be one commit over the tagged source'
+          changed=subprocess.check_output(['git','-C','payload','diff','--name-only',parent,'HEAD'],text=True).splitlines()
+          assert set(changed)=={'release-assets/'+name for name in ('android.json','field-notes.apk','field-notes.apk.sha256','field-notes.apk.signer.txt')}
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('tag='+tag+'\ncommit='+info['source_commit']+'\n')
+          PY
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.source.outputs.tag }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify APK signature, package, version, architecture and source
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [[ ! -x "$ANDROID_HOME/build-tools/35.0.0/apksigner" ]]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;35.0.0'
+          fi
+          python3 -B - <<'PY'
+          import json,os,pathlib,sys
+          sys.path.insert(0,'source/scripts')
+          from android_artifact import verify,package
+          source=pathlib.Path('source').resolve()
+          expected=verify(pathlib.Path('payload/release-assets'))
+          release=json.loads((source/'release.json').read_text())
+          assert expected['signer_sha256']==release['public_android_signer_sha256'], 'Unexpected public release signer'
+          actual=package(pathlib.Path('payload/release-assets/field-notes.apk'),pathlib.Path(os.environ['RUNNER_TEMP'])/'verified-apk',source)
+          assert actual==expected, 'Signature/package/source verification differs from payload'
+          PY
+      - name: Publish and verify the latest GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+        run: python3 -B source/scripts/publish-android.py --directory payload/release-assets --tag "$RELEASE_TAG" --apply --latest

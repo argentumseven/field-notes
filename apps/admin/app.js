@@ -101,11 +101,13 @@ async function api(path, body, method) {
   const data = await r.json();
   if (!r.ok) {
     if (r.status === 401 && state.actor && path !== "/reauth") {
+      const username = state.actor.name;
       state.actor = null;
+      state.csrf = "";
       state.snapshot = null;
       state.people = [];
       closeDetail();
-      renderLogin();
+      renderLogin({ username, message: "Your session ended. Sign in again." });
     }
     if (r.status === 403 && /reauthentication/i.test(data.error || ""))
       state.elevatedUntil = 0;
@@ -140,9 +142,14 @@ function mayWrite() {
 function isAdmin() {
   return ["owner", "admin"].includes(state.actor?.role);
 }
-async function refresh() {
-  state.snapshot = await api("/snapshot");
+async function refresh(expectedActor) {
+  const snapshot = await api("/snapshot");
   const directory = await api("/people");
+  if (expectedActor && snapshot.actor.user_id !== expectedActor.user_id)
+    throw Error(
+      "The browser session belongs to another account. Sign in again.",
+    );
+  state.snapshot = snapshot;
   state.people = directory.people;
   state.directoryRevision = directory.revision;
   state.actor = state.snapshot.actor;
@@ -169,7 +176,7 @@ function brand() {
   n.append(el("span", "brand-mark"), el("span", "", "Field Notes"));
   return n;
 }
-function renderLogin() {
+function renderLogin({ username = "", message = "" } = {}) {
   state.dismissDialog?.();
   state.elevatedUntil = 0;
   $("#app").replaceChildren();
@@ -180,14 +187,15 @@ function renderLogin() {
     el("h1", "", "Sign in"),
     el("p", "muted", "Manage your private planner on the home LAN."),
   );
-  const name = addField(form, input("User name")),
+  const name = addField(form, input("User name", username)),
     password = addField(form, input("Password", "", "password"));
   name.autocomplete = "username";
   password.autocomplete = "current-password";
   name.required = true;
   password.required = true;
   const submit = el("button", "primary", "Sign in"),
-    error = el("p", "error");
+    error = el("p", "error", message);
+  error.setAttribute("role", "alert");
   form.append(
     submit,
     error,
@@ -197,18 +205,32 @@ function renderLogin() {
     e.preventDefault();
     submit.disabled = true;
     error.textContent = "";
+    let passwordAccepted = false;
     try {
       const result = await api("/login", {
         name: name.value,
         password: password.value,
         device: "LAN web browser",
       });
-      state.actor = result.actor;
+      passwordAccepted = true;
+      password.value = "";
+      const session = await api("/session");
+      if (
+        session.actor.user_id !== result.actor.user_id ||
+        session.csrf !== result.csrf
+      )
+        throw Error(
+          "The browser did not retain the new session. Allow cookies for this HTTPS address, then sign in again.",
+        );
       state.csrf = result.csrf;
-      await refresh();
+      await refresh(result.actor);
       render();
     } catch (e) {
-      error.textContent = e.message;
+      state.csrf = "";
+      error.textContent =
+        passwordAccepted && e.status === 401
+          ? "Your password was accepted, but the browser session could not be confirmed. Allow cookies for this HTTPS address, then sign in again."
+          : e.message;
     } finally {
       submit.disabled = false;
     }
@@ -1525,9 +1547,8 @@ setInterval(async () => {
 (async () => {
   try {
     const s = await api("/session");
-    state.actor = s.actor;
     state.csrf = s.csrf;
-    await refresh();
+    await refresh(s.actor);
     render();
   } catch {
     renderLogin();

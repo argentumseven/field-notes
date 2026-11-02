@@ -70,6 +70,25 @@ Escape or Ctrl-C cancels a prompt. Backspace, Delete, arrows, Home/End and Ctrl-
 edit the input; passwords never echo. No password flags or environment variables
 are accepted. Use a real terminal for password entry.
 
+## Sign-in clears the form or works only in a different browser
+
+In 0.3.3, the HTTPS server read only the first Cookie header. HTTP/2 browsers
+can split cookies across headers; another application on the same IP could
+therefore hide the Field Notes session even after a correct password. The old
+UI also discarded the real error when it rebuilt the sign-in form.
+
+A fresh private browser window can avoid the old cookie interaction. Version
+0.3.4 fixes cookie parsing and shows session-confirmation failures explicitly.
+Pulling Git updates host scripts; the bundled web UI is compiled into the server
+image, so apply the [server upgrade](UPDATES.md#upgrade-an-existing-source-installation)
+to get that fix. Another password reset is not needed if the same credentials
+work in another browser.
+
+The management address must start with **https://**, including the chosen port.
+Plain HTTP on a TLS socket previously displayed binary TLS alert bytes. Version
+0.3.4 returns a readable HTTPS-required error on that same management port. It
+does not serve the application or accept authentication over HTTP.
+
 ## Services active but app reports Permission denied
 
 Older 0.3.3 TLS provisioning incorrectly left the issued certificate directory

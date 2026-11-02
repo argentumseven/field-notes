@@ -6,7 +6,7 @@ Notes checks automatically while the unlocked app is in the foreground, at most
 once per six hours, and **Check for updates** checks immediately.
 
 If the installed app predates 0.3.2, it does not yet have this screen. Download
-0.3.3 from the updated server and install it **over the existing app**, with the
+0.3.4 from the updated server and install it **over the existing app**, with the
 same signing key. Do not uninstall or clear storage. Later updates use the flow
 below.
 
@@ -85,7 +85,7 @@ git switch main
 git pull --ff-only origin main
 # On the builder, with the original stable signing key configured:
 bash scripts/build/android.sh release
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.3-android-arm64-release.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.4-android-arm64-release.apk \
   bash scripts/build/server.sh
 ```
 
@@ -148,3 +148,23 @@ in [VALIDATION.md](VALIDATION.md).
 Future breaking API/schema releases need an explicit migration and a compatible
 software-update control route before rollout. Do not make the old client's
 update route depend on a new content protocol it cannot yet speak.
+
+## Upgrade an existing source installation
+
+For the standard Debian/Ubuntu installation, run as root from the existing
+checkout. This completes an earlier retained readiness record if needed, builds
+the next release with the original cached development APK key, verifies its
+signer, then backs up and upgrades the existing installation:
+
+```bash
+cd /usr/local/src/field-notes &&
+git pull --ff-only &&
+python3 scripts/container-runtime.py check --complete-installation &&
+python3 scripts/upgrade-server.py --apply --build-from-source
+```
+
+No fresh-install wizard or new password is needed. Source upgrades require the
+original `FIELD_NOTES_TOOLS/android-user/debug.keystore`; the default build-cache
+root is the build user's `.cache/field-notes`. A missing key stops before building
+or stopping services. The final preview also refuses a changed signer. Operator
+release keys use the existing `--bundle` workflow instead.
