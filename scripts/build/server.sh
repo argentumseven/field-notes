@@ -27,7 +27,7 @@ cp scripts/upgrade-server.py scripts/upgrade-server.sh "$stage/scripts/"
 "$stage/field-notes-server" help
 artifact="dist/server/field-notes-$version-linux-$arch.tar.gz"
 tar -czf "$artifact" -C "$stage" .
-sha256sum "$artifact" > "$artifact.sha256"
+(cd dist/server && sha256sum "$(basename "$artifact")" > "$(basename "$artifact").sha256")
 package="dist/server/linux-$arch"
 rm -rf -- "$package"
 mv "$stage" "$package"

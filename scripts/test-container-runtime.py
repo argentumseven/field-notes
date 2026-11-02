@@ -147,6 +147,8 @@ def main():
             checksum=hashlib.file_digest(response,'sha256').hexdigest()
         assert checksum==download['sha256']
         print('PASS: anonymous LAN APK download matches the signed read-only bundled artifact',flush=True)
+        engine.check_management_locally(settings,(config/'tls/ca.crt').read_text(),version)
+        print('PASS: local namespace verifies actual server version, pinned TLS 1.3 and HTTP 403 source restriction without an admin ACL exception',flush=True)
         csrf=login['csrf'];actor=login['actor']
         assert request('/api/reauth',{'password':'container-fixture-password-only'})[0]==200
         status,invitation=request('/api/enrollment/invitations',{'user_id':actor['user_id']});assert status==200

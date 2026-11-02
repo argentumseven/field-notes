@@ -130,10 +130,10 @@ def build_from_source(root):
         raise ValueError('Source build requires a complete repository checkout. Use the bundled installer for a prebuilt release.')
     if shutil.which('docker') is None:
         raise ValueError('Docker Engine and Compose must be installed before running the Field Notes installer.')
-    checked(['docker', '--host=unix:///var/run/docker.sock', 'info'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    checked(['docker', '--host=unix:///var/run/docker.sock', 'compose', 'version'],
-            stdout=subprocess.DEVNULL)
+    from container_deployment import Engine
+    engine=Engine()
+    engine.call(['info'])
+    engine.call(['compose', 'version'])
     ensure_build_prerequisites()
     env = os.environ.copy()
     env.setdefault('FIELD_NOTES_TOOLS', str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
@@ -178,11 +178,10 @@ def main():
     root=pathlib.Path(__file__).resolve().parents[1]
     binary=pathlib.Path(a.binary) if a.binary else (root/'field-notes-server' if (root/'field-notes-server').exists() else root/'target/release/field-notes-server')
     plan={'port_selection':'Chosen','apply_port_options':f'--web-port {a.web_port} --udp-port {a.udp_port}','runtime':'containers','requires':['Docker Engine (rootful)','Docker Compose 2.24+','WireGuard kernel support'],'binary':str(binary),'lan_admin':f'https://{lan}:{a.web_port} (source {prefix})','device_api':f'https://{overlay.network_address+1}:8443','wireguard_endpoint':endpoint,'router_forward':f'UDP {external_port} to {lan}:{a.udp_port}','directories':[str(p) for p in destinations],'services':['field-notes','field-notes-peers.timer','field-notes-certificates.timer'],'no_public_web':True,'remote_access':bool(a.endpoint),'endpoint_note':f'Provide --endpoint your-home-DDNS:{a.udp_port} for access away from home; the LAN UDP alternative is enrolled automatically.'}
+    plan['admin_browser_check_required']=lan not in prefix
     if not a.apply:
         print(json.dumps(plan,indent=2))
         return
-    if os.geteuid()!=0:
-        raise ValueError('--apply requires root; review --plan first')
     if a.build_from_source and a.plan:
         raise ValueError('Source builds cannot run in a no-write plan.')
     if interactive:
@@ -195,6 +194,8 @@ def main():
         if confirmation != 'INSTALL':
             print('Installation cancelled; no changes made.')
             return
+    if os.geteuid()!=0:
+        raise ValueError('--apply requires root; review --plan first')
     if a.build_from_source:
         build_from_source(root)
     for destination in destinations:host.check_parents(str(destination))
@@ -381,6 +382,9 @@ WantedBy=timers.target
     failure=None
     for attempt in range(30):
         try:
+            if lan not in prefix:
+                engine.check_management_locally(settings,(config/'tls/ca.crt').read_text(),version)
+                failure=None;break
             request=urllib.request.Request(f'https://{lan}:{a.web_port}/api/login',data=json.dumps({'name':name,'password':password,'device':'Installer readiness check'}).encode(),headers={'Content-Type':'application/json'})
             with opener.open(request,timeout=3) as response:login=json.load(response)
             if login['actor']['role']!='owner':raise ValueError('Authenticated readiness returned an unexpected role')
@@ -391,10 +395,12 @@ WantedBy=timers.target
             logout=urllib.request.Request(f'https://{lan}:{a.web_port}/api/logout',data=b'{}',headers={'Content-Type':'application/json','X-Field-CSRF':login['csrf']})
             with opener.open(logout,timeout=3) as response:response.read()
             failure=None;break
-        except (OSError,ValueError,KeyError) as e:failure=e;time.sleep(.2)
+        except (OSError,ValueError,KeyError,subprocess.SubprocessError) as e:failure=e;time.sleep(.2)
     del password
-    if failure is not None:raise ValueError('Services started but authenticated readiness failed; inspect service logs before using the installation')
+    if failure is not None:raise ValueError('Services started but readiness failed; inspect service logs before using the installation')
     ownership['phase']='installed';host.write_record(ownership)
+    if lan not in prefix:
+        print('Local TLS, runtime version and management source restriction verified. Complete the browser login check from an administrator client in '+str(prefix)+'.')
     print('Uninstall preview:',str(install/'uninstall-server.sh'),'--plan')
     print(json.dumps(plan,indent=2));print('Configure the one UDP forward. Verify and trust the public CA on administrator browsers; phones pin it through enrollment.')
     print('Public CA:',config/'tls/ca.crt')

@@ -123,7 +123,11 @@ are retained. The older master-key ownership/mode bug is repaired without
 replacing its bytes. Peers are reapplied to the new namespace and receive fresh
 host acknowledgements. Phones reconnect using their saved identities.
 
-The new service must pass direct TLS and matching APK/version readiness. A
+The new service must pass direct TLS and matching APK/version readiness.
+When the host is outside its routed administrator CIDR, the probe runs in the
+owned gateway namespace and verifies the expected loopback HTTP 403; the
+operator completes browser login from an allowed client. No ACL exception is
+introduced. A
 normal backup/start/readiness failure restores the previous programs/settings
 and resumes the old service. It never restores an older database over accepted
 edits. Old images remain available for recovery; the current scoped uninstaller

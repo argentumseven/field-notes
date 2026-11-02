@@ -53,7 +53,7 @@ class Plan(unittest.TestCase):
    r=self.run_plan(*flags);self.assertNotEqual(r.returncode,0);self.assertIn('Choose both ports',r.stderr)
  def test_valid_plan_only_exposes_wireguard(self):
   r=self.explicit();self.assertEqual(r.returncode,0,r.stderr);plan=json.loads(r.stdout)
-  self.assertTrue(plan['no_public_web']);self.assertIn('UDP '+UDP,plan['router_forward']);self.assertEqual(plan['device_api'],'https://10.82.0.1:8443')
+  self.assertFalse(plan['admin_browser_check_required']);self.assertTrue(plan['no_public_web']);self.assertIn('UDP '+UDP,plan['router_forward']);self.assertEqual(plan['device_api'],'https://10.82.0.1:8443')
  def test_no_derived_port_option(self):
   r=self.run_plan('--bungee-port','47937');self.assertNotEqual(r.returncode,0);self.assertIn('unrecognized arguments',r.stderr)
  def test_explicit_port_is_used_in_forwarding_and_endpoint_guidance(self):
@@ -69,7 +69,8 @@ class Plan(unittest.TestCase):
   r=self.run_plan('--interactive',input='\n8443\n'+WEB+'\nbad\n70000\n'+UDP+'\n')
   self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(json.loads(r.stdout)['router_forward'],'UDP '+UDP+' to 192.168.1.10:'+UDP)
  def test_noninteractive_apply_requires_both_explicit_ports(self):
-  r=self.run_plan('--apply','--non-interactive');self.assertNotEqual(r.returncode,0);self.assertIn('Choose both ports',r.stderr)
+  r=subprocess.run(['python3','scripts/install-server.py','--apply','--non-interactive','--lan-ip','192.168.1.10','--lan-prefix','192.168.1.0/24'],cwd=ROOT,text=True,capture_output=True)
+  self.assertNotEqual(r.returncode,0);self.assertIn('Choose both ports',r.stderr)
  def test_flags_skip_port_prompts(self):
   r=self.run_plan('--interactive','--web-port',WEB,'--udp-port',UDP,input='')
   self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(r.stderr,'')
@@ -83,7 +84,7 @@ class Plan(unittest.TestCase):
                   '--web-port',WEB,'--udp-port',UDP)
   self.assertEqual(r.returncode,0,r.stderr)
   plan=json.loads(r.stdout)
-  self.assertEqual(plan['lan_admin'],'https://192.168.50.10:'+WEB+' (source 192.168.20.0/24)')
+  self.assertEqual(plan['lan_admin'],'https://192.168.50.10:'+WEB+' (source 192.168.20.0/24)');self.assertTrue(plan['admin_browser_check_required'])
  def test_public_listener_refused_even_with_private_admin_sources(self):
   r=self.run_plan('--lan-ip','203.0.113.10','--lan-prefix','192.168.20.0/24',
                   '--web-port',WEB,'--udp-port',UDP)

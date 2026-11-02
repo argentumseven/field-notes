@@ -2,7 +2,7 @@
 """Upgrade an inventoried container installation without changing its identities.
 Preview by default. Supports schema-2/protocol-1 releases only; no migration or erasure.
 """
-import argparse,copy,fcntl,hashlib,importlib.util,json,os,pathlib,re,shlex,shutil,ssl,subprocess,sys,tempfile,time,urllib.request,uuid
+import argparse,copy,fcntl,hashlib,importlib.util,ipaddress,json,os,pathlib,re,shlex,shutil,ssl,subprocess,sys,tempfile,time,urllib.request,uuid
 sys.dont_write_bytecode=True
 from android_artifact import verify as verify_android
 from container_deployment import Engine,compose,validate
@@ -44,7 +44,7 @@ def preview(record,folder,host=None):
  if existing.exists() and verify_android(existing)['signer_sha256']!=apk['signer_sha256']:
   raise ValueError('APK signer changed. Rebuild with the existing stable signer; do not uninstall or reset phone pairing')
  new=copy.deepcopy(old);new['images']={role:entry['id'] for role,entry in images.items()}
- return dict(from_version=current,to_version=release['version'],apk_version_code=apk['version_code'],apk_signer=apk['signer_sha256'],apk_sha256=apk['sha256'],preserve=['database and queued server work','users/password hashes','CA and recovery master key','WireGuard hub key, phone peers and PSKs','management/UDP/API ports and network settings'],management=f"https://{old['lan_ip']}:{old['web_port']}",settings=new,tags={role:entry['tag'] for role,entry in images.items()})
+ return dict(from_version=current,to_version=release['version'],apk_version_code=apk['version_code'],apk_signer=apk['signer_sha256'],apk_sha256=apk['sha256'],preserve=['database and queued server work','users/password hashes','CA and recovery master key','WireGuard hub key, phone peers and PSKs','management/UDP/API ports and network settings'],management=f"https://{old['lan_ip']}:{old['web_port']}",admin_browser_check_required=ipaddress.ip_address(old['lan_ip']) not in ipaddress.ip_network(old['lan_prefix']),settings=new,tags={role:entry['tag'] for role,entry in images.items()})
 
 def write(path,data,mode=0o600):
  with tempfile.NamedTemporaryFile(dir=path.parent,prefix='.upgrade-',delete=False) as file:
@@ -57,6 +57,12 @@ def write(path,data,mode=0o600):
  finally:os.close(fd)
 
 def readiness(settings,apk,host):
+ if ipaddress.ip_address(settings['lan_ip']) not in ipaddress.ip_network(settings['lan_prefix']):
+  engine=Engine(runner=host.runner);ca=host.path(settings['config']+'/tls/ca.crt').read_text()
+  for attempt in range(30):
+   try:engine.check_management_locally(settings,ca,apk['version']);return
+   except (OSError,ValueError,subprocess.SubprocessError):time.sleep(.2)
+  raise ValueError('Updated runtime/TLS/source-policy readiness failed; administrator browser check must come from its allowed CIDR')
  ca=host.path(settings['config']+'/tls/ca.crt');ctx=ssl.create_default_context(cafile=str(ca));ctx.minimum_version=ssl.TLSVersion.TLSv1_3
  opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=ctx));origin=f"https://{settings['lan_ip']}:{settings['web_port']}"
  for attempt in range(30):

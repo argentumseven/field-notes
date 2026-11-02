@@ -14,7 +14,7 @@ active native target; iOS and native desktop packages are deferred.
 | Rust tests | 7 passed: container-only listener validation rejects missing Docker context, public/source/overlay/port mismatches; authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation; source-bound session renewal, expiry refusal, per-installation self-revocation and unaffected other devices; APK tampering rejection and streaming permits retained until response-body drop |
 | Node real-process API/planning/enrollment/organization/assignment | 31 passed against both debug and optimized server: roles/CSRF, simultaneous claim winner, persistence/replay/restart, stale timestamps/revisions, normalized images, injected rollback, clear/restore, optional planning fields, calendar intervals and two-client calendar visibility/update/deletion with author enforcement; typed Inbox/List/Project/Note moves, revisions and deletion fences; minimal authenticated directory, competing assignments, recipient validation, safe handoff, completion identity and disabled-person history; LAN enrollment with mocked root acknowledgement; seven password/hash/role/session/CSRF/rollback/rate/race checks, three inactive-pairing cleanup/uncertain cancellation checks with stale root acknowledgements/key reuse/authorization, and three LAN/private APK/fallback/digest/chunk/route-boundary checks |
 | Chromium workflow | 3 passed: actual login/project/list/Inbox task/shared note/comment/claim, task moves/assignment/recipient views, aligned sidebar baselines, priority with cleared date, calendar event, board, management, responsive layout and mobile Task view filters, no third-party page requests; real account/password forms, confirmation, role controls, no secret fields after success/cancel/session loss, in-flight dismissal veto, invitation expiry/replacement and QR removal on session loss |
-| Linux installer/helper/TLS/uninstall/container policy | 62 passed: plan/destination refusal/direct-listener contract, default/explicit/adjacent-to-Bungee forwarding ports and dynamic endpoint guidance, both-port prompts/retry/default confirmation and refusal of missing noninteractive apply choices, automatic endpoint-port propagation and explicit NAT mapping; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected; APK metadata/checksum/signer/file-set validation, draft release resumption/source mismatch/dirty preview checks and scoped download-directory removal/refusal; eight server upgrade/backup/rollback/signer/identity/history tests in temporary trees |
+| Linux installer/helper/TLS/uninstall/container policy | 78 passed: no-argument source installer, complete interactive network wizard, explicit manual ports with retries/no derived defaults, no-write cancellation before root/build work, missing build prerequisites, routed administrator CIDRs, namespace TLS/source-policy readiness and routed upgrade rollback; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected; APK metadata/checksum/signer/file-set validation, draft release resumption/source mismatch/dirty preview checks and scoped download-directory removal/refusal; eight server upgrade/backup/rollback/signer/identity/history tests in temporary trees |
 | Go transport under race detection | 3 passed: real userspace WireGuard peers and HTTPS, boundary paths/CA/stop/bounds; identical command replay after an ambiguous response through trusted alternate endpoint; pinned LAN bootstrap rejects redirects, public/escaped origins, wrong host and oversized replies |
 | Actual JVM/Android JNI adapter on Linux | 1 passed through real Go WireGuard peers → pinned HTTPS → Rust API: Unicode, authenticated people directory, claim authority, stale server identity and admin-path refusal; controlled blocked-request cancellation completes within three seconds, and a queued exchange fails before sending after Stop. This uses the explicit legacy-development fixture, not production enrollment/kernel provisioning |
 | Android arm64 build | Signed sideloadable development APK built; strict lock/verification metadata, host tests and lint passed (0 errors, 22 warnings) |
@@ -22,19 +22,31 @@ active native target; iOS and native desktop packages are deferred.
 | Linux optimized server | Built and API-tested on x86_64; direct Rust TLS with no proxy. Fresh bundle includes offline app/gateway images, matching signed ARM64 APK/checksum/signer/metadata, installer and uninstaller |
 | Container integration | Real Docker shared namespace with production nonroot/read-only app: direct management TLS, account invitation/approval, root-owned peer acknowledgement, actual WireGuard source-bound activation, task/image writes and unavailable private admin routes; modified phone blocked from management/SSH/other peers/LAN; app-UID outbound TCP and Docker DNS hit actual nftables drops; phone tokens rejected on LAN; routine password change preserves the phone while explicit device sign-out invalidates it; anonymous LAN APK bytes match the read-only mount and downloads are absent privately; complete APK metadata/chunk transfer verified over actual private WireGuard/TLS; owned containers/network removed |
 
-The previous installer tests for automatic port suggestions and port adjacency
-were executed against an earlier implementation. Those behaviors have since
-been removed: current installation requires explicit HTTPS and WireGuard UDP
-port selection, with no derived port. The revised installer tests require a
-fresh execution before claiming the new behavior as validated on a host.
+The current 78 Python checks include 23 scoped uninstall tests, eight base
+upgrade tests, revised guided installer/container policy tests, two actual TLS
+checks, and four local/routed readiness and rollback checks. Temporary install
+trees and controlled host commands cover retain/purge/later purge, retries,
+legacy/custom paths, changed units, mounts/symlinks, reused identities, key
+recovery, foreign namespace members and Bungee preservation. Actual privileged
+Debian/Ubuntu systemd installation/upgrade/account deletion has **not** been run.
 
-The 62 Python checks include 23 scoped uninstall tests (temporary real file trees,
-mocked host commands), six container policy/ownership tests and two real TLS
-checks. They cover retain/purge/later purge, retries, legacy/custom paths, changed
-units, mounts/symlinks, reused identities, key recovery, foreign namespace members,
-Bungee preservation, no global prune, fixed local Docker selection and separation
-of issued leaf files from CA signing keys. Actual privileged Debian/Ubuntu
-installation/upgrade/account deletion has **not** been run.
+Follow-up validation pulled current `main`, checked both fix branches against
+their squash-merge snapshots, and parsed all Python helper scripts. The first
+run found three regression failures (two cancellation/root-order cases and an
+obsolete mutually exclusive CLI invocation); the corrected suite passes.
+A fresh `--offline --rerun-tasks assembleDebug lintDebug hostTest` completed all
+55 tasks under the new one-worker/in-process compiler/1.5 GiB heap limits with
+43 shared tests passing. Gradle reported a metaspace pressure warning but the
+build succeeded; this does not establish that a 2 GiB home VM can build Android.
+Use a prebuilt bundle to avoid those toolchain/resource requirements.
+
+The real Docker fixture also executes the new namespace-local probe against the
+production Rust listener: runtime version matches, pinned TLS 1.3 validates, and
+loopback gets the required HTTP 403. It adds no admin exception or egress route.
+Routed upgrade unit tests verify that a forbidden host-originated admin request
+is never attempted, and failed namespace readiness rolls back programs/settings.
+The exact Debian 13 `docker-compose` package was checked: v2.26.1 includes both
+the Docker CLI plugin and its standalone symlink.
 
 The image builder records each exact release tag even when an unchanged gateway
 image also has older tags. This was checked against the real multi-tag Docker

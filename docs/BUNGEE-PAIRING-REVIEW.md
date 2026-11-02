@@ -67,3 +67,48 @@ opening failures and relies on independent Android app controls for native/UI
 failure; no separate recovery process is claimed. Physical GrapheneOS, roaming,
 Doze, multiple VPNs, real home NAT/DNS changes, disk faults and production kernel
 WireGuard installation remain separate deployment checks.
+
+## Follow-up review at 3f6158e
+
+Fetched [Bungee main at 3f6158e](https://github.com/argentumseven/bungee/tree/3f6158eafe50f01daba4b2c44e94be914b99b5b4)
+and reviewed changes since `67ee496`, including `acd548e`, `e52cfb7`, `54fa948`
+and `3f6158e`. The reference working tree remains detached at the earlier
+revision; this review reads the fetched `origin/main` objects. No Bungee code or
+assets were copied and its tests were not executed.
+
+- **Persistent APK signing:** Bungee now downloads the APK matching its running
+  server commit, verifies it, signs it with an established per-server key held
+  in encrypted host storage, and exposes preparation/download/install progress.
+  Missing established keys stop preparation. Field Notes keeps its original
+  builder/operator signer outside the runtime bundle, verifies the entire APK
+  cryptographically on Android, and serves the exact bundled APK through its
+  paired server. Preserve that original signing key; do not re-sign existing
+  phones with a new household key. This follow-up does not add server-side
+  re-signing or public-release downloads to Field Notes.
+- **Resumable software downloads:** Bungee can resume digest-named partial APKs
+  and reuse a verified staged APK. Field Notes currently removes interrupted
+  partial downloads and retries; this is a remaining usability difference, not
+  grounds to reset enrollment or planner data.
+- **Reconnect retains history:** Bungee separates retirement of connection keys
+  from deletion of stored device history and can reconnect the same logical
+  device. Field Notes' tasks/comments/images belong to the household/accounts,
+  so inactive phone-binding cleanup already preserves planner data. No GPS,
+  MDM or recovery-photo state machine is introduced.
+- **Debian boot repair:** Bungee now checks the real cryptsetup target, generator
+  and unlock binary, adds `nofail` boot entries and provides guarded
+  `repair-boot`. Field Notes has no Bungee LUKS mount or Docker daemon mount
+  dependency to repair. On a shared VM, Bungee's existing Docker mount dependency
+  can still keep Docker stopped; recover Bungee first. Field Notes never removes
+  that dependency, formats its image or restarts shared Docker as a workaround.
+
+The Field Notes branch review found both `fix/manual-port-selection` and
+`fix/android-gradle-verification-cacerts` already squash-merged into `main`,
+followed by the duplicated-installer/regex repair and Android memory/concurrency
+limits. The original branch tips equal their corresponding squash snapshots;
+use current `main` rather than checking out those older tips. Fresh checks also
+caught cancellation occurring after the root check and an obsolete test passing
+both `--plan` and `--apply`; these were corrected. Source-build Docker preflight
+now uses the same local-engine selector protections as installation/removal.
+Routed management readiness now verifies the owned runtime version and pinned
+TLS/source restriction without adding the host to the administrator allowlist.
+See [the Debian procedure](DEBIAN-INSTALL.md) and [validation](VALIDATION.md).

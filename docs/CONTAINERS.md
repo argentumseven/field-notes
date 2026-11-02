@@ -60,10 +60,13 @@ host firewall/Bungee tables. Check source preservation and restrictions on your
 actual Docker firewall backend; published ports can bypass ordinary UFW input
 rules, so review the Docker forwarding/DOCKER-USER policy as well. Check the
 actual LAN: Docker hairpin traffic from the server itself may have a bridge
-source and must be refused rather than trusted as a LAN browser. The installer's
-same-host authenticated readiness check fails if the chosen host translates it
-outside the allowed CIDR; use a reachable physical LAN address and investigate
-that routing before use, rather than expanding the management trust range.
+source and must be refused rather than trusted as a LAN browser. The installer uses a
+namespace-local TLS/source-policy probe for routed admin networks that exclude
+the host. It verifies the server version, TLS 1.3 certificate, and HTTP 403 from
+loopback; the allowlist stays unchanged. Browser login must be checked from an
+allowed client. Same-subnet authenticated checks still fail if host hairpin
+translation moves that request outside its configured CIDR; investigate the
+actual route rather than broadening trust.
 
 ## Lifecycle and limits
 

@@ -130,3 +130,7 @@ Its original LICENSE is included in
 [`apksig-LICENSE.txt`](../apps/mobile/src/androidMain/assets/licenses/apksig-LICENSE.txt)
 and shipped in Android assets. The verifier checks the actual signed APK rather
 than trusting server metadata alone.
+
+The installation follow-up reviewed [Bungee at 3f6158e](https://github.com/argentumseven/bungee/tree/3f6158eafe50f01daba4b2c44e94be914b99b5b4)
+for persistent APK signing, history-preserving reconnect and Debian cryptsetup/boot
+repair. See the [updated comparison](BUNGEE-PAIRING-REVIEW.md). No source was copied.

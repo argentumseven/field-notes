@@ -172,6 +172,34 @@ class Engine:
     def healthy(self,settings):
         objects=self.objects(settings)
         return all(objects.get(role,{}).get('State',{}).get('Running') for role in ('app','gateway')) and objects['gateway']['State'].get('Health',{}).get('Status')=='healthy'
+    def check_management_locally(self,settings,ca_pem,version):
+        """Probe the owned namespace when this host is outside the admin CIDR.
+
+        The public CA travels on stdin. No password, ACL exception, network
+        reconfiguration or extra container is needed. Loopback MUST get HTTP
+        403 from Rust after a correctly verified TLS 1.3 handshake.
+        """
+        c=validate(settings);objects=self.objects(c)
+        if set(objects)!={'app','gateway','network'} or not all(objects[role]['State'].get('Running') for role in ('app','gateway')) or objects['gateway']['State'].get('Health',{}).get('Status')!='healthy':
+            raise ValueError('Owned app/gateway are not ready')
+        actual=self.call(['exec',objects['app']['Id'],'/usr/local/bin/field-notes-server','help'],timeout=10).stdout.splitlines()
+        if not actual or actual[0]!='Field Notes '+version:
+            raise ValueError('Running server version does not match the APK bundle')
+        code=r'''
+import socket,ssl,sys
+ctx=ssl.create_default_context(cadata=sys.stdin.read(65537));ctx.minimum_version=ssl.TLSVersion.TLSv1_3
+with socket.create_connection(('127.0.0.1',int(sys.argv[1])),timeout=3) as raw:
+ with ctx.wrap_socket(raw,server_hostname=sys.argv[2]) as conn:
+  conn.sendall(('GET /health HTTP/1.1\r\nHost: '+sys.argv[2]+':'+sys.argv[1]+'\r\nConnection: close\r\n\r\n').encode('ascii'))
+  response=b''
+  while b'\r\n' not in response and len(response)<4096:
+   block=conn.recv(256)
+   if not block:break
+   response+=block
+  if not response.startswith(b'HTTP/1.1 403 '):raise SystemExit('Management loopback must be denied by the source policy')
+print('Verified TLS 1.3 and management source restriction')
+'''
+        self.call(['exec','--interactive',objects['gateway']['Id'],'python3','-c',code,str(c['web_port']),c['lan_ip']],input=ca_pem,timeout=10)
     def peer_runner(self,settings):
         def run(args,**kwargs):
             gateway=self.objects(settings).get('gateway')

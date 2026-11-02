@@ -4,6 +4,9 @@ Server: Linux only, Debian/Ubuntu installer. Android: arm64 GrapheneOS/Android
 8+. Linux and Windows use the LAN web interface. Native desktop and iOS builds
 are deferred. See [VALIDATION.md](VALIDATION.md) for checks and limits.
 
+For the complete pasteable Debian 13 package/bundle procedure, see
+[DEBIAN-INSTALL.md](DEBIAN-INSTALL.md).
+
 ## Fresh home server
 
 Install rootful Docker Engine and Compose 2.24+ first, following their verified
@@ -125,7 +128,12 @@ shared Docker daemon configuration alone. It creates:
 There is no Caddy, reverse proxy or load balancer. Rust serves TLS 1.3 directly
 at the LAN address and management port you chose; the separate phone API binds
 only `10.82.0.1:8443`.
-The installer checks login, authenticated snapshot and logout over real TLS.
+When the host is inside the allowed admin CIDR, the installer checks login,
+authenticated snapshot and logout over real TLS. For a routed admin CIDR that
+excludes the host, it verifies the owned runtime version and pinned TLS 1.3
+inside the gateway namespace, including the expected HTTP 403 for loopback.
+Complete browser login verification from an allowed admin client; the installer
+does not broaden the source policy for its own probes.
 It does not install a shell-execution endpoint in the management website.
 
 Forward **only the WireGuard UDP port you selected** to the Linux server.
