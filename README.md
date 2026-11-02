@@ -58,6 +58,8 @@ host configuration. This is not end-to-end encryption excluding the server.
 
 ## Install or build
 
+**GitHub Android APK:** [Releases and downloadable APK assets](https://github.com/argentumseven/field-notes/releases). A downloadable APK appears here only after a verified release is published; currently there is no GitHub-hosted APK release. The source checkout alone does not provide a downloadable APK.
+
 The server bundle includes the matching signed ARM64 APK. Open the LAN website
 on your phone and choose **Download APK** on Sign in or in Management; checksum
 and signer links are beside it. [Download and release details](docs/ANDROID-DOWNLOADS.md).
