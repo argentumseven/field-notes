@@ -62,6 +62,8 @@ host configuration. This is not end-to-end encryption excluding the server.
 
 ## Install or build
 
+**GitHub Android APK:** [Download the latest verified APK](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk), or browse [all release assets](https://github.com/argentumseven/field-notes/releases).
+
 The server bundle includes the matching signed ARM64 APK. Open the LAN website
 on your phone and choose **Download APK** on Sign in or in Management; checksum
 and signer links are beside it. [Download and release details](docs/ANDROID-DOWNLOADS.md).
