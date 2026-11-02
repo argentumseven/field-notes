@@ -178,8 +178,14 @@ current password and confirm a replacement. **Management → People → Reset
 password** resets another person's password after recent administrator
 reauthentication. Owners may reset any other active account, including another
 owner; administrators may reset members/viewers. Administrators cannot reset
-other administrators or owners. Changing your own password always requires
+other administrators or owners. Changing your own password in the website requires
 the current password, including for an owner.
+
+The installer's suggested owner name is `admin`; existing accounts retain their
+selected names. A lost password can be reset locally by host root with
+`python3 /opt/field-notes/reset-password.py --name admin`. Older installs can run
+the helper from the current source checkout without rebuilding. See
+[account/startup recovery](TROUBLESHOOTING.md).
 
 Passwords use random per-password salts and Argon2id. The server never displays
 existing passwords or password hashes. Replacements use the same hashing and
@@ -285,7 +291,8 @@ node scripts/capture-android.mjs
 ```
 
 The capture scripts use synthetic data. Web captures run against a real Rust
-server. Android captures use actual Compose/RemoteViews with a test-only
+server with the matching APK from a built server bundle; `FIELD_NOTES_DOWNLOADS`
+can select another verified bundle's downloads directory. Android captures use actual Compose/RemoteViews with a test-only
 transport fixture; they do not prove live tunnel enrollment or widget launcher
 lifecycle. The separate launcher-icon capture shows the actual installed icon.
 Production screen-capture protection is not disabled. See [WALKTHROUGH.md](WALKTHROUGH.md).
@@ -368,5 +375,5 @@ sudo /opt/field-notes/uninstall-server.sh --apply
 
 Normal removal preserves root-only recovery data. Purge explicitly deletes the
 recorded data/configuration directories. Neither removes Docker, WireGuard tools,
-Bungee or shared resources. See [UNINSTALL.md](UNINSTALL.md) for a later purge,
+other applications or shared resources. See [UNINSTALL.md](UNINSTALL.md) for a later purge,
 legacy installations, custom paths and external router/phone cleanup.

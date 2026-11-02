@@ -66,7 +66,7 @@ CGNAT, double NAT, ISP UDP filtering,
 captive portals, dynamic addresses and an active VPN can prevent reachability.
 A WireGuard hub supplies neither rendezvous nor automatic NAT traversal. DNS for
 DDNS uses the OS network policy and discloses endpoint lookup metadata. Choose a
-nonoverlapping /24 distinct from Bungee, the LAN and your other VPN routes.
+nonoverlapping /24 distinct from the LAN and your other VPN routes.
 
 The management listener binds a private IPv4 address on the server. The
 administrator source CIDR is an independent private network ACL, **not** the

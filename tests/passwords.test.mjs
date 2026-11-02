@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fixture, password } from './support.mjs';
 
-const replacement = 'replacement-test-password-only';
+const replacement = 'replacement-test-password-only!';
 const admin = (f, token, body) => f.request('/api/admin', { token, body });
 const change = (f, token, current_password, new_password = replacement, extra = {}) =>
   f.request('/api/account/password', { token, body: { current_password, new_password, ...extra } });

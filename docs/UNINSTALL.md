@@ -14,7 +14,7 @@ owned app/gateway/private bridge and image tags, deletes installed programs and
 helper/runtime state, and removes its service account/group. **Planner data,
 attachments, master key, TLS CA and tunnel identity remain for recovery**, under
 root-only retained directories. The inventory remains so a later purge has an
-explicit, verifiable scope. It does not modify Bungee, shared Docker services,
+explicit, verifiable scope. It does not modify other applications, shared Docker services,
 packages, other containers/networks, host forwarding policy or global logs.
 
 Upgraded installations also retain root-private checkpoints with older program

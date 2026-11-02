@@ -2,10 +2,11 @@
 """Fresh-install Linux helper. --plan performs validation and writes nothing.
 It never replaces an existing installation. HTTPS is served directly by Rust.
 """
-import argparse, fcntl, getpass, grp, hashlib, ipaddress, json, os, pathlib, pwd, re, shutil, socket, subprocess, sys, tempfile, time, urllib.request
+import argparse, fcntl, grp, hashlib, ipaddress, json, os, pathlib, pwd, re, shutil, socket, subprocess, sys, tempfile, time, urllib.request
 
 sys.dont_write_bytecode = True
 from server_installation import Host, inventory, digest, UNITS, uninstall_wrapper
+from terminal_input import prompt, Cancelled
 
 def arguments():
     p = argparse.ArgumentParser(description=__doc__)
@@ -32,9 +33,8 @@ def arguments():
 
 def prompt_port(label, management=False):
     while True:
-        print(f'{label} (1024–65535, required): ', end='', file=sys.stderr, flush=True)
         try:
-            raw = input().strip()
+            raw = prompt(f'{label} (1024–65535, required): ').strip()
         except EOFError as error:
             raise ValueError('Port selection requires a terminal, or explicit --web-port and --udp-port options.') from error
         if raw.isascii() and raw.isdigit() and 1024 <= int(raw) <= 65535 and not (management and int(raw) == 8443):
@@ -53,8 +53,7 @@ def select_ports(a, interactive):
 def prompt_required(label, validator):
     while True:
         try:
-            print(f'{label} (required): ', end='', file=sys.stderr, flush=True)
-            raw = input().strip()
+            raw = prompt(f'{label} (required): ').strip()
         except EOFError as error:
             raise ValueError('Network settings require a terminal, or explicit --lan-ip and --lan-prefix options.') from error
         if raw:
@@ -67,8 +66,7 @@ def prompt_required(label, validator):
 
 def prompt_optional(label):
     try:
-        print(label, end='', file=sys.stderr, flush=True)
-        return input().strip() or None
+        return prompt(label).strip() or None
     except EOFError as error:
         raise ValueError('Complete the interactive network questions, or supply the settings explicitly.') from error
 
@@ -145,6 +143,7 @@ def build_from_source(root):
 def main():
     a=arguments()
     interactive = a.interactive if a.interactive is not None else sys.stdin.isatty()
+    if interactive and sys.stdin.isatty():print('Backspace/Delete and arrows edit; Escape or Ctrl-C cancels.',file=sys.stderr)
     select_network(a, interactive)
     select_ports(a, interactive)
     lan=ipaddress.IPv4Address(a.lan_ip);prefix=ipaddress.IPv4Network(a.lan_prefix);overlay=ipaddress.IPv4Network(a.overlay)
@@ -188,7 +187,7 @@ def main():
         print('Installation plan (no changes made yet):')
         print(json.dumps(plan,indent=2))
         try:
-            confirmation = input('Type INSTALL to apply this plan (anything else cancels): ').strip()
+            confirmation = prompt('Type INSTALL to apply this plan (anything else cancels): ').strip()
         except EOFError as error:
             raise ValueError('Installation not confirmed; no changes made.') from error
         if confirmation != 'INSTALL':
@@ -213,10 +212,10 @@ def main():
         if path.exists():raise ValueError(f'Existing configuration refused: {path}')
     for port,kind in [(a.web_port,socket.SOCK_STREAM),(a.udp_port,socket.SOCK_DGRAM)]:
         with socket.socket(socket.AF_INET,kind) as sock:sock.bind((str(lan),port))
-    password=getpass.getpass('Initial web management owner password (12+ characters): ')
+    password=prompt('Initial web management owner password (12+ characters): ',secret=True)
     if len(password.encode())<12 or len(password.encode())>256:raise ValueError('Password length must be 12–256 bytes')
-    if password!=getpass.getpass('Confirm password: '):raise ValueError('Passwords do not match')
-    name=input('Owner user name [owner]: ').strip() or 'owner'
+    if password!=prompt('Confirm password: ',secret=True):raise ValueError('Passwords do not match')
+    name=prompt('Owner user name [admin]: ').strip() or 'admin'
     if not re.fullmatch(r'[A-Za-z0-9._ -]{2,64}',name):raise ValueError('Use an owner name with 2–64 letters, numbers, spaces, dots, underscores or hyphens')
     from container_deployment import Engine,compose,validate as validate_deployment
     engine=Engine()
@@ -270,7 +269,7 @@ def main():
     # systemd ProtectHome) or another service's Docker registry/proxy settings.
     (config/'docker').mkdir(mode=0o700)
     shutil.copy2(binary,install/'field-notes-server');(install/'field-notes-server').chmod(0o755)
-    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py'):
+    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py'):
         shutil.copy2(root/'scripts'/helper,install/helper);(install/helper).chmod(0o644 if '_' in helper else 0o755)
     (install/'uninstall-server.sh').write_text(uninstall_wrapper(config));(install/'uninstall-server.sh').chmod(0o755)
     (install/'upgrade-server.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+str(config)+' "$@"\n');(install/'upgrade-server.sh').chmod(0o755)
@@ -374,6 +373,9 @@ WantedBy=timers.target
         fd=os.open(systemd/filename,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
         with os.fdopen(fd,'w') as unit_file:unit_file.write(contents)
     checked(['systemd-analyze','verify',*[str(systemd/filename) for filename in units]])
+    print('Management:',f'https://{lan}:{a.web_port}',flush=True)
+    print('Android APK:',f'https://{lan}:{a.web_port}/downloads/field-notes.apk',flush=True)
+    print('Public CA:',config/'tls/ca.crt',flush=True)
     checked(['systemctl','daemon-reload']);checked(['systemctl','enable','--now','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
     checked(['systemctl','is-active','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
     import ssl,http.cookiejar
@@ -397,7 +399,10 @@ WantedBy=timers.target
             failure=None;break
         except (OSError,ValueError,KeyError,subprocess.SubprocessError) as e:failure=e;time.sleep(.2)
     del password
-    if failure is not None:raise ValueError('Services started but readiness failed; inspect service logs before using the installation')
+    if failure is not None:
+        print(engine.diagnostics(settings),file=sys.stderr)
+        print('Inspect app startup: docker --host=unix:///var/run/docker.sock logs --tail 40 field-notes-app',file=sys.stderr)
+        raise ValueError('Services started but HTTPS readiness failed. Keep existing keys/data; do not rerun a fresh installation.')
     ownership['phase']='installed';host.write_record(ownership)
     if lan not in prefix:
         print('Local TLS, runtime version and management source restriction verified. Complete the browser login check from an administrator client in '+str(prefix)+'.')
@@ -409,4 +414,5 @@ WantedBy=timers.target
 
 if __name__=='__main__':
     try:main()
+    except (Cancelled,KeyboardInterrupt):print('Installation cancelled. Existing installation state is retained.',file=sys.stderr);sys.exit(130)
     except (ValueError,subprocess.CalledProcessError,OSError) as e:print(f'Installation stopped: {e}',file=sys.stderr);sys.exit(1)

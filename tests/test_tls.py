@@ -1,4 +1,4 @@
-import importlib.util,json,pathlib,socket,ssl,subprocess,tempfile,time,unittest,urllib.request,urllib.error
+import importlib.util,json,os,pathlib,socket,ssl,subprocess,tempfile,time,unittest,urllib.request,urllib.error
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('tls_host',ROOT/'scripts/tls.py');tls=importlib.util.module_from_spec(spec);spec.loader.exec_module(tls)
 
@@ -6,6 +6,19 @@ def port():
  with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 
 class DirectTls(unittest.TestCase):
+ def test_restrictive_service_umask_and_noop_renew_preserve_group_traversal(self):
+  with tempfile.TemporaryDirectory(prefix='field-notes-tls-umask-') as root:
+   certs=pathlib.Path(root)/'tls';previous=os.umask(0o077)
+   try:
+    fingerprint=tls.provision(certs,['127.0.0.1'],issued_subdirectory=True)
+    saved={str(p.relative_to(certs)):p.read_bytes() for p in (certs/'ca.crt',certs/'private/ca.key',certs/'issued/server.key',certs/'issued/server.crt')}
+    for path,mode in [(certs,0o750),(certs/'issued',0o750),(certs/'private',0o700),(certs/'issued/server.key',0o640),(certs/'private/ca.key',0o600)]:
+     self.assertEqual(path.stat().st_mode&0o777,mode)
+    certs.chmod(0o700);(certs/'issued').chmod(0o700)
+    self.assertEqual(tls.provision(certs,['127.0.0.1'],renew=True,if_needed=True,issued_subdirectory=True),fingerprint)
+    self.assertEqual(certs.stat().st_mode&0o777,0o750);self.assertEqual((certs/'issued').stat().st_mode&0o777,0o750)
+    for name,content in saved.items():self.assertEqual((certs/name).read_bytes(),content)
+   finally:os.umask(previous)
  def test_container_leaf_mount_excludes_ca_signing_key_and_renews_in_place(self):
   with tempfile.TemporaryDirectory(prefix='field-notes-container-tls-') as root:
    certs=pathlib.Path(root)/'tls'

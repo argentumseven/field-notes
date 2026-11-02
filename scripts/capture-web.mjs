@@ -3,14 +3,17 @@
 import {chromium} from 'playwright';
 import {mkdir,readdir,rm,readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import assert from 'node:assert/strict';
 import {password} from '../tests/support.mjs';
 import {demo,illustration} from './screenshots/demo.mjs';
 const out='docs/screenshots/web';await mkdir(out,{recursive:true});const old=await readdir(out),made=[];
+process.env.FIELD_NOTES_DOWNLOADS ||= resolve('dist/server/linux-'+(process.arch==='x64'?'x86_64':process.arch==='arm64'?'aarch64':process.arch)+'/downloads');
+await readFile(join(process.env.FIELD_NOTES_DOWNLOADS,'android.json')).catch(()=>{throw Error('Build the matching server bundle first, or set FIELD_NOTES_DOWNLOADS to its verified download directory.');});
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});let f;
 try{
  f=await demo(await illustration(browser),true);
+ assert.equal((await f.request('/downloads/android')).data.available,true,'Capture a complete installation with its real matching APK');
  const page=await browser.newPage({viewport:{width:1440,height:1050},colorScheme:'dark',locale:'en-US',timezoneId:'America/New_York'});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));const button=name=>page.getByRole('button',{name,exact:true});
  const shot=async name=>{await page.locator('#notice.visible').waitFor({state:'hidden',timeout:10000});await page.screenshot({path:join(out,name+'.png'),fullPage:true,animations:'disabled'});made.push(name+'.png');console.log('Captured web/'+name);};

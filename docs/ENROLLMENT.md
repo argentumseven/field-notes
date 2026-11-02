@@ -87,7 +87,7 @@ status and cancellation, over pinned HTTPS with no redirects.
   promise persistence; use Android app settings to force-stop. Native-load failure
   is reported without clearing the vault, with an Android settings/removal action
   on the opening-error screen. OS Settings remains the independent escape path;
-  a separate Bungee-style recovery activity is not implemented.
+  a separate native recovery activity is not implemented.
 - Failed exchanges close only Field Notes' peer. The next retry configures it
   again and resolves trusted DDNS afresh. Keys, PSK, pinned CA and inner destination
   stay fixed. Existing system VPN and lockdown policy remain authoritative.
@@ -107,7 +107,7 @@ phone cannot be purged. Eligibility and role permissions are rechecked in the
 removal transaction. This removes enrollment/session/key records, not household
 tasks or phone-local data. Old invitations, device IDs and PSKs never revive.
 Failed cleanup is safely retryable. Owner/administrator bindings require an
-owner. See [the Bungee comparison](BUNGEE-PAIRING-REVIEW.md).
+owner.
 
 Backups do not restore old phone sessions or silently reactivate peers. A restore
 creates a fresh workspace epoch and marks stored devices for removal. Re-enroll

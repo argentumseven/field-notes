@@ -23,6 +23,7 @@ cp "dist/containers/field-notes-$version-linux-$arch-images.tar.gz" "$stage/imag
 cp -R docs/. "$stage/docs/"
 cp scripts/android_artifact.py "$stage/scripts/"
 cp scripts/upgrade-server.py scripts/upgrade-server.sh "$stage/scripts/"
+cp scripts/terminal_input.py scripts/reset-password.py "$stage/scripts/"
 (cd "$stage" && sha256sum images.tar.gz > images.tar.gz.sha256 && sha256sum field-notes-server images.json images.tar.gz > SHA256SUMS)
 "$stage/field-notes-server" help
 artifact="dist/server/field-notes-$version-linux-$arch.tar.gz"

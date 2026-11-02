@@ -15,8 +15,8 @@ refused because bind ownership must match the dedicated nonroot service account.
 The production gateway requires host kernel WireGuard and namespace nftables
 support; the installer loads the module before writing the installation.
 
-A VM alongside Bungee is suitable. Reserve its LAN address, choose unused
-management and UDP ports, and choose an overlay distinct from Bungee, LAN, VPN
+A VM shared with other services is suitable. Reserve its LAN address, choose unused
+management and UDP ports, and choose an overlay distinct from LAN, VPN
 and Docker bridge ranges. Start with 2 vCPU and 2 GiB RAM plus storage/backups;
 this is sizing guidance, not a measured household capacity guarantee. Current
 artifacts are Linux x86_64; building on arm64 needs separate verification.
@@ -56,7 +56,7 @@ The bridge retains a default route for replies to phones on the Internet.
 `internal: true` alone would prevent those replies and is not the security
 boundary; the namespace firewall is. The app cannot change that firewall.
 Docker manages its own host NAT rules; Field Notes does not flush or replace
-host firewall/Bungee tables. Check source preservation and restrictions on your
+host firewall or other applications' tables. Check source preservation and restrictions on your
 actual Docker firewall backend; published ports can bypass ordinary UFW input
 rules, so review the Docker forwarding/DOCKER-USER policy as well. Check the
 actual LAN: Docker hairpin traffic from the server itself may have a bridge

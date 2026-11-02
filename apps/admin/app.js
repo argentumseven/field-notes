@@ -218,23 +218,25 @@ function renderLogin() {
   $("#app").append(wrap);
 }
 async function appendAndroidDownload(parent, cls = "") {
+  const section = el("section", cls),
+    status = el("p", "muted", "Download the Android app from this server."),
+    link = el("a", "download-link primary", "Download APK");
+  link.href = "/downloads/field-notes.apk";
+  link.download = "field-notes.apk";
+  section.append(el("h2", "", "Android app"), status, link);
+  parent.append(section);
   try {
     const reply = await fetch("/downloads/android", { credentials: "omit" });
-    if (!reply.ok) return;
+    if (!reply.ok) throw Error("Download details unavailable");
     const result = await reply.json();
-    if (!result.available) return;
-    const data = result.artifact,
-      section = el("section", cls);
-    section.append(
-      el("h2", "", "Android app"),
-      el(
-        "p",
-        "muted",
-        `Version ${data.version} · ARM64 · ${data.signing} signing`,
-      ),
-    );
+    if (!result.available) {
+      status.textContent =
+        "The server's APK is missing or failed verification. Ask the administrator to restore the matching app bundle.";
+      return;
+    }
+    const data = result.artifact;
+    status.textContent = `Version ${data.version} · ARM64 · ${data.signing} signing`;
     for (const [label, file] of [
-      ["Download APK", "field-notes.apk"],
       ["SHA-256 checksum", "field-notes.apk.sha256"],
       ["Signing certificate", "field-notes.apk.signer.txt"],
     ]) {
@@ -255,8 +257,10 @@ async function appendAndroidDownload(parent, cls = "") {
       el("p", "item-sub", "Signer SHA-256: " + data.signer_sha256),
     );
     section.append(details);
-    parent.append(section);
-  } catch {} // Development fixtures may intentionally omit a distributable APK.
+  } catch {
+    status.textContent =
+      "Download details could not be loaded. Retry this page or use the direct APK button.";
+  }
 }
 function signedOut() {
   state.drafts.clear();

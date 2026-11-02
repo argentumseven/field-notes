@@ -97,7 +97,7 @@ def main():
         def ownership(path,to,gid=None):
             gid=to if gid is None else gid
             code='import os;os.chown("/fixture",'+str(to)+','+str(gid)+');\nfor p,ds,fs in os.walk("/fixture"):\n for n in ds+fs:os.chown(os.path.join(p,n),'+str(to)+','+str(gid)+')'
-            engine.call(['run','--rm','--network=none','--cap-drop=ALL','--cap-add=CHOWN','--mount','type=bind,source='+str(path)+',target=/fixture','--entrypoint=python3',gateway_image,'-c',code])
+            engine.call(['run','--rm','--network=none','--cap-drop=ALL','--cap-add=CHOWN','--cap-add=DAC_OVERRIDE','--mount','type=bind,source='+str(path)+',target=/fixture','--entrypoint=python3',gateway_image,'-c',code])
         ownership(gateway,0)
         specification=compose(settings)
         specification['services']['gateway']['cap_add'].append('MKNOD')
@@ -275,6 +275,35 @@ print('blocked')
             updated_hash=db.execute('SELECT hash FROM users WHERE name=?',('owner',)).fetchone()[0]
         assert updated_hash.startswith('$argon2id$v=19$') and updated_hash!=initial_hash
         print('PASS: Argon2id owner password, phone-token isolation, routine password change preserves pairing; explicit device sign-out revokes the live WireGuard session',flush=True)
+        # Production provisioning runs as root; the app has a DIFFERENT UID.
+        # Testing only host-UID containers masks an issued/0700 traversal bug.
+        engine.stop(settings)
+        saved_key=key.read_bytes();saved_ca=(config/'tls/ca.crt').read_bytes()
+        app_uid=10001 if os.getuid()!=10001 else 10002
+        issued=config/'tls/issued'
+        for path,owner,group in [(data,app_uid,app_uid),(key,app_uid,app_uid),
+                                 (config/'network.json',0,app_uid),(issued,0,app_uid),(runtime,0,app_uid)]:
+            private_dirs.append(path);ownership(path,owner,group)
+        # The cloud executor maps Docker-root to an unmapped host UID. Inspect
+        # ownership inside Docker, where the production app sees the mount.
+        inspect=engine.call(['run','--rm','--network=none','--cap-drop=ALL',
+            '--mount','type=bind,source='+str(issued)+',target=/fixture,readonly',
+            '--entrypoint=python3',gateway_image,'-c',
+            'import os;s=os.stat("/fixture");print(s.st_uid,s.st_gid,s.st_mode&511)']).stdout.split()
+        assert inspect==['0',str(app_uid),str(0o750)],inspect
+        settings.update(uid=app_uid,gid=app_uid)
+        specification=compose(settings)
+        specification['services']['gateway']['cap_add'].append('MKNOD')
+        specification['services']['gateway']['device_cgroup_rules']=['c 10:200 rwm']
+        file.write_text(json.dumps(specification));engine.start(settings,file)
+        # Both the TLS listener and the encrypted store must open successfully.
+        status,_=request('/api/login',{'name':'owner','password':'final-container-fixture-password','device':'distinct UID fixture'})
+        assert status==200
+        engine.check_management_locally(settings,saved_ca.decode(),version)
+        status,snapshot=request('/api/snapshot');assert status==200 and snapshot['records']
+        ownership(key,os.getuid(),os.getgid())
+        assert key.read_bytes()==saved_key and (config/'tls/ca.crt').read_bytes()==saved_ca
+        print('PASS: root-owned TLS directory with a distinct app UID/GID serves pinned HTTPS and retains encrypted data, password and master/CA keys',flush=True)
         engine.stop(settings)
         print('PASS: owned app/gateway/network removal leaves no deployment resources',flush=True)
     except Exception:
@@ -300,7 +329,7 @@ print('blocked')
             if folder.exists():
                 try:
                     code=f'import os;os.chown("/fixture",{os.getuid()},{os.getgid()});\nfor p,ds,fs in os.walk("/fixture"):\n for n in ds+fs:os.chown(os.path.join(p,n),{os.getuid()},{os.getgid()})'
-                    engine.call(['run','--rm','--network=none','--cap-drop=ALL','--cap-add=CHOWN','--mount','type=bind,source='+str(folder)+',target=/fixture','--entrypoint=python3',gateway_image,'-c',code])
+                    engine.call(['run','--rm','--network=none','--cap-drop=ALL','--cap-add=CHOWN','--cap-add=DAC_OVERRIDE','--mount','type=bind,source='+str(folder)+',target=/fixture','--entrypoint=python3',gateway_image,'-c',code])
                 except Exception:pass
         try:engine.call(['image','rm',fixture_tag])
         except Exception:pass

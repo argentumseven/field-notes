@@ -3,12 +3,12 @@ use std::{fs::File, io::BufReader, path::PathBuf, sync::Arc};
 
 fn read_pair(cert: &PathBuf, key: &PathBuf) -> Result<rustls::ServerConfig, String> {
     let chain = rustls_pemfile::certs(&mut BufReader::new(
-        File::open(cert).map_err(|e| e.to_string())?,
+        File::open(cert).map_err(|e| format!("Cannot read TLS certificate {}: {e}", cert.display()))?,
     ))
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| e.to_string())?;
     let private = rustls_pemfile::private_key(&mut BufReader::new(
-        File::open(key).map_err(|e| e.to_string())?,
+        File::open(key).map_err(|e| format!("Cannot read TLS private key {}: {e}", key.display()))?,
     ))
     .map_err(|e| e.to_string())?
     .ok_or("No TLS private key found")?;

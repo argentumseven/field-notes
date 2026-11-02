@@ -7,11 +7,16 @@ current bundle and its SHA-256 file to the server before starting.
 
 These commands are for a fresh Field Notes installation. An existing or partial
 installation must be inspected rather than purged: retain its database, master
-key, CA, hub identity and original APK signer. Existing Bungee/Docker installations
-are reused. Do not restart or replace Docker to work around Bungee's missing
-storage mount; recover that Bungee installation first.
+key, CA, hub identity and original APK signer. An existing Docker Engine is
+reused without changing its configuration or other applications. If another
+service prevents Docker from starting, repair that dependency first.
 
 Open a root shell (`sudo -i` if your account uses sudo). Then:
+
+The wizard supports Backspace/Delete and arrow keys; Escape cancels the current
+run. It suggests `admin` for the initial owner name and hides password input.
+For an existing failed install or forgotten password, use the
+[recovery guide](TROUBLESHOOTING.md) instead of the fresh-install commands.
 
 ```bash
 (

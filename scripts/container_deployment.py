@@ -172,6 +172,18 @@ class Engine:
     def healthy(self,settings):
         objects=self.objects(settings)
         return all(objects.get(role,{}).get('State',{}).get('Running') for role in ('app','gateway')) and objects['gateway']['State'].get('Health',{}).get('Status')=='healthy'
+    def diagnostics(self,settings):
+        """Bounded owned-container state; never dump config, environment or logs."""
+        objects=self.objects(settings);lines=[]
+        for role in ('app','gateway'):
+            state=objects.get(role,{}).get('State')
+            if state is None:lines.append(role+': missing');continue
+            # Select enum/numeric/boolean fields rather than Docker's free-text
+            # Error field or arbitrary user-controlled application output.
+            status=state.get('Status','unknown')
+            if status not in ('created','running','paused','restarting','removing','exited','dead'):status='unknown'
+            lines.append(f"{role}: {status}; exit={int(state.get('ExitCode',0))}; OOM={bool(state.get('OOMKilled',False))}")
+        return '\n'.join(lines)
     def check_management_locally(self,settings,ca_pem,version):
         """Probe the owned namespace when this host is outside the admin CIDR.
 

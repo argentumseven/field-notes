@@ -41,6 +41,13 @@ account route is absent from the private device listener; source ACL/origin/CSRF
 checks remain enforced. Browser secret fields clear on completion/cancellation,
 and in-flight submissions cannot be dismissed as if canceled.
 
+Local host-root password recovery is also available, including for older 0.3.3
+installations. It uses the installed image to generate the Argon2id hash, stops
+the owned app/timers during its transaction and invalidates only the target's
+browser sessions. It records a password-free event in the host authentication
+journal, separately from the encrypted in-app audit. It requires root and never
+exposes a network recovery endpoint. See [recovery](TROUBLESHOOTING.md).
+
 The container's master key is owned by its dedicated app UID with mode 0600,
 outside writable application state and mounted read-only. The host CA signing
 key and hub private key remain root-only and are excluded from the app. Retained

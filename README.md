@@ -10,7 +10,7 @@ app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
-[Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Bungee review](docs/BUNGEE-PAIRING-REVIEW.md) ·
+[Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
 [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Compact Focus view with ranked and undated tasks](docs/screenshots/web/02-focus.png)
@@ -107,7 +107,7 @@ for trust, enrollment, exact artifact paths and recovery.
 
 The installed `/opt/field-notes/uninstall-server.sh` previews removal by default.
 `--apply` preserves data and recovery keys; `--apply --purge` explicitly deletes
-them. It leaves Bungee, Docker and shared packages alone. [Removal guide](docs/UNINSTALL.md).
+them. It leaves Docker and shared packages alone. [Removal guide](docs/UNINSTALL.md).
 
 ## Organization and evidence
 

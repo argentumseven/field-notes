@@ -112,7 +112,7 @@ async fn run() -> Result<(), String> {
         let mut store = Store::open(&data, &key)?;
         store
             .initialize(
-                &arg(&args, "--name", "owner"),
+                &arg(&args, "--name", "admin"),
                 password.trim_end_matches(['\r', '\n']),
             )
             .map_err(|e| e.1)?;

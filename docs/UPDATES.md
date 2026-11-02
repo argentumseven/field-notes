@@ -132,7 +132,7 @@ normal backup/start/readiness failure restores the previous programs/settings
 and resumes the old service. It never restores an older database over accepted
 edits. Old images remain available for recovery; the current scoped uninstaller
 uses validated upgrade history to remove the installation's historical images
-as well, without global prune or removal of shared packages/Bungee.
+as well, without global prune or removal of shared packages or other applications.
 
 Power loss, disk failure during rollback or a changed foreign namespace can
 require host recovery. Keep the checkpoint and do not purge/reinstall. Stop the

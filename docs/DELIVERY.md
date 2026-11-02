@@ -152,7 +152,7 @@ browsers; native desktop and iOS packages are deferred.
 | Recovery | Fresh-instance backup restore checks tasks/images/comments, roles/keys, epoch change and old-client reconciliation |
 | Administration | Override/reset requires appropriate role and recent reauthentication; scope preview and audited result agree |
 | Notifications | App-owned event delivery, local reminders, revocation, duplicate hints, opt-out and real background/Doze limits are exercised; no FCM |
-| VPN coexistence | Physical GrapheneOS phone with Bungee and a system VPN, including lockdown, allowed/blocked UDP, Wi-Fi/cellular changes |
+| VPN coexistence | Physical GrapheneOS phone with another app-contained tunnel and a system VPN, including lockdown, allowed/blocked UDP, Wi-Fi/cellular changes |
 | Desktop | Actual Linux and Windows installation, secure storage, upgrade, offline behavior and keyboard/accessibility flows |
 | Android APK | Signature/checksum verified, clean install and in-place upgrade on a physical phone, permissions/manifest inspected |
 | iOS | Native build/signing evidence, foreground sync, local reminders and accurately documented suspended/force-quit limits |

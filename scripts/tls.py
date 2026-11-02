@@ -22,10 +22,15 @@ def provision(root, names, group=None, renew=False, if_needed=False, issued_subd
     gid=grp.getgrnam(group).gr_gid if group else os.getgid()
     if not renew and root.exists():raise ValueError('Certificate directory exists; initialization refused')
     if renew and not (root/'private/ca.key').is_file():raise ValueError('Existing CA key required for renewal')
-    root.mkdir(mode=0o750,parents=True,exist_ok=renew);os.chown(root,os.getuid(),gid)
+    root.mkdir(mode=0o750,parents=True,exist_ok=renew);os.chown(root,os.getuid(),gid);root.chmod(0o750)
     issued=root/'issued' if issued_subdirectory else root
-    issued.mkdir(mode=0o750,exist_ok=True);os.chown(issued,os.getuid(),gid)
-    private=root/'private';private.mkdir(mode=0o700,exist_ok=renew)
+    private=root/'private'
+    if issued.is_symlink() or private.is_symlink():raise ValueError('Certificate subdirectories must not be symlinks')
+    # mkdir's mode is filtered by the host/service umask (normally 077).
+    # Explicitly grant traversal to the app group, including on a no-op renew.
+    # The CA signing directory remains accessible only to the administrator.
+    issued.mkdir(mode=0o750,exist_ok=True);os.chown(issued,os.getuid(),gid);issued.chmod(0o750)
+    private.mkdir(mode=0o700,exist_ok=renew);private.chmod(0o700)
     with open(private/'lock','a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         if renew and if_needed and (issued/'server.crt').is_file():

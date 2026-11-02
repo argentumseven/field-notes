@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {mkdir} from 'node:fs/promises';
 import {fixture,password} from './support.mjs';
+test('APK action stays visible on sign-in when metadata fails or the bundle is absent',async()=>{
+ const f=await fixture({downloads:null});let browser;
+ try{
+  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+  const page=await browser.newPage();
+  await page.route('**/downloads/android',route=>route.fulfill({status:503,body:'Unavailable'}));
+  await page.goto(f.admin);
+  await page.getByText('Download details could not be loaded. Retry this page or use the direct APK button.').waitFor();
+  const link=page.getByRole('link',{name:'Download APK',exact:true});assert.equal(await link.getAttribute('href'),'/downloads/field-notes.apk');assert(await link.isVisible());
+  await page.unroute('**/downloads/android');await page.reload();
+  await page.getByText("The server's APK is missing or failed verification. Ask the administrator to restore the matching app bundle.").waitFor();assert(await link.isVisible());
+ }finally{await browser?.close();await f.close();}
+});
 test('web workflow: sign in, project, task details, comment, board, admin and mobile layout',async()=>{
  const f=await fixture({enrollment:true});let browser;
  const setupOwner=await f.login();await f.request('/api/reauth',{token:setupOwner,body:{password}});await f.request('/api/admin',{token:setupOwner,body:{action:'user.create',name:'Sam',role:'member',password}});

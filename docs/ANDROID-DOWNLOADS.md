@@ -20,6 +20,11 @@ uninstalling or clearing storage; see
 
 ## Local download endpoints
 
+If the web service has not started, copy
+`/opt/field-notes/downloads/field-notes.apk` directly from the Linux server.
+The APK does not require the web interface to be working in order to sideload it.
+Pairing needs a healthy server. See [startup recovery](TROUBLESHOOTING.md).
+
 Replace the example management address/port with the installer output:
 
 ```text
@@ -65,11 +70,9 @@ attestation. No private signing key or password enters the download directory.
 
 ## Builder and permanent releases
 
-Bungee's current APK delivery uses permanent GitHub Releases with APK/checksum
-assets built from verified source tags. Field Notes includes an analogous
-[workflow](../.github/workflows/publish-android.yml) and adds the LAN download
-above so a household server can furnish its exact APK without Internet access.
-No Bungee code or assets were copied.
+The release workflow can publish APK/checksum/signer files as GitHub Release
+assets. A permanent public download is available only after a release has
+actually been published; the paired server always provides its own matching APK.
 
 Build Android before the server. An operator release can replace the default
 development APK in a bundle:

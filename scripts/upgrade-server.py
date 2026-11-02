@@ -9,7 +9,7 @@ from container_deployment import Engine,compose,validate
 from server_installation import Host,load,RECORD,uninstall_wrapper
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('field_notes_removal',HERE/'uninstall-server.py');removal=importlib.util.module_from_spec(spec);spec.loader.exec_module(removal)
-HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py')
+HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py')
 
 def wrapper(config):
  return '#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+shlex.quote(config)+' "$@"\n'

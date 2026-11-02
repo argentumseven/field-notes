@@ -125,7 +125,7 @@ privacy and encrypted receipts. A separate normal-uninstall/reinstall harness
 checks live-work removal and destruction of the old profile encryption key.
 It has no Google services. It cannot verify
 GrapheneOS forwarding, physical speaker output, long-running battery cost,
-reboot/Doze reliability on your phones or behavior beside Bungee. Those remain
+reboot/Doze reliability on your phones or behavior beside other app-contained tunnels. Those remain
 physical-device release checks; see [VALIDATION.md](VALIDATION.md).
 
 Run the guarded development checks only on the disposable `field-notes-test` AVD:
