@@ -1,5 +1,29 @@
 # Pairing and failure handling compared with Bungee
 
+## QR follow-up, November 2
+
+Reviewed [Bungee at a6dbb71](https://github.com/argentumseven/bungee/tree/a6dbb71f6d24df1474665a7243bc61c87e0530d1):
+`web/src/main.tsx`, `web/src/style.css`, Android `MainActivity.kt` and Gradle
+dependencies. Its manager uses a PNG QR with medium error correction and its
+phone uses JourneyApps ZXing's Activity Result scanner. Field Notes' custom
+CameraX decoder swallowed frame failures and attempted unsupported source
+rotation; its dense, fractionally scaled SVG also failed an actual ZXing decode
+of the displayed image. Previous browser checks established image presence only.
+
+Field Notes now uses the same Apache-2.0 scanner dependency independently,
+with a private screenshot-protected activity, autofocus/orientation lifecycle,
+visible permission errors, cancellation and automatic invitation review. Its
+manager renders PNG at integer module sizes with medium error correction and
+provides selectable/copy text if rendering fails or QR capacity is exceeded.
+Invitation insert/audit is transactional. Browser checks decode actual rendered
+images at three viewport widths in all four orientations with ZXing core.
+
+The Field Notes URI, pinned CA, explicit source confirmation, scoped account,
+ten-minute single-claim proof, separate administrator code approval, host peer
+acknowledgement and tunnel activation remain its own protocol. Scanning cannot
+overwrite existing pairing or queued work. No Bungee source/assets were copied,
+and Bungee was not built or tested. Library licenses ship in Android assets.
+
 Reviewed [Bungee main at 67ee496](https://github.com/argentumseven/bungee/tree/67ee496)
 against Field Notes during the 0.3.2/0.3.3 changes. This includes actual
 `server/src/enrollment.rs`, `api.rs`, `Identity.kt`, `HomeApi.kt`,

@@ -1406,6 +1406,7 @@ async function formDialog(
       for (const node of Object.values(nodes))
         if (node.type === "password") node.value = "";
       for (const image of body.querySelectorAll(".invite-qr")) image.remove();
+      for (const secret of body.querySelectorAll(".invitation-material")) secret.remove();
       dialog.close();
       if (ok) resolve();
       else reject(Error("Action canceled."));

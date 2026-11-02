@@ -36,6 +36,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.*
@@ -47,13 +49,48 @@ import org.fieldnotes.ui.DeviceActions
 class MainActivity : ComponentActivity() {
     private val app get() = application as FieldNotesApplication
     private var invitationCode by mutableStateOf<String?>(null)
-    private var scanning by mutableStateOf(false)
+    private var invitationSequence by mutableIntStateOf(0)
+    private var requestedPage by mutableStateOf<String?>(null)
+    private var invitationScanError by mutableStateOf<String?>(null)
     private var unlocked by mutableStateOf(false)
     private var prompting = false
     private var lastUnlock = 0L
     private var deliveryStatus by mutableStateOf("")
+    private val invitationScanner = registerForActivityResult(ScanContract()) { result ->
+        result.contents?.let { raw ->
+            if (raw.length <= 20000) {
+                invitationCode = raw
+                invitationSequence++
+                invitationScanError = null
+            } else invitationScanError = "This QR is too large to be a Field Notes invitation."
+        }
+    }
+    private fun scanInvitation() {
+        invitationScanError = null
+        try {
+            invitationScanner.launch(ScanOptions()
+                .setCaptureActivity(EnrollmentCaptureActivity::class.java)
+                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                .setPrompt("Scan the invitation shown by your Field Notes server")
+                .setBeepEnabled(false)
+                .setBarcodeImageEnabled(false)
+                .setOrientationLocked(false))
+        } catch (_: Exception) {
+            invitationScanError = "Camera unavailable. You can paste the invitation instead."
+        }
+    }
     override fun onStart(){super.onStart();app.uiVisible=true}
     override fun onStop(){app.uiVisible=false;super.onStop()}
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedPage = intent.getStringExtra("open_page")
+        intent.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }?.let {
+            invitationCode = it
+            invitationSequence++
+            invitationScanError = null
+        }
+    }
     private val confirm = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         prompting = false
         unlocked = result.resultCode == RESULT_OK
@@ -75,6 +112,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestedPage = intent?.getStringExtra("open_page")
         invitationCode = intent?.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         lifecycleScope.launch {
@@ -90,8 +128,9 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = { unlock() }, modifier = Modifier.padding(top = 20.dp)) { Text("Unlock with device credential") }
             } } }
             else {
-                val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> scanning = granted }
-                if (scanning) FieldNotesTheme { EnrollmentScanner(this, { invitationCode = it; scanning = false }, { scanning = false }) }
+                val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                    if (granted) scanInvitation() else invitationScanError = "Camera permission was denied. Allow it in Android app settings, or paste the invitation."
+                }
                 var back by remember { mutableStateOf<(() -> Unit)?>(null) }
                 var pendingImage by rememberSaveable { mutableStateOf<String?>(null) }
                 var pendingEpoch by rememberSaveable { mutableStateOf<String?>(null) }
@@ -124,7 +163,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 FieldNotesApp(app.model,
-                    requestedPage=intent?.getStringExtra("open_page"),
+                    requestedPage=requestedPage,
                     deviceActions=DeviceActions(androidDelivery=true,status=deliveryStatus,
                         update=updateState,checkUpdate={app.updates.checkForUpdate()},downloadUpdate={app.updates.download()},cancelUpdate={app.updates.cancel()},installUpdate={app.updates.install(this)},
                         addUpcomingWidget={DeliverySettings.pin(this)},profileTest={val ok=Alerts.scheduleProfileTest(this);Toast.makeText(this,if(ok)"Test scheduled for 30 seconds. Switch profiles now." else "Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},testAlert={if(!Alerts.test(this))Toast.makeText(this,"Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},
@@ -133,7 +172,9 @@ class MainActivity : ComponentActivity() {
                         removeInstallation={DeliverySettings.remove(this@MainActivity)}),
                     enrollmentPolling = lifecycleState.isAtLeast(Lifecycle.State.STARTED),
                     invitationCode = invitationCode,
-                    scanInvitation = { if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scanning = true else cameraPermission.launch(Manifest.permission.CAMERA) },
+                    invitationScanError = invitationScanError,
+                    invitationSequence = invitationSequence,
+                    scanInvitation = { if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scanInvitation() else cameraPermission.launch(Manifest.permission.CAMERA) },
                     copyText = { text -> getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Field Notes", text).apply { description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) } }) },
                     attachImage = { id -> pendingImage = id; pendingEpoch = app.model.state.value.cache.snapshot?.epoch; pendingGeneration = app.model.state.value.cache.snapshot?.generation; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     configureBackground = { preferences ->

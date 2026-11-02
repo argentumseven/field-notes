@@ -19,6 +19,29 @@ async function pendingPhone(f,owner,publicKey=randomBytes(32).toString('base64')
  return {...claim.data,body};
 }
 
+test('invitation image issuance is atomic with its audit and large certificates retain copy enrollment',async()=>{
+ const f=await fixture({enrollment:true});
+ try{
+  const owner=await f.login();await f.request('/api/reauth',{token:owner,body:{password}});
+  const user=(await f.request('/api/snapshot',{token:owner})).data.actor.user_id;
+  const db=new DatabaseSync(join(f.data,'field-notes.sqlite3'));
+  try{
+   db.exec("CREATE TRIGGER fail_invite BEFORE INSERT ON audit WHEN NEW.action='device.invite' BEGIN SELECT RAISE(ABORT,'injected failure'); END");
+   assert.equal((await f.request('/api/enrollment/invitations',{token:owner,body:{user_id:user}})).status,500);
+   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM enrollment_invites').get().n,0);
+   db.exec('DROP TRIGGER fail_invite');
+  }finally{db.close()}
+  await f.stop();const network=JSON.parse(await readFile(f.networkFile));network.ca_pem=network.ca_pem.repeat(8);
+  await writeFile(f.networkFile,JSON.stringify(network));await f.start();
+  const issued=await f.request('/api/enrollment/invitations',{token:owner,body:{user_id:user}});
+  assert.equal(issued.status,200);assert.equal(issued.data.qr_png,null);assert.equal(issued.data.qr_svg,null);
+  assert(issued.data.code.length<=20000);
+  const payload=JSON.parse(Buffer.from(issued.data.code.split('#')[1],'base64url'));
+  const claim=await f.request('/api/enrollment/claim',{body:{token:payload.token,public_key:randomBytes(32).toString('base64'),claim_secret:randomBytes(32).toString('hex'),name:'Pasted invitation'}});
+  assert.equal(claim.status,200);
+ }finally{await f.close()}
+});
+
 test('canceling an uncertain claim uses saved proof without allocating or rebinding a peer',async()=>{
  const f=await fixture({enrollment:true});
  try{

@@ -1,5 +1,35 @@
 # Implementation and validation record
 
+## 0.3.5 QR enrollment
+
+An actual ZXing decode of the old manager's displayed QR failed. The manager now
+uses a larger opaque PNG, medium error correction and whole-pixel modules with a
+white quiet zone. The regression decodes the exact current invitation from real
+Chromium element screenshots at 1440, 390 and 360 px viewport widths in all four
+orientations. Seven browser checks pass, including blocked clipboard fallback,
+image failure, expiry, replacement and browser-session loss. The QR gallery image
+was refreshed from a discarded synthetic fixture.
+
+All 33 Node API/planning checks, seven Rust tests/clippy, 98 Python checks and
+43 shared Kotlin tests pass. New API checks verify invitation/audit rollback and
+copy enrollment when a valid certificate chain exceeds QR capacity. The complete
+Docker/WireGuard/TLS fixture passes, including enrollment approval/activation,
+private APK download, nonroot/read-only runtime, firewall denial and cleanup.
+
+Android replaces its custom CameraX decoder with JourneyApps ZXing 4.3.0 and
+core 3.5.3, pinned with locks and SHA-256 verification. Release lint, APK signature,
+manifest, ARM64 native and 16 KiB checks pass for 0.3.5/code 8 using the existing
+public signing certificate. Scanned/deep-linked invitations open review with
+trust unchecked; malformed data gets a bounded readable error. Camera permission
+denial offers paste; cancellation preserves the draft. The capture activity is
+unexported, screenshot-protected and does not save barcode images or upload frames.
+
+The first new emulator camera-return check queried Compose before its root had
+reattached and the suite timed out. Its polling now waits through that transition;
+the disposable AVD was rebooted without wiping. That runtime rerun is pending.
+Physical GrapheneOS camera optics/permissions remain unverified. Existing
+single-use, approval, TLS pinning and tunnel restrictions are not bypassed.
+
 ## 0.3.4 browser sessions and public APK delivery
 
 A production TLS 1.3/HTTP2 test reproduced the login loop: a valid Field Notes

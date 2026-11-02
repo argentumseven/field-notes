@@ -262,25 +262,72 @@ async function renderAdmin() {
           async () => {},
           "Done",
         );
-        const blob = URL.createObjectURL(
-            new Blob([invite.qr_svg], { type: "image/svg+xml" }),
-          ),
-          picture = el("img", "invite-qr");
+        const dialog = $("#dialog"),
+          material = el("div", "invitation-material"),
+          picture = el("img", "invite-qr"),
+          status = el("p", "muted"),
+          manual = el("details"),
+          text = input("Invitation text", invite.code, "textarea");
+        dialog.classList.add("invitation-dialog");
         picture.alt = "Private single-use enrollment invitation";
-        picture.src = blob;
+        // Avoid fractional-width modules, especially on small screens. The
+        // encoder uses exactly eight source pixels per module including quiet zone.
+        const sizeQr = () => {
+          if (!picture.naturalWidth) return;
+          const modules = picture.naturalWidth / 8;
+          picture.style.width =
+            Math.floor(Math.min(512, material.clientWidth) / modules) *
+              modules +
+            "px";
+        };
+        const resize = new ResizeObserver(sizeQr);
+        resize.observe(material);
+        picture.addEventListener("load", sizeQr, { once: true });
+        text.node.readOnly = true;
+        text.node.spellcheck = false;
+        text.node.rows = 4;
+        manual.append(
+          el("summary", "", "Can’t scan? Paste the invitation instead"),
+        );
+        addField(manual, text);
+        const unavailable = () => {
+          picture.remove();
+          status.textContent =
+            "The QR image could not be displayed. Copy the invitation below and paste it into Field Notes on the phone.";
+          manual.open = true;
+        };
+        picture.addEventListener("error", unavailable, { once: true });
+        if (invite.qr_png) picture.src = invite.qr_png;
+        else unavailable();
         const copy = button(
           "Copy invitation",
           async () => {
-            await navigator.clipboard.writeText(invite.code);
-            notice("Invitation copied. Treat it as a temporary secret.");
+            if (Date.now() >= invite.expires * 1000) return;
+            try {
+              await navigator.clipboard.writeText(invite.code);
+              notice("Invitation copied. Treat it as a temporary secret.");
+            } catch {
+              manual.open = true;
+              text.node.focus();
+              text.node.select();
+              notice(
+                "Clipboard access was blocked. Copy the selected invitation text.",
+              );
+            }
           },
           "quiet",
         );
-        $("#dialog-body").append(picture, copy);
+        material.append(status);
+        if (invite.qr_png) material.append(picture);
+        material.append(copy, manual);
+        $("#dialog-body").append(material);
         const expiry = setTimeout(
           () => {
             picture.remove();
             copy.disabled = true;
+            text.node.value = "";
+            manual.remove();
+            status.textContent = "";
             $("#dialog-body p").textContent =
               "This invitation has expired. Close this dialog and create a fresh one.";
           },
@@ -290,7 +337,10 @@ async function renderAdmin() {
           await waiting;
         } finally {
           clearTimeout(expiry);
-          URL.revokeObjectURL(blob);
+          resize.disconnect();
+          text.node.value = "";
+          material.remove();
+          dialog.classList.remove("invitation-dialog");
         }
         await renderAdmin();
       },

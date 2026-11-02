@@ -9,6 +9,10 @@ Screenshots do not prove live enrollment, home firewall isolation, camera optics
 GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
 capture protection enabled. Test invitations expire and their fixture is deleted.
 
+The November 2 QR capture shows the 0.3.5 manager's larger PNG invitation and
+copy/paste fallback. Its rendered QR is also decoded with offline ZXing in browser
+tests at desktop and narrow viewport widths; camera optics remain a phone check.
+
 ## Workspace, lists and shared notes
 
 Capture unfiled tasks in Inbox. Lists keep groceries, routines and checklists

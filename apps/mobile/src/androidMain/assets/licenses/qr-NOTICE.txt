@@ -1,0 +1,12 @@
+JourneyApps ZXing Android Embedded 4.3.0
+https://github.com/journeyapps/zxing-android-embedded/tree/v4.3.0
+Copyright Journey Mobile, Inc. and contributors.
+Licensed under the Apache License, Version 2.0 (journeyapps-LICENSE.txt).
+
+ZXing core 3.5.3
+https://github.com/zxing/zxing/tree/zxing-3.5.3
+Copyright ZXing authors and contributors.
+Licensed under the Apache License, Version 2.0 (zxing-LICENSE.txt).
+
+These dependencies provide local QR decoding. Field Notes does not send camera
+frames or invitation material to these projects or to a third-party service.

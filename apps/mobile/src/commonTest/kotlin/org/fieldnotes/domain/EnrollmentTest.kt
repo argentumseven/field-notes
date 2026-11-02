@@ -87,6 +87,10 @@ class EnrollmentTest {
     @Test fun invitationIsStrictScopedAndExpires() {
         fun code(i: Invitation) = "fieldnotes://enroll#"+Base64.UrlSafe.encode(WireJson.encodeToString(i).encodeToByteArray()).trimEnd('=')
         assertEquals("Alex",readInvitation(code(invitation()),1000).user)
+        assertEquals("Alex",readInvitation("\n " + code(invitation()) + " \n",1000).user)
+        val malformed = "fieldnotes://enroll#" + Base64.UrlSafe.encode(("{\"token\":\"" + "secret".repeat(20)).encodeToByteArray())
+        val error = assertFailsWith<IllegalArgumentException> { readInvitation(malformed,1000) }
+        assertFalse(error.message.orEmpty().contains("secret"))
         assertFails { readInvitation(code(invitation()),1101) }; assertFails { readInvitation(code(invitation().copy(url="https://8.8.8.8:9443/api/enrollment")),1000) }
         assertFails { readInvitation(code(invitation().copy(role="root")),1000) }
         assertFails { readInvitation(code(invitation().copy(url="https://192.168.1.10:9443/api/enrollment?redirect=yes")),1000) }

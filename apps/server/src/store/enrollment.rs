@@ -1,5 +1,5 @@
 use super::*;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use std::{
     io::Write,
     net::{IpAddr, Ipv4Addr},
@@ -207,6 +207,48 @@ impl Store {
             &serde_json::to_vec(network)
                 .map_err(|_| Fault(500, "Network serialization failed".into()))?,
         )?;
+        let invitation = json!({"version":1,"url":network.bootstrap_url,"ca":network.ca_pem,"token":raw,"user":name,"role":role,"expires":expires});
+        let code = format!(
+            "fieldnotes://enroll#{}",
+            URL_SAFE_NO_PAD.encode(
+                serde_json::to_vec(&invitation)
+                    .map_err(|_| Fault(500, "Invitation serialization failed".into()))?
+            )
+        );
+        // Integer-sized modules and an opaque quiet zone survive camera capture.
+        // Keep SVG for older managers, but serve PNG to current browsers. An
+        // unusually large CA can exceed QR capacity; copying still works.
+        let (qr_svg, qr_png) = match qrcode::QrCode::with_error_correction_level(
+            code.as_bytes(),
+            qrcode::EcLevel::M,
+        ) {
+            Ok(qr) => {
+                let svg = qr
+                    .render::<qrcode::render::svg::Color>()
+                    .module_dimensions(8, 8)
+                    .build();
+                let pixels = qr
+                    .render::<image::Luma<u8>>()
+                    .module_dimensions(8, 8)
+                    .build();
+                let mut png = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::ImageLuma8(pixels)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(|_| Fault(500, "Invitation image encoding failed".into()))?;
+                (
+                    Some(svg),
+                    Some(format!(
+                        "data:image/png;base64,{}",
+                        STANDARD.encode(png.into_inner())
+                    )),
+                )
+            }
+            Err(_) => (None, None),
+        };
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.db,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
         self.db.execute(
             "INSERT INTO enrollment_invites VALUES(?,?,?,?,?,?,NULL,?)",
             params![
@@ -225,21 +267,9 @@ impl Store {
             user_id,
             &json!({"expires":expires}),
         )?;
-        let invitation = json!({"version":1,"url":network.bootstrap_url,"ca":network.ca_pem,"token":raw,"user":name,"role":role,"expires":expires});
-        let code = format!(
-            "fieldnotes://enroll#{}",
-            URL_SAFE_NO_PAD.encode(
-                serde_json::to_vec(&invitation)
-                    .map_err(|_| Fault(500, "Invitation serialization failed".into()))?
-            )
-        );
-        let qr = qrcode::QrCode::with_error_correction_level(code.as_bytes(), qrcode::EcLevel::L)
-            .map_err(|_| Fault(500, "Invitation is too large for QR encoding".into()))?
-            .render::<qrcode::render::svg::Color>()
-            .min_dimensions(640, 640)
-            .build();
+        tx.commit()?;
         Ok(
-            json!({"id":identifier,"code":code,"qr_svg":qr,"expires":expires,"user":name,"role":role}),
+            json!({"id":identifier,"code":code,"qr_svg":qr_svg,"qr_png":qr_png,"expires":expires,"user":name,"role":role}),
         )
     }
     pub fn enrollment_claim(&mut self, input: Value, source: &str) -> Result<Value> {

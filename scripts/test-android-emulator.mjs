@@ -84,7 +84,7 @@ async function instrument(classes, extra = [], report) {
 if (!nativeOnly) {
   console.log("Running Android Keystore and first-launch UI tests.");
   const first = await instrument(
-    "org.fieldnotes.app.VaultDeviceTest,org.fieldnotes.app.InterfaceDeviceTest,org.fieldnotes.app.EditorDeviceTest,org.fieldnotes.app.WidgetDeviceTest,org.fieldnotes.app.UpdateDeviceTest",
+    "org.fieldnotes.app.VaultDeviceTest,org.fieldnotes.app.InterfaceDeviceTest,org.fieldnotes.app.EnrollmentDeviceTest,org.fieldnotes.app.EditorDeviceTest,org.fieldnotes.app.WidgetDeviceTest,org.fieldnotes.app.UpdateDeviceTest",
     [],
     "vault-ui.txt",
   );

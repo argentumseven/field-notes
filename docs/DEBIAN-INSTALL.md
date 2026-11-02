@@ -49,7 +49,7 @@ fn_docker info --format 'Local Docker Engine: {{.ServerVersion}}'
 fn_compose_version="$(fn_docker compose version --short)"
 python3 -c 'import re,sys; m=re.match(r"v?(\d+)\.(\d+)",sys.argv[1]); assert m and tuple(map(int,m.groups())) >= (2,24), "Docker Compose 2.24+ is required"' "$fn_compose_version"
 modprobe wireguard
-read -r -p 'Full path to field-notes-0.3.4-linux-x86_64.tar.gz: ' fn_bundle
+read -r -p 'Full path to field-notes-0.3.5-linux-x86_64.tar.gz: ' fn_bundle
 fn_bundle="$(realpath -- "$fn_bundle")"
 # Keep the two downloaded files beside each other with their supplied names.
 (cd "$(dirname -- "$fn_bundle")" && sha256sum --check "$(basename -- "$fn_bundle").sha256")

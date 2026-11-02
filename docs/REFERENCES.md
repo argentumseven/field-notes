@@ -122,6 +122,18 @@ source or assets were copied. Field Notes tests establish its own behavior;
 Bungee was not built or tested here. See [the comparison](BUNGEE-PAIRING-REVIEW.md)
 and [APK delivery](ANDROID-DOWNLOADS.md).
 
+## QR scanner dependency and reference
+
+[Bungee a6dbb71](https://github.com/argentumseven/bungee/tree/a6dbb71f6d24df1474665a7243bc61c87e0530d1)
+was reviewed for its manager PNG generation and Android scanner integration.
+No AGPL source or assets were copied. Field Notes independently integrates
+[JourneyApps ZXing Android Embedded 4.3.0](https://github.com/journeyapps/zxing-android-embedded/tree/v4.3.0)
+and [ZXing core 3.5.3](https://github.com/zxing/zxing/tree/zxing-3.5.3), both
+Apache-2.0. Version locks and SHA-256 verification pin the artifacts. Original
+license texts and attribution ship in `androidMain/assets/licenses/`. The
+decoder runs locally without a Google service, network lookup or frame upload.
+See [pairing review](BUNGEE-PAIRING-REVIEW.md) for deliberate protocol differences.
+
 ## APK signature verification dependency
 
 Android update verification uses AOSP `com.android.tools.build:apksig:8.10.1`

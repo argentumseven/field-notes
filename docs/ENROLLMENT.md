@@ -10,6 +10,10 @@
    review the account/server address, name the phone, confirm the trusted source,
    and request enrollment. You can paste an invitation when no camera is available.
    Scanning alone does not authorize a server or send credentials.
+   The local scanner opens a camera screen and returns directly to invitation
+   review. It uses no Google services and does not save or upload camera frames.
+   Back cancels scanning and keeps anything you already pasted. If permission is
+   denied, allow Camera in Android app settings or use the paste option.
 5. On the website, find that phone and choose **Approve**. Enter the eight-character
    code shown directly on the phone. Do not copy a code supplied by another person.
 6. The site shows **provisioning** until the constrained root helper has installed
@@ -37,6 +41,17 @@ status and cancellation, over pinned HTTPS with no redirects.
 
 ## Interruptions and recovery
 
+- If the QR is difficult to read, show the whole square without covering its
+  white border and move the camera back until it fits the guide. The manager
+  displays a crisp PNG with whole pixels per square. **Can’t scan? Paste the
+  invitation instead** exposes selectable text; **Copy invitation** selects
+  that text if the browser blocks clipboard access. A missing/unreadable image
+  shows the same fallback. Expiry, closing and browser sign-out remove both
+  image and text. Create a new invitation when it expires.
+- Scanning opens the account/server review automatically. Check the trusted
+  source box, then choose **Request enrollment**. A malformed code produces a
+  readable error. Neither scanning nor opening an invitation link replaces an
+  existing pairing, pending enrollment or queued work.
 - Reopen the app after process death. The claim nonce, pending ID, configuration
   and activation receipt credential are saved before their respective side effects.
   Lost responses retry the same operation; they do not allocate another peer.

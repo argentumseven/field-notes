@@ -38,14 +38,14 @@ import org.fieldnotes.domain.*
     configureBackground: (Preferences) -> Unit, registerBack: ((() -> Unit)?) -> Unit,
     imageContent: @Composable (VisibleRecord) -> Unit,
     deviceActions:DeviceActions=DeviceActions(), requestedPage:String?=null,
-    invitationCode: String? = null, enrollmentPolling: Boolean = true, scanInvitation: () -> Unit = {},
+    invitationCode: String? = null, enrollmentPolling: Boolean = true, scanInvitation: () -> Unit = {}, invitationScanError:String?=null, invitationSequence:Int=0,
 ) {
     val state by model.state.collectAsState()
     FieldNotesTheme {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             when {
                 !state.ready -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Opening encrypted workspace"); state.error?.let { ErrorText(it); Button(onClick = { model.launch { model.initialize() } }) { Text("Retry") }; if(deviceActions.androidDelivery)SecondaryButton(onClick=deviceActions.appSettings){Text("Android app settings and removal")} } ?: CircularProgressIndicator() }
-                (state.cache.enrollment?.stage?.let { it != "sign_in" } == true) || state.cache.config == null -> EnrollmentScreen(model, state, invitationCode, scanInvitation, enrollmentPolling)
+                (state.cache.enrollment?.stage?.let { it != "sign_in" } == true) || state.cache.config == null -> EnrollmentScreen(model, state, invitationCode, scanInvitation, enrollmentPolling, invitationScanError, invitationSequence)
                 state.needsLogin -> LoginScreen(model, state, copyText)
                 state.cache.snapshot == null -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Connected. Download your workspace."); state.error?.let { ErrorText(it) }; Button(onClick = { model.launch { model.sync() } }) { Text("Sync workspace") };if(deviceActions.androidDelivery)AppUpdatesCard(deviceActions) }
                 else -> WorkspaceScreen(model, state, copyText, attachImage, configureBackground, registerBack, imageContent,deviceActions,requestedPage)
@@ -53,11 +53,15 @@ import org.fieldnotes.domain.*
         }
     }
 }
-@Composable private fun EnrollmentScreen(model: Workspace, state: WorkspaceState, incoming: String?, scan: () -> Unit, polling: Boolean) {
+@Composable private fun EnrollmentScreen(model: Workspace, state: WorkspaceState, incoming: String?, scan: () -> Unit, polling: Boolean, scanError:String?, invitationSequence:Int) {
     var raw by rememberSaveable { mutableStateOf("") }; var name by rememberSaveable { mutableStateOf("My phone") }
     var invitation by remember { mutableStateOf<Invitation?>(null) }; var error by remember { mutableStateOf<String?>(null) }
     var trusted by rememberSaveable { mutableStateOf(false) }; var busy by remember { mutableStateOf(false) }
-    LaunchedEffect(incoming) { incoming?.let { raw = it; invitation = null; trusted = false } }
+    LaunchedEffect(incoming, invitationSequence) { incoming?.let {
+        raw = it; trusted = false
+        try { invitation = readInvitation(it); error = null }
+        catch (failure:Exception) { invitation = null; error = failure.message ?: "This is not a valid Field Notes invitation." }
+    } }
     val pending = state.cache.enrollment
     LaunchedEffect(pending?.id, pending?.activationSecret, polling, state.connectionPaused) {
         if (pending != null && polling && !state.connectionPaused) {
@@ -75,6 +79,7 @@ import org.fieldnotes.domain.*
         if (pending == null) {
             Text("On home Wi-Fi, open Management → Devices on your server. Create an invitation for your account, then scan it here.")
             Button(onClick = scan, modifier = Modifier.fillMaxWidth().testTag("scan-invitation")) { Text("Scan invitation QR") }
+            scanError?.let { ErrorText(it) }
             OutlinedTextField(raw, { raw = it; invitation = null; trusted = false }, Modifier.fillMaxWidth(), label = { Text("Or paste invitation") }, minLines = 2, maxLines = 4, keyboardOptions = KeyboardOptions(autoCorrectEnabled = false))
             SecondaryButton(onClick = { try { invitation = readInvitation(raw); error = null } catch (e: Exception) { error = e.message } }, enabled = raw.isNotBlank()) { Text("Review invitation") }
             invitation?.let { invite ->

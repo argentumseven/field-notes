@@ -67,7 +67,8 @@ def main():
         for p in (data,config,runtime):p.mkdir(mode=0o750)
         program=pathlib.Path(temporary/'program');program.mkdir()
         from android_artifact import package
-        package(ROOT/f'dist/android/field-notes-{version}-android-arm64-debug.apk',program/'downloads',ROOT)
+        apk=pathlib.Path(os.environ.get('FIELD_NOTES_ANDROID_APK',str(ROOT/f'dist/android/field-notes-{version}-android-arm64-debug.apk')))
+        package(apk,program/'downloads',ROOT)
         key=config/'master.key'
         engine.call(['run','--interactive','--rm','--network=none','--read-only','--cap-drop=ALL',
             '--security-opt=no-new-privileges:true','--user',f'{os.getuid()}:{os.getgid()}',

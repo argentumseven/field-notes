@@ -6,7 +6,7 @@ Notes checks automatically while the unlocked app is in the foreground, at most
 once per six hours, and **Check for updates** checks immediately.
 
 If the installed app predates 0.3.2, it does not yet have this screen. Download
-0.3.4 from the updated server and install it **over the existing app**, with the
+0.3.5 from the updated server and install it **over the existing app**, with the
 same signing key. Do not uninstall or clear storage. Later updates use the flow
 below.
 
@@ -76,16 +76,20 @@ the signing key. Increment the Android version code and release version for a
 new rollout. The server bundle carries that verified APK, checksum, certificate
 report and public metadata. The isolated app/gateway containers do not contact
 GitHub or gain an outbound exception. The host operator supplies the bundle.
-The optional permanent-release workflow requires a clean source tag reachable
-from `origin/main`, verifies assets through a draft, and requires configured
-signing secrets. Hosted publication has not been executed in this cloud session.
+The public APK path requires a clean source tag reachable from `origin/main`
+and verifies uploaded assets through a draft before publication. A successfully
+published public release is available through the README download link. Public
+builds retain their pinned signing certificate; an operator's original local
+build can have a different signer and must keep it. The optional workflow that
+builds and signs on GitHub requires configured signing secrets; the verified
+prebuilt publication path does not upload a private key.
 
 ```sh
 git switch main
 git pull --ff-only origin main
 # On the builder, with the original stable signing key configured:
 bash scripts/build/android.sh release
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.4-android-arm64-release.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.5-android-arm64-release.apk \
   bash scripts/build/server.sh
 ```
 

@@ -18,9 +18,12 @@ fun pairingRetryDelay(failures:Int,jitter:Double=kotlin.random.Random.nextDouble
 @Serializable data class Enrollment(val invitation: Invitation, val claimSecret: String, val name: String, val id: String = "", val verification: String = "", val stage: String = "claiming", val activationSecret: String? = null)
 
 fun readInvitation(raw: String, now: Long = Clock.System.now().epochSeconds): Invitation {
-    require(raw.length in 80..20000 && raw.startsWith("fieldnotes://enroll#")) { "Scan or paste a Field Notes invitation from your trusted LAN administrator." }
-    val data = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(raw.substringAfter('#')).decodeToString()
-    val invitation = WireJson.decodeFromString<Invitation>(data)
+    val code = raw.trim()
+    require(code.length in 80..20000 && code.startsWith("fieldnotes://enroll#")) { "Scan or paste a Field Notes invitation from your trusted LAN administrator." }
+    val invitation = try {
+        val data = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(code.substringAfter('#')).decodeToString()
+        WireJson.decodeFromString<Invitation>(data)
+    } catch (_: Exception) { throw IllegalArgumentException("This QR is not a valid Field Notes invitation. Ask for a fresh invitation or paste it instead.") }
     require(invitation.version == 1 && invitation.token.matches(Regex("[a-f0-9]{64}"))) { "Unsupported invitation." }
     val match = Regex("https://(\\d{1,3}(?:\\.\\d{1,3}){3}):([0-9]{1,5})/api/enrollment").matchEntire(invitation.url) ?: error("Enrollment requires a private LAN HTTPS address.")
     val ip = match.groupValues[1].split('.').map { it.toInt() }
