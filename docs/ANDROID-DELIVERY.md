@@ -71,12 +71,12 @@ Official references, inspected 2026-10-30:
 
 ## Actual launcher widgets
 
-In Field Notes settings, tap **Add Upcoming to home screen** and accept the
+In Field Notes settings, tap **Add Calendar to home screen** or **Add Upcoming to home screen** and accept the
 launcher's standard Add confirmation. Alternatively long-press the home screen,
-open Widgets and choose **Field Notes · Upcoming** or **Field Notes · Focus**.
+open Widgets and choose **Field Notes · Calendar**, **Field Notes · Upcoming** or **Field Notes · Focus**.
 No special widget-binding permission is required.
 
-Upcoming shows upcoming tasks/planned days and internal calendar events, with
+[Calendar](CALENDAR.md) shows a navigable month grid, scheduled days and today’s agenda. Its rendering runs off the app’s UI thread and coalesces repeated refreshes. Upcoming shows upcoming tasks/planned days and internal calendar events, with
 an undated Focus fallback when the agenda is empty. Focus uses priority ranking.
 Tap the agenda to open Calendar; tap its footer to request refresh. Both read
 the encrypted cache and refresh on changes, unlock/lock broadcasts and Android's
@@ -94,7 +94,7 @@ one instance to sound reminders if duplicate notifications are undesirable.
 ## Revoke and uninstall
 
 While connected, review/sync drafts, queued changes and conflicts, then use
-**Revoke this installation and uninstall** in settings and type **REVOKE**. The
+**Revoke this installation and uninstall** in settings and confirm the action. The
 server revokes only this enrolled device's sessions, records an audit event and
 queues peer removal. Application authorization stops immediately; the server
 management screen tracks the host's acknowledgement of actual peer removal.
@@ -140,3 +140,14 @@ node scripts/test-android-uninstall.mjs
 The uninstall harness intentionally removes/reinstalls the test application; it
 refuses physical phones and other AVD names. Runtime reports are under
 `dist/android-test-results/` and contain synthetic fixture state only.
+
+## Per-record reminder controls
+
+Version 0.4 adds multiple independent reminder profiles, original tones, relative
+loudness and daily/weekly time windows, with a rolling offline alarm schedule.
+See [REMINDERS.md](REMINDERS.md) for setup, catch-up and DST behavior. GrapheneOS
+forwards full-user alerts through the receiving profile's **Other users** system
+channel; that channel controls forwarded sound/volume rather than retaining the
+source app's chosen tone. Test that channel while the source profile is running.
+The Android Calendar launcher widget now has a busy-time strip in addition to
+its month grid; [CALENDAR.md](CALENDAR.md) covers sizing and privacy.

@@ -7,7 +7,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.*
-import kotlinx.datetime.Clock
+import kotlinx.datetime.*
 import kotlinx.serialization.json.*
 import java.util.UUID
 import org.fieldnotes.domain.*
@@ -28,7 +28,7 @@ class HomeWidgetDeviceTest {
         val originalCache=app.model.state.value.cache
         val now=Clock.System.now().epochSeconds
         val record=Record(UUID.randomUUID().toString(),"event",1,obj("title" to "Household check-in".j(),"starts_at" to (now+3600).j(),"ends_at" to (now+7200).j()))
-        val today=Clock.System.now().toString().take(10)
+        val today=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
         val planned=Record("planned-task","task",1,obj("title" to "Plan weekend meals".j(),"status" to "todo".j(),"planned_for" to today.j()))
         val parcel=Record("parcel-task","task",1,obj("title" to "Collect parcel".j(),"status" to "todo".j(),"due" to today.j()))
         val snapshot=Snapshot(1,"synthetic-home-widget",1,1,listOf(record,planned,parcel),Actor("owner","Owner","owner","session"))

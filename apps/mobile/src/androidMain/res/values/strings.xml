@@ -1,1 +1,2 @@
-<resources><string name="widget_description">Private planner. Task titles are hidden until you opt in inside Field Notes settings.</string><string name="upcoming_widget_description">Upcoming household tasks and calendar events on your home screen.</string></resources>
+<resources><string name="widget_description">Private planner. Task titles are hidden until you opt in inside Field Notes settings.</string><string name="upcoming_widget_description">Upcoming household tasks and calendar events on your home screen.</string> <string name="calendar_widget_description">A month at a glance with scheduled days, today’s agenda, month controls and offline refresh.</string>
+</resources>

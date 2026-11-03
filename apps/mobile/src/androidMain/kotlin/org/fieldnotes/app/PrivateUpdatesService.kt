@@ -90,7 +90,7 @@ class StartupReceiver:BroadcastReceiver(){
                 val cache=app.vault.load()
                 if(cache.token!=null&&!cache.preferences.connectionPaused&&cache.preferences.liveUpdates&&!PrivateUpdatesService.start(context))app.deliveryError.value="Open Field Notes to restart background updates."
                 CatchUpWorker.schedule(context,cache.preferences)
-                LocalAlarms.reconcile(context,true)
+                LocalAlarms.reconcile(context,true);CalendarWidget.refresh(context)
             }catch(_:Exception){app.deliveryError.value="Open Field Notes to restore reminder scheduling."}
             finally{pending.finish()}
         }

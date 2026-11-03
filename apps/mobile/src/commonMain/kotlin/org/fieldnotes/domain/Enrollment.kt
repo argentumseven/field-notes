@@ -19,10 +19,20 @@ fun pairingRetryDelay(failures:Int,jitter:Double=kotlin.random.Random.nextDouble
 
 fun readInvitation(raw: String, now: Long = Clock.System.now().epochSeconds): Invitation {
     val code = raw.trim()
-    require(code.length in 80..20000 && code.startsWith("fieldnotes://enroll#")) { "Scan or paste a Field Notes invitation from your trusted LAN administrator." }
+    require(code.length in 80..20000 && (code.startsWith("fieldnotes://enroll#") || code.startsWith("{"))) { "Scan or paste a Field Notes invitation from your trusted LAN administrator." }
     val invitation = try {
-        val data = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(code.substringAfter('#')).decodeToString()
-        WireJson.decodeFromString<Invitation>(data)
+        if(code.startsWith("{")) {
+            val compact=WireJson.parseToJsonElement(code).jsonObject
+            require(compact.keys==setOf("fieldnotes","u","c","t","n","r","e","w") && compact.number("fieldnotes")==2L)
+            val der=Base64.decode(compact.text("c"));require(der.size in 100..9000)
+            val ca="-----BEGIN CERTIFICATE-----\n"+Base64.encode(der).chunked(64).joinToString("\n")+"\n-----END CERTIFICATE-----\n"
+            val w=compact["w"]!!.jsonArray;require(w.size==7)
+            Invitation(2,compact.text("u"),ca,compact.text("t"),compact.text("n"),compact.text("r"),compact.number("e"),
+                JsonObject(listOf("address","endpoint","alternate_endpoints","server_key","preshared_key","api","public_key").mapIndexed { i,key -> key to w[i] }.toMap()))
+        } else {
+            val data = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL).decode(code.substringAfter('#')).decodeToString()
+            WireJson.decodeFromString<Invitation>(data)
+        }
     } catch (_: Exception) { throw IllegalArgumentException("This QR is not a valid Field Notes invitation. Ask for a fresh invitation or paste it instead.") }
     require(invitation.version in 1..2 && invitation.token.matches(Regex("[a-f0-9]{64}"))) { "Unsupported invitation." }
     val match = Regex("https://(\\d{1,3}(?:\\.\\d{1,3}){3}):([0-9]{1,5})/api/enrollment").matchEntire(invitation.url) ?: error("Enrollment requires a private LAN HTTPS address.")

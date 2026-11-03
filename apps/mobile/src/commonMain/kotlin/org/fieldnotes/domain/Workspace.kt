@@ -258,6 +258,19 @@ class Workspace(
             c.copy(outbox = c.outbox + Pending(command, predecessor))
         }
     }
+    /** Freeze the exact checked rows in one durable local write. Existing per-task
+     * dependency/revision handling protects a concurrent remote reopen or edit. */
+    suspend fun clearChecked(listId:String) {
+        update { c ->
+            val snap=c.snapshot ?: error("Synchronize first.")
+            check(snap.actor.role!="viewer") { "Your role is read-only." }
+            check(projectRecords(c).any { it.record.id==listId&&it.record.kind=="list" }) { "List is unavailable." }
+            val checked=projectRecords(c).filter { it.record.kind=="task"&&it.record.data.text("project_id")==listId&&it.record.data.text("status")=="done" }
+            check(c.outbox.size+c.conflicts.size+checked.size<=500) { "Synchronize pending work before clearing this many items." }
+            val commands=checked.map { row -> Pending(Command(newId(),snap.epoch,snap.generation,"task.delete",row.record.id,row.record.revision,obj()),c.outbox.lastOrNull { it.command.target==row.record.id }?.command?.operation_id) }
+            c.copy(outbox=c.outbox+commands)
+        }
+    }
     suspend fun saveDraft(target: String, revision: Long, data: JsonObject, basis: Basis? = null, action: String = "task.update") {
         require(action in setOf("task.update", "event.update", "note.update"))
         val snap = cache.snapshot ?: return

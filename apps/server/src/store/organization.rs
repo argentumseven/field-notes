@@ -21,7 +21,7 @@ impl Store {
             if note {
                 &["title", "body", "pinned"][..]
             } else {
-                &["title", "notes"][..]
+                &["title", "notes", "template", "fields", "perpetual"][..]
             },
         )?;
         if record.revision == 0 {
@@ -52,6 +52,14 @@ impl Store {
                 record.data["pinned"] = json!(false);
             }
         }
+        if record.kind != "list"
+            && ["template", "fields", "perpetual"]
+                .iter()
+                .any(|f| data.get(f).is_some())
+        {
+            return fail(400, "List options belong to lists");
+        }
+        Self::list_schema(data, record)?;
         record.data["updated_at"] = json!(now());
         Ok(())
     }

@@ -283,7 +283,13 @@ async function renderAdmin() {
           if (!picture.naturalWidth) return;
           const modules = picture.naturalWidth / 8;
           const pixels =
-            Math.floor(Math.min(512, material.clientWidth) / modules) * modules;
+            Math.floor(
+              Math.min(
+                800,
+                Math.max(300, innerHeight - 280),
+                material.clientWidth,
+              ) / modules,
+            ) * modules;
           picture.style.width = pixels + "px";
           // Center with an integer offset too: a half-pixel origin blurs a
           // one-pixel module even when its width is an exact integer multiple.

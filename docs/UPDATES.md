@@ -6,7 +6,7 @@ Notes checks automatically while the unlocked app is in the foreground, at most
 once per six hours, and **Check for updates** checks immediately.
 
 If the installed app predates 0.3.2, it does not yet have this screen. Download
-0.3.6 from the updated server and install it **over the existing app**, with the
+the matching APK from the updated server and install it **over the existing app**, with the
 same signing key. Do not uninstall or clear storage. Later updates use the flow
 below.
 
@@ -32,11 +32,19 @@ access only to the staged software file.
 
 An in-place Android update preserves app data, the Keystore alias, phone private
 key, PSK, pinned CA/server binding and pending edits. The app never calls reset,
-clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2** and **0.3.2 → 0.3.3** APK upgrades
+clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2**,
+**0.3.2 → 0.3.3** and **0.3.2/code 5 → 0.4.0/code 10** APK upgrades
 were exercised on the disposable AVD with the actual Keystore-backed vault and
 queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults
 and keys remain separate, and Android decides which user may install an update.
+
+## Planner version 0.4
+
+Upgrade the paired server before using the new reminder/list/start-only event
+features. The phone's in-app updater follows that matching server bundle. New
+preferences and reminder receipts have compatible defaults; neither an upgrade
+nor a theme change resets the encrypted cache, phone keys or pending work.
 
 ## Keep the same signing key
 
@@ -89,7 +97,7 @@ git switch main
 git pull --ff-only origin main
 # On the builder, with the original stable signing key configured:
 bash scripts/build/android.sh release
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.6-android-arm64-release.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.4.0-android-arm64-release.apk \
   bash scripts/build/server.sh
 ```
 

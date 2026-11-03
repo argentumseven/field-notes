@@ -3,7 +3,7 @@ package org.fieldnotes.domain
 import kotlinx.datetime.*
 
 data class AgendaItem(val id: String, val title: String, val at: Long, val label: String)
-data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String)
+data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String, val profile:AlertProfile?=null, val progressKey:String=if(target==null)kind else "$kind:$target")
 
 private fun mineOrShared(record: Record, user: String): Boolean =
     record.data.text("assignee").let { it.isBlank() || it == user } ||
@@ -33,7 +33,7 @@ fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): L
                 if (last <= today || at >= end) null else AgendaItem(r.id, d.text("title"), at, "All day")
             } else {
                 val start = d.number("starts_at"); val finish = d.number("ends_at")
-                if (finish <= now.epochSeconds || start >= end) null else AgendaItem(r.id, d.text("title"), start, if (start <= now.epochSeconds) "Now" else "Event")
+                if ((finish>0&&finish <= now.epochSeconds) || (finish==0L && start<today.atStartOfDayIn(zone).epochSeconds) || start >= end) null else AgendaItem(r.id, d.text("title"), start, if (start <= now.epochSeconds) "Now" else "Event")
             }
             else -> null
         }
@@ -42,7 +42,7 @@ fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): L
 
 /** Local alarms need no network. Civil dates follow this profile's device zone;
  * timed event alerts remain attached to their UTC instant across zone changes. */
-fun localAlerts(cache: Cache, now: Instant, zone: TimeZone): List<LocalAlert> {
+fun localAlerts(cache: Cache, now: Instant, zone: TimeZone, seen:Set<String> = emptySet(), delivered:Map<String,Long> = emptyMap()): List<LocalAlert> {
     if (!cache.preferences.reminders || cache.token == null) return emptyList()
     val actor = cache.snapshot?.actor?.user_id ?: return emptyList()
     val today = now.toLocalDateTime(zone).date
@@ -52,6 +52,7 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone): List<LocalAlert> {
     val records = projectRecords(cache).map { it.record }
     val alerts = records.mapNotNull { r ->
         val d = r.data
+        if(d.containsKey("reminders"))return@mapNotNull null
         when (r.kind) {
             "task" -> {
                 if (d.text("status") == "done" || !mineOrShared(r, actor)) return@mapNotNull null
@@ -63,14 +64,25 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone): List<LocalAlert> {
                 LocalAlert("day:${r.id}:$date", morning(date), r.id, "calendar")
             } else {
                 val start = d.number("starts_at")
-                if(d.number("ends_at")<=now.epochSeconds)return@mapNotNull null
+                if(d.number("ends_at")>0&&d.number("ends_at")<=now.epochSeconds)return@mapNotNull null
                 LocalAlert("event:${r.id}:$start", start - 600, r.id, "calendar")
             }
             else -> null
         }
     }.filter { (it.at >= dayStart || it.kind=="calendar"&&it.at>=now.epochSeconds-86400) && it.at < horizon }
     val overdue = records.any { r -> r.kind == "task" && r.data.text("status") != "done" &&
-        mineOrShared(r, actor) && runCatching { LocalDate.parse(r.data.text("due")) < today }.getOrDefault(false) }
-    return (alerts + if (overdue) listOf(LocalAlert("overdue:$today", morning(today), null, "overdue")) else emptyList())
-        .sortedWith(compareBy<LocalAlert> { it.at }.thenBy { it.key })
+        !r.data.containsKey("reminders") && mineOrShared(r, actor) && runCatching { LocalDate.parse(r.data.text("due")) < today }.getOrDefault(false) }
+    val sources=sequence {
+        yieldAll(alerts)
+        for(record in records)if(record.kind in setOf("event","task") && (record.kind!="task" || record.data.text("status")!="done"&&mineOrShared(record,actor)))yieldAll(customAlerts(record,now,zone))
+        if(overdue)yield(LocalAlert("overdue:$today",morning(today),null,"overdue"))
+    }
+    val order=compareBy<LocalAlert> { it.at }.thenBy { it.key }
+    val bounded=mutableListOf<LocalAlert>()
+    for(alert in sources) {
+        if(alert.key in seen || alert.at <= (delivered[alert.progressKey] ?: Long.MIN_VALUE))continue
+        val index=bounded.binarySearch(alert,order).let { if(it<0)-it-1 else it }
+        if(index<256){bounded.add(index,alert);if(bounded.size>256)bounded.removeAt(256)}
+    }
+    return bounded
 }

@@ -122,6 +122,11 @@ impl Store {
                         "assignee",
                         "pinned",
                         "blocked",
+                        "quantity",
+                        "link_url",
+                        "price",
+                        "currency",
+                        "reminders",
                     ],
                 )?;
                 let pid = self.container_ref(c.data.get("project_id").unwrap_or(&json!("")))?;
@@ -142,6 +147,8 @@ impl Store {
                 record.data = json!({"title":text(&c.data,"title",240)?,"notes":notes,"project_id":pid,"quadrant":quadrant,"due":due,"status":"todo","claimant":null,"created_by":actor.user_id,"updated_at":now()});
                 record.data["created_at"] = json!(now());
                 Self::planning(&c.data, &mut record)?;
+                Self::list_item_fields(&c.data, &mut record)?;
+                Self::reminders(&c.data, &mut record)?;
                 self.assignment(&c.data, &mut record)?;
             }
             "task.update" => {
@@ -160,6 +167,11 @@ impl Store {
                         "assignee",
                         "pinned",
                         "blocked",
+                        "quantity",
+                        "link_url",
+                        "price",
+                        "currency",
+                        "reminders",
                     ],
                 )?;
                 if let Some(value) = c.data.get("project_id") {
@@ -171,6 +183,8 @@ impl Store {
                     record.data["project_id"] = json!(container.unwrap_or_default());
                 }
                 Self::planning(&c.data, &mut record)?;
+                Self::list_item_fields(&c.data, &mut record)?;
+                Self::reminders(&c.data, &mut record)?;
                 self.assignment(&c.data, &mut record)?;
                 if c.data.get("title").is_some() {
                     record.data["title"] = json!(text(&c.data, "title", 240)?);
@@ -378,12 +392,32 @@ impl Store {
             _ => return fail(400, "Unsupported command"),
         }
         if !c.action.ends_with(".delete") {
+            if record.revision == 0 {
+                record.data["created_by"] = json!(actor.user_id);
+                record.data["created_by_name"] = json!(actor.name);
+            }
             record.data["updated_by"] = json!(actor.user_id);
+            record.data["updated_by_name"] = json!(actor.name);
+            record.data["updated_at"] = json!(now());
+            record.data["last_activity_by"] = json!(actor.user_id);
+            record.data["last_activity_by_name"] = json!(actor.name);
+            record.data["last_activity_at"] = record.data["updated_at"].clone();
             record.revision += 1;
             if record.kind == "task" {
                 record.data["updated_at"] = json!(now());
             }
             self.save(&record, parent.as_deref())?;
+            if matches!(record.kind.as_str(), "comment" | "image") {
+                if let Some(task_id) = record.data["task_id"].as_str() {
+                    let mut task = self.record(task_id)?;
+                    task.data["last_activity_by"] = json!(actor.user_id);
+                    task.data["last_activity_by_name"] = json!(actor.name);
+                    task.data["last_activity_at"] = json!(now());
+                    // Metadata follows child activity without advancing the task's
+                    // content revision: independent comments do not conflict with edits.
+                    self.save(&task, None)?;
+                }
+            }
         }
         self.db.execute(
             "INSERT INTO events(generation,object_id,action,actor,at) VALUES(?,?,?,?,?)",

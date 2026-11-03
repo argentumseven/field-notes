@@ -53,14 +53,14 @@ fun focusTasks(cache: Cache, today: LocalDate, nowSeconds: Long): List<Pair<Visi
             .thenByDescending { it.second.score }.thenBy { it.first.record.data.number("created_at", Long.MAX_VALUE) }.thenBy { it.first.record.id })
 }
 
-data class CalendarEntry(val record: Record, val labels: List<String>, val startsAt: Long? = null)
+data class CalendarEntry(val record: Record, val labels: List<String>, val startsAt: Long? = null, val windowLabel:String?=null)
 fun calendarEntries(records: List<Record>, day: LocalDate, zone: TimeZone): List<CalendarEntry> {
     val key = day.toString()
     val start = day.atStartOfDayIn(zone).epochSeconds
     val end = day.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
     return records.mapNotNull { record ->
         val d = record.data
-        when (record.kind) {
+        val entry=when (record.kind) {
             "task" -> {
                 val labels = buildList { if (d.text("planned_for") == key) add("Planned"); if (d.text("due") == key) add("Due") }
                 if (labels.isEmpty()) null else CalendarEntry(record, labels)
@@ -68,10 +68,12 @@ fun calendarEntries(records: List<Record>, day: LocalDate, zone: TimeZone): List
             "event" -> {
                 if (record.flag("all_day")) {
                     if (key >= d.text("start_date") && key < d.text("end_date")) CalendarEntry(record, listOf("All day")) else null
-                } else if (d.number("starts_at") < end && d.number("ends_at") > start) CalendarEntry(record, emptyList(), d.number("starts_at")) else null
+                } else if ((if(d.number("ends_at")==0L) d.number("starts_at") in start until end else d.number("starts_at") < end && d.number("ends_at") > start)) CalendarEntry(record, emptyList(), d.number("starts_at")) else null
             }
             else -> null
         }
+        val window=reminderWindowLabel(record,day,zone)
+        entry?.copy(windowLabel=window) ?: window?.let { CalendarEntry(record,listOf(it),windowLabel=it) }
     }.sortedWith(compareBy<CalendarEntry> { it.startsAt ?: Long.MIN_VALUE }.thenBy { it.record.data.text("title") }.thenBy { it.record.id })
 }
 

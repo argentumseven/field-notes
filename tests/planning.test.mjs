@@ -46,3 +46,17 @@ test('server accepts undated priorities, preserves creation age, validates plans
   assert(!(await otherRecords()).some(r=>r.id===timed.data.record.id));
  }finally{await f.close();}
 });
+
+test('local scheduling preserves ten AM, rejects skipped DST times and retains repeated instants',()=>{
+ const previous=process.env.TZ;process.env.TZ='America/New_York';
+ try {
+  const p=globalThis.FieldPlanning;
+  assert.equal(p.scheduledInstant('2026-11-03','10:00'),Date.parse('2026-11-03T15:00:00Z')/1000);
+  assert.equal(p.scheduledInstant('2026-07-03','10:00'),Date.parse('2026-07-03T14:00:00Z')/1000);
+  assert.throws(()=>p.scheduledInstant('2026-03-08','02:30'),/clocks change/);
+  const second=Date.parse('2026-11-01T06:30:00Z')/1000;
+  assert.equal(p.scheduledInstant('2026-11-01','01:30',second),second);
+  assert.equal(p.shiftDay('2026-03-08',1),'2026-03-09');
+  assert.equal(p.shiftDay('2026-11-01',1),'2026-11-02');
+ }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});

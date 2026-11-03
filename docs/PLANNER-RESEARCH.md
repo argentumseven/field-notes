@@ -1,14 +1,15 @@
 # Planner iteration: research and decisions
 
-Reviewed 30 October 2026. These are design references, not dependencies or reused
+Reviewed 30 October and 3 November 2026. These are design references, not dependencies or reused
 code/assets. Field Notes keeps its own original implementation and visual system.
 
 | Reference inspected | Useful idea | Field Notes decision |
 | --- | --- | --- |
-| [Planify README and real UI screenshot](https://github.com/alainm23/planify/tree/63570d67b4bb8e14c89bf50f7c9b307ddc8d0cc7) | Compact rows, a useful sidebar, scheduled work and a calendar | Focus / Tasks / Calendar, restrained charcoal/paper, teal, no decorative artwork or giant headings |
+| [Planify README and real UI screenshot](https://github.com/alainm23/planify/tree/63570d67b4bb8e14c89bf50f7c9b307ddc8d0cc7) | Compact rows, a useful sidebar, scheduled work and a calendar | Calendar first, compact task rows, grouped navigation and a restrained light/dark palette |
 | [Super Productivity features](https://github.com/super-productivity/super-productivity/tree/22ad1b6271d92ab9047b5ceac6cffe480eeac792) | Separate planning, schedule, estimates, focused work, boards and Eisenhower views | A planned day is distinct from a deadline; undated priorities are first-class; ranking explains its inputs |
 | [Tasks.org widget implementation](https://github.com/tasks/tasks/blob/a50bef9a9e46520d8fdf0d93abe4981875c8fbec/app/src/main/java/org/tasks/widget/TasksWidget.kt) | Native AppWidgetProvider/RemoteViews rather than a Google push or calendar dependency | Native widget reading our encrypted app cache, with explicit privacy settings |
 | [Vikunja overview](https://github.com/go-vikunja/vikunja/tree/d4899715e3724448aaa08951f474a575c7d729a0) | A self-hosted task workspace | Keep the server local and household roles enforced centrally; its README alone is not evidence for detailed scheduling behavior |
+| [Etar README](https://github.com/Etar-Group/Etar-Calendar/blob/master/README.md), reviewed November 3 | Offline calendar, agenda widget and light/dark modes | Add a real launcher calendar and time blocks; retain our private server/cache rather than requiring Android's calendar provider |
 | [Bungee server TLS implementation](https://github.com/argentumseven/bungee/blob/main/server/src/tls.rs) and README | Direct Rust HTTPS, explicit management restrictions, local CA, per-phone WireGuard, single-use invitations | No Caddy, reverse proxy, load balancer, public bootstrap endpoint, default route, or OS VPN service |
 
 The official Todoist priority-help URL was unavailable under this cloud's network
@@ -43,18 +44,19 @@ determine aging, so daylight saving transitions do not add phantom aging days.
 ## Calendar semantics
 
 Tasks may have no dates, a planned day, a due date, or both. Undated tasks stay
-in the backlog and Focus. Timed calendar events store UTC start/end instants;
+in the backlog and Focus. Timed calendar events store UTC starts and optional ends;
 all-day events store floating dates with an exclusive end. An event ending at
 midnight does not appear the next day. No Google account, Calendar provider,
 third-party sync, or OS calendar permission is needed.
 
 ## Enrollment and the tunnel
 
-Initial pairing takes place on the home LAN. A scoped ten-minute invitation is
-shown as QR/text after administrator reauthentication. The phone generates its
-own private key. Claiming an invitation requests enrollment; it does not grant
-content access. The administrator enters the code displayed directly on the phone before
-approval. A bounded host helper then provisions that phone's /32 peer and PSK.
+The phone generates its own keypair and gives only its public key to the PC.
+A scoped ten-minute invitation is shown as QR/text after administrator
+reauthentication and a bounded host helper preprovisions the restricted /32 peer.
+Claiming uses the private notes tunnel; it does not grant content access or
+require management access from the phone. The administrator enters the code
+displayed directly on the phone before approval.
 The app service never receives NET_ADMIN or arbitrary shell access.
 
 Activation occurs through the actual WireGuard connection. A device session is

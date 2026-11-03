@@ -5,20 +5,21 @@
 For updates to an existing phone, use its paired server's APK when it has a different signing certificate.
 
 A self-hosted household planner: Inbox, lists, projects, standalone notes, comments,
-images, optional dates, priorities and a private calendar. Compact charcoal/paper, teal accents, clean rows.
+images, optional dates, priorities and a private calendar. Calendar first, with
+grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.3.6.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.4.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
-[Offline work and reconnect](docs/OFFLINE.md) ·
+[Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [List types and fields](docs/LISTS.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
 [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
-![Compact Focus view with ranked and undated tasks](docs/screenshots/web/02-focus.png)
+![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/36-calendar-blocks.png)
 
 ## Planner and administration
 
@@ -32,8 +33,14 @@ services. iOS/native desktop packages are deferred.
 - Focus ranks tasks using priority, optional due date, planned day, waiting time
   and estimate. Pins come first; blocked/completed/other-claimed/future-planned
   tasks stay out of Focus. Each task explains its score. No artificial due dates.
-- Calendar shows task due/planned days and all-day/timed events. Dates and time
-  zones have distinct semantics; no Google or OS Calendar integration.
+- Calendar opens first, with day/week time blocks, a month view and local clock
+  controls. End times are optional; start-only markers do not occupy time.
+  Multiple reminders support separate importance, sound and relative volume.
+  Repeat reminders within a chosen daily/weekly window, even without a due date.
+- Lists have grocery, online shopping, general and custom presets. Select fields
+  such as quantity, link, optional price, images and dates. Rolling lists let you
+  clear checked items while retaining unchecked ones. Image previews use attached
+  images only; there are no retailer requests. Rows show creator/activity times.
 - Task notes, image attachments and comments; encrypted offline edits/outbox,
   replay-safe retries, server-arbitrated claims and retained conflicts.
 - QR enrollment: bind the phone public key on your PC, scan, enter the phone's code
@@ -50,7 +57,7 @@ services. iOS/native desktop packages are deferred.
   full signature/package/hash checks and Android install confirmation. Upgrades
   keep phone keys and queued edits. Linux upgrades retain the hub/CA/peers and
   include scoped backup, readiness and rollback. [Update guide](docs/UPDATES.md).
-- Actual Android Upcoming and Focus home-screen widgets, redacted by default.
+- Actual Android Calendar, Upcoming and Focus home-screen widgets, redacted by default.
   Default-on private background connection and cached task/calendar alerts without
   Google services. [GrapheneOS profile/sound setup](docs/ANDROID-DELIVERY.md),
   delayed profile test and revoke/uninstall flow; Android scheduling limits apply.
@@ -65,12 +72,13 @@ host configuration. This is not end-to-end encryption excluding the server.
 
 **GitHub Android APK:** [Download the latest verified APK](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk), or browse [all release assets](https://github.com/argentumseven/field-notes/releases).
 
-The server bundle includes the matching signed ARM64 APK. Open the LAN website
-on your phone and choose **Download APK** on Sign in or in Management; checksum
-and signer links are beside it. [Download and release details](docs/ANDROID-DOWNLOADS.md).
+The server bundle includes the matching signed ARM64 APK. Download it on your
+management PC from **Download APK** on Sign in or in Management, then transfer
+it to the phone. The phone does not need management access. Paired phones fetch
+updates through the private notes tunnel. [Download and release details](docs/ANDROID-DOWNLOADS.md).
 
 The signed arm64 development APK, checksum and signer report are also under
-`dist/android/field-notes-0.3.6-android-arm64-debug.apk`. Copy it to your phone,
+`dist/android/field-notes-0.4.0-android-arm64-debug.apk`. Copy it to your phone,
 verify hash/signer, and open it to sideload. Preserve the development signer for
 in-place updates. Operator release builds require your separately protected key.
 

@@ -1,5 +1,78 @@
 # Implementation and validation record
 
+## 0.4.0 calendar, reminders, rolling lists and recovery
+
+The active implementation is version **0.4.0**, Android code **10**, protocol 1
+and database schema 2. Calendar opens first. Local date/clock controls replace
+ISO/offset entry; start-only events have no invented duration. Desktop day/week
+and native day timelines arrange overlaps. The real Android Calendar launcher
+widget has a month grid, busy-time strip, date links and automatic cache updates.
+Its default fits four launcher rows; a five-row request was rejected by the
+four-row fixture launcher. Private previews/redaction remain the default.
+
+Lists now have general, grocery, online shopping and custom field presets,
+optional prices/links, attached-image previews, rolling checked-item removal,
+and single full creation forms. Hidden fields retain their data. Navigation is
+grouped; task/list/note rows expose trusted creator/activity names and times.
+There are **no retailer preview requests**. The app and website have new light
+and dark themes, clear creation controls and an auto-refresh option.
+
+Per-record reminders support independent sound/importance/relative level,
+multiple alerts and daily/weekly time windows, including undated tasks.
+Offline scheduling keeps a bounded rolling alarm set, encrypted delivery
+receipts and progress to avoid replay or a catch-up burst. Original generated
+tones use stable resource-name URIs across APK updates. Android volume/DND stay
+authoritative. GrapheneOS full-user forwarding uses the receiving profile's
+**Other users** system channel, which does not preserve each source tone.
+Physical cross-profile sound, prolonged Doze and camera optics remain unrun.
+
+Compact QR payloads preserve the same pinned CA, keys, expiry and approval
+requirements while avoiding double encoding. Both camera and scoped offline
+image import use ZXing's normal detector plus a multi-finder retry for dense
+patterns. Browser element captures decode exactly at desktop/narrow widths and
+all four rotations across three independently issued invitation fixtures.
+Neither camera frames nor imported QR images are retained or uploaded.
+
+Executed checks:
+
+- 11 Rust tests and clippy; 37 real-process Node API/planning/security checks;
+  10 Chromium workflows; 60 shared Kotlin host checks; Go vet/race checks.
+- 106 Python checks, including runtime-recovery refusal/backup/rollback,
+  same-version executable/code guards, retained accepted writes, moved image
+  tags, dangling image cleanup and primary-error preservation. Those host
+  lifecycle cases use temporary trees/controlled commands, not real systemd.
+- Actual AOSP device checks for compact QR image decoding, real Android
+  reminder channels/AlarmManager delivery and receipts/refill, local ten-AM
+  editing, repeat-window/sound controls, and private RemoteViews. The actual
+  launcher month repaints an offline edit/new day without a refresh tap and
+  opens the chosen date. Launcher tests use a normal app task; ActivityScenario
+  could not reliably own the external launcher's lifecycle during teardown.
+- A real same-signer **0.3.2/code 5 → 0.4.0/code 10** APK installation preserves
+  the existing Keystore-backed phone keys, saved server/CA/PSK binding and queued
+  command. No clear, uninstall or re-enrollment occurs between those phases.
+- ARM64 release variant: lint, signature, manifest, JNI/native and 16 KiB checks
+  pass using the retained public signing certificate. The matching Linux
+  offline bundle builds successfully.
+- The complete real Docker/WireGuard/TLS fixture passes with the matching APK:
+  source-bound enrollment/approval, the actual Go C bridge and installer CA,
+  full private APK transfer, normalized image/task writes, nonroot/read-only
+  runtime, blocked app-UID outbound/Docker DNS, denied management/SSH/LAN/peer
+  access, retained password/CA/master material and scoped resource removal.
+
+During this work the user's Debian manager failed because its pinned image ID
+was missing. Recovery with its newer saved bundle was initially blocked by the
+old-image backup requirement. The explicit recovery path now uses the verified
+target for the encrypted backup, first retains quiesced encrypted database/WAL
+bytes, preserves identity/network settings, and finalizes a partial installation
+only after readiness. The user confirmed the home web manager became reachable
+again. That restored its older built UI; it did not deploy this redesign.
+See [runtime recovery](RUNTIME-RECOVERY.md), [calendar](CALENDAR.md),
+[reminders](REMINDERS.md) and [lists](LISTS.md).
+
+Public release verification is recorded after publication; a local artifact or
+an emulator result alone does not establish a published APK or a physical
+GrapheneOS result. The previous delivery records follow for comparison.
+
 ## 0.3.6 tunnel enrollment, keyboard and disconnected work
 
 The previous phone bootstrap depended on LAN HTTPS on the management listener.

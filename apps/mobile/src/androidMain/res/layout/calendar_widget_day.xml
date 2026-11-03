@@ -1,0 +1,4 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/calendar_cell" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent">
+ <TextView android:id="@+id/calendar_day" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:paddingBottom="6dp" android:textColor="#E8EEF8" android:textSize="13sp"/>
+ <TextView android:id="@+id/calendar_marker" android:layout_width="match_parent" android:layout_height="8dp" android:layout_gravity="bottom" android:gravity="center" android:textColor="#A8B7FF" android:textSize="10sp" android:includeFontPadding="false"/>
+</FrameLayout>

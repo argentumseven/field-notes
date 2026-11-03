@@ -54,6 +54,7 @@ impl Store {
                 "end_date",
                 "starts_at",
                 "ends_at",
+                "reminders",
             ],
         )?;
         if record.revision == 0 {
@@ -96,15 +97,23 @@ impl Store {
             let start = record.data["starts_at"]
                 .as_i64()
                 .ok_or(Fault(400, "Start must be a UTC Unix second".into()))?;
-            let end = record.data["ends_at"]
-                .as_i64()
-                .ok_or(Fault(400, "End must be a UTC Unix second".into()))?;
-            if start < 0 || end > 7_258_118_400 || !(1..=31 * 86400).contains(&(end - start)) {
+            let end = match record.data.get("ends_at") {
+                None | Some(Value::Null) => 0,
+                Some(v) => v
+                    .as_i64()
+                    .ok_or(Fault(400, "Choose an optional end time".into()))?,
+            };
+            if !(0..=7_258_118_400).contains(&start)
+                || !(0..=7_258_118_400).contains(&end)
+                || (end != 0 && !(1..=31 * 86400).contains(&(end - start)))
+            {
                 return fail(400, "Invalid event time interval (maximum 31 days)");
             }
+            record.data["ends_at"] = if end == 0 { Value::Null } else { json!(end) };
             record.data["start_date"] = json!("");
             record.data["end_date"] = json!("");
         }
+        Self::reminders(data, record)?;
         record.data["title"] = json!(title);
         record.data["updated_at"] = json!(now());
         Ok(())

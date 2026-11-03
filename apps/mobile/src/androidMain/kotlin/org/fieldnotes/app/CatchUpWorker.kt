@@ -16,7 +16,7 @@ class CatchUpWorker(context:Context,params:WorkerParameters):CoroutineWorker(con
         val prefs=state.cache.preferences
         if(!state.connectionPaused&&(prefs.backgroundSync||prefs.liveUpdates))app.model.poll()
         try{LocalAlarms.reconcile(applicationContext,true)}catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention.";return Result.retry()}
-        PlannerWidget.refresh(applicationContext);UpcomingWidget.refresh(applicationContext)
+        PlannerWidget.refresh(applicationContext);UpcomingWidget.refresh(applicationContext);CalendarWidget.refresh(applicationContext)
         return Result.success()
     }
     companion object {

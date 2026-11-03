@@ -19,8 +19,17 @@ class DecodeInvitation {
       int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
       var source = new RGBLuminanceSource(width, height, pixels);
       Result result;
-      try { result = new MultiFormatReader().decode(new BinaryBitmap(new HybridBinarizer(source)), hints); }
-      catch (NotFoundException e) { throw new IllegalStateException("Cannot decode " + width + "x" + height + " at rotation " + rotation, e); }
+      var bitmap = new BinaryBitmap(new HybridBinarizer(source));
+      try { result = new com.google.zxing.qrcode.QRCodeReader().decode(bitmap, hints); }
+      catch (ReaderException first) {
+        // Same multi-finder retry as the camera/image reader. Never accept a
+        // payload without ZXing's full format/error-correction decode.
+        try {
+          var candidates = new com.google.zxing.multi.qrcode.QRCodeMultiReader().decodeMultiple(bitmap, hints);
+          if (candidates.length != 1) throw NotFoundException.getNotFoundInstance();
+          result = candidates[0];
+        } catch (ReaderException e) { throw new IllegalStateException("Cannot decode " + width + "x" + height + " at rotation " + rotation, e); }
+      }
       if (!result.getText().equals(expected))
         throw new AssertionError("Decoded invitation does not match the current invitation");
       BufferedImage rotated = new BufferedImage(height, width, BufferedImage.TYPE_INT_RGB);

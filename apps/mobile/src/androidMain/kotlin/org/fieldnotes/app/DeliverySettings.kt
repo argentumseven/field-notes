@@ -44,7 +44,7 @@ object DeliverySettings {
         LocalAlarms.clear(context)
         context.getSystemService(NotificationManager::class.java).cancelAll()
         app.vault.clearEffects()
-        PlannerWidget.refresh(context);UpcomingWidget.refresh(context)
+        PlannerWidget.refresh(context);UpcomingWidget.refresh(context);CalendarWidget.refresh(context)
         open(context,"uninstall")
     }
     fun pin(context:Context){

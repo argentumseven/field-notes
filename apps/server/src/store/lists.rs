@@ -1,0 +1,122 @@
+use super::*;
+
+pub(super) const LIST_FIELDS: &[&str] = &[
+    "notes",
+    "quantity",
+    "link_url",
+    "price",
+    "assignee",
+    "due",
+    "planned_for",
+    "priority",
+    "estimate_minutes",
+    "images",
+];
+impl Store {
+    pub(super) fn list_schema(data: &Value, record: &mut Record) -> Result<()> {
+        if record.kind != "list" {
+            return Ok(());
+        }
+        let template = data
+            .get("template")
+            .or_else(|| record.data.get("template"))
+            .and_then(Value::as_str)
+            .unwrap_or("general")
+            .to_owned();
+        if !["general", "groceries", "shopping", "custom"].contains(&template.as_str()) {
+            return fail(400, "Choose a list type");
+        }
+        let defaults = match template.as_str() {
+            "groceries" => json!(["quantity", "notes"]),
+            "shopping" => json!(["quantity", "link_url", "images"]),
+            _ => json!(["notes"]),
+        };
+        let schema = data
+            .get("fields")
+            .or_else(|| record.data.get("fields"))
+            .unwrap_or(&defaults)
+            .clone();
+        let choices = schema
+            .as_array()
+            .ok_or(Fault(400, "Choose list fields".into()))?;
+        let mut seen = std::collections::BTreeSet::new();
+        if choices.len() > LIST_FIELDS.len()
+            || choices.iter().any(|v| {
+                !v.as_str()
+                    .is_some_and(|s| LIST_FIELDS.contains(&s) && seen.insert(s))
+            })
+        {
+            return fail(400, "Unsupported or repeated list field");
+        }
+        let perpetual = data
+            .get("perpetual")
+            .or_else(|| record.data.get("perpetual"))
+            .unwrap_or(&Value::Bool(true))
+            .clone();
+        if !perpetual.is_boolean() {
+            return fail(400, "Choose whether this is a rolling list");
+        }
+        record.data["template"] = json!(template);
+        record.data["fields"] = schema.clone();
+        record.data["perpetual"] = perpetual.clone();
+        Ok(())
+    }
+    pub(super) fn list_item_fields(data: &Value, record: &mut Record) -> Result<()> {
+        for (field, max) in [
+            ("quantity", 80),
+            ("link_url", 2048),
+            ("price", 16),
+            ("currency", 3),
+        ] {
+            let Some(value) = data.get(field) else {
+                continue;
+            };
+            let s = value
+                .as_str()
+                .ok_or(Fault(400, format!("{field} must be text")))?;
+            if s.len() > max {
+                return fail(400, "List field is too long");
+            }
+            if field == "price" && !s.is_empty() {
+                let parts: Vec<_> = s.split('.').collect();
+                if parts.len() > 2
+                    || parts[0].is_empty()
+                    || parts[0].len() > 9
+                    || !parts[0].bytes().all(|c| c.is_ascii_digit())
+                    || parts.get(1).is_some_and(|p| {
+                        p.is_empty() || p.len() > 2 || !p.bytes().all(|c| c.is_ascii_digit())
+                    })
+                {
+                    return fail(
+                        400,
+                        "Enter a nonnegative price with up to two decimal places",
+                    );
+                }
+            }
+            if field == "currency" && (s.len() != 3 || !s.bytes().all(|c| c.is_ascii_uppercase())) {
+                return fail(400, "Choose a three-letter currency code");
+            }
+            if field == "link_url" && !s.is_empty() {
+                let uri = s
+                    .split('#')
+                    .next()
+                    .unwrap_or("")
+                    .parse::<axum::http::Uri>()
+                    .map_err(|_| Fault(400, "Enter a full HTTP or HTTPS link".into()))?;
+                if !matches!(uri.scheme_str(), Some("http" | "https"))
+                    || uri
+                        .authority()
+                        .is_none_or(|a| a.as_str().contains('@') || a.host().is_empty())
+                    || s.chars().any(|c| c.is_whitespace() || c.is_control())
+                {
+                    return fail(
+                        400,
+                        "Use an HTTP or HTTPS link without embedded credentials",
+                    );
+                }
+            }
+            record.data[field] = value.clone();
+        }
+        Ok(())
+    }
+}

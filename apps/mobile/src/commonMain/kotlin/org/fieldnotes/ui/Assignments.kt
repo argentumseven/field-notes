@@ -1,6 +1,9 @@
 package org.fieldnotes.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.datetime.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -36,12 +39,15 @@ import org.fieldnotes.domain.*
     }
 }
 
-@Composable internal fun NewTaskDialog(model: Workspace, state: WorkspaceState, container: String?, mine: Boolean, close: () -> Unit) {
+@Composable internal fun NewTaskDialog(model: Workspace, state: WorkspaceState, container: String?, mine: Boolean, device:DeviceActions=DeviceActions(), close: () -> Unit) {
     val basis=remember { state.cache.snapshot!!.basis }
     val stale=basis!=state.cache.snapshot!!.basis
     var title by rememberSaveable { mutableStateOf("") }
     var keepIn by rememberSaveable { mutableStateOf(container ?: "") }
     var assignee by rememberSaveable { mutableStateOf(if (mine && state.cache.people.isNotEmpty()) state.cache.snapshot!!.actor.user_id else "") }
+    var notes by rememberSaveable { mutableStateOf("") };var due by rememberSaveable { mutableStateOf("") };var planned by rememberSaveable { mutableStateOf("") };var priority by rememberSaveable { mutableStateOf(3) }
+    val reminderId=rememberSaveable { model.newId() };var remindersJson by rememberSaveable { mutableStateOf<String?>(null) }
+    val rules=remindersJson?.let { WireJson.decodeFromString<ReminderSet>(it) } ?: ReminderSet(if(due.isNotBlank())listOf(ReminderAlert(reminderId,0)) else emptyList())
     var personMenu by remember { mutableStateOf(false) }
     var collectionMenu by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -51,7 +57,7 @@ import org.fieldnotes.domain.*
         onDismissRequest = { if (!busy) close() },
         title = { Text("Add task") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 OutlinedTextField(title, { title = it.take(240) }, label = { Text("Task title · dates optional") }, enabled = !busy)
                 Box {
                     SecondaryButton(onClick = { personMenu = true }, enabled = !busy && state.cache.people.isNotEmpty()) {
@@ -75,6 +81,12 @@ import org.fieldnotes.domain.*
                         }
                     }
                 }
+                OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Notes")},minLines=2,enabled=!busy,modifier=Modifier.fillMaxWidth())
+                Text("Priority",style=MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp)){for(p in 1..4)FilterChip(priority==p,{priority=p},{Text(priorityName(p))},enabled=!busy)}
+                DateField("Due date · optional",due,!busy){due=it}
+                DateField("Planned day · optional",planned,!busy){planned=it}
+                ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound){remindersJson=reminderData(it).toString()}
                 if(stale)Text("The workspace was reset. Copy this title before reopening the form.",color=MaterialTheme.colorScheme.error)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -84,7 +96,7 @@ import org.fieldnotes.domain.*
                 busy = true
                 scope.launch {
                     try {
-                        val base = obj("title" to title.trim().j(), "project_id" to keepIn.j())
+                        val base = JsonObject(obj("title" to title.trim().j(), "project_id" to keepIn.j(),"notes" to notes.j(),"due" to due.j(),"planned_for" to planned.j(),"priority" to priority.j())+(if(remindersJson!=null){validateReminders(rules);mapOf("reminders" to reminderData(rules))}else emptyMap()))
                         val data = if (state.cache.people.isEmpty()) base else JsonObject(base + ("assignee" to if (assignee.isBlank()) JsonNull else assignee.j()))
                         model.enqueue("task.create", model.newId(), data, null,basis)
                         close()

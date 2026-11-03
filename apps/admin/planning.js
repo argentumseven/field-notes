@@ -94,7 +94,43 @@
       String(date.getMonth() + 1).padStart(2, "0"),
       String(date.getDate()).padStart(2, "0"),
     ].join("-");
-  const api = { rankTask, localDay, day };
+  const localTime = (date) =>
+    String(date.getHours()).padStart(2, "0") +
+    ":" +
+    String(date.getMinutes()).padStart(2, "0");
+  function scheduledInstant(date, time, original = 0) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time))
+      throw Error("Choose a date and time.");
+    if (
+      original &&
+      localDay(new Date(original * 1000)) === date &&
+      localTime(new Date(original * 1000)) === time
+    )
+      return original;
+    const value = new Date(date + "T" + time + ":00");
+    if (
+      !Number.isFinite(value.getTime()) ||
+      localDay(value) !== date ||
+      localTime(value) !== time
+    )
+      throw Error(
+        "That time is skipped when the clocks change. Choose another time.",
+      );
+    return value.getTime() / 1000;
+  }
+  const shiftDay = (date, amount) => {
+    const value = new Date(date + "T12:00:00");
+    value.setDate(value.getDate() + amount);
+    return localDay(value);
+  };
+  const api = {
+    rankTask,
+    localDay,
+    day,
+    localTime,
+    scheduledInstant,
+    shiftDay,
+  };
   root.FieldPlanning = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

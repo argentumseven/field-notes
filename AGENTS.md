@@ -17,7 +17,8 @@ Distinguish compiled/tested behavior from physical GrapheneOS verification.
 - Serve HTTPS directly in Rust. No Caddy, reverse proxy or load balancer. Keep
   LAN administration separate from the WireGuard-only notes endpoint and check
   actual connection addresses; forwarded identity headers are not trusted.
-- Compact charcoal/paper with teal accents, clean rows, no decorative art.
+- Clean light/dark themes, clear controls, grouped navigation and calendar-first
+  planning. The user superseded the initial charcoal/teal direction.
   Priority and planned day are distinct from an optional due date. Calendar and
   Android widgets use our own data without Google services or Calendar access.
 - Android/GrapheneOS must work without Play services or FCM. No hidden Google

@@ -1,0 +1,31 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:id="@+id/calendar_root" android:orientation="vertical" android:padding="12dp" android:background="#1A2432">
+ <LinearLayout android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical">
+  <Button android:id="@+id/calendar_previous" android:layout_width="40dp" android:layout_height="40dp" android:text="‹" android:contentDescription="Previous month" android:textSize="22sp" android:textColor="#A8B7FF" android:background="@drawable/widget_action" android:minWidth="0dp" android:minHeight="0dp" android:padding="0dp"/>
+  <TextView android:id="@+id/calendar_month" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:gravity="center" android:text="Field Notes · Calendar" android:textSize="16sp" android:textStyle="bold" android:textColor="#E8EEF8"/>
+  <Button android:id="@+id/calendar_next" android:layout_width="40dp" android:layout_height="40dp" android:text="›" android:contentDescription="Next month" android:textSize="22sp" android:textColor="#A8B7FF" android:background="@drawable/widget_action" android:minWidth="0dp" android:minHeight="0dp" android:padding="0dp"/>
+ </LinearLayout>
+ <LinearLayout android:layout_width="match_parent" android:layout_height="24dp" android:orientation="horizontal">
+  <TextView android:id="@+id/calendar_weekday_1" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="M" android:contentDescription="Monday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+  <TextView android:id="@+id/calendar_weekday_2" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="T" android:contentDescription="Tuesday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+  <TextView android:id="@+id/calendar_weekday_3" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="W" android:contentDescription="Wednesday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+  <TextView android:id="@+id/calendar_weekday_4" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="T" android:contentDescription="Thursday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+  <TextView android:id="@+id/calendar_weekday_5" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="F" android:contentDescription="Friday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+  <TextView android:id="@+id/calendar_weekday_6" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="S" android:contentDescription="Saturday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+  <TextView android:id="@+id/calendar_weekday_7" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center" android:text="S" android:contentDescription="Sunday" android:textSize="11sp" android:textColor="#AEBDD4"/>
+ </LinearLayout>
+ <LinearLayout android:id="@+id/calendar_weeks" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical"/>
+ <TextView android:id="@+id/calendar_busy_title" android:layout_width="match_parent" android:layout_height="18dp" android:text="Today’s schedule" android:textSize="11sp" android:textColor="#AEBDD4"/>
+ <LinearLayout android:id="@+id/calendar_busy" android:layout_width="match_parent" android:layout_height="16dp" android:orientation="horizontal"/>
+ <LinearLayout android:layout_width="match_parent" android:layout_height="16dp" android:orientation="horizontal">
+  <TextView android:id="@+id/calendar_tick_0" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:textSize="9sp" android:textColor="#AEBDD4" android:gravity="start"/>
+  <TextView android:id="@+id/calendar_tick_1" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:textSize="9sp" android:textColor="#AEBDD4" android:gravity="center"/>
+  <TextView android:id="@+id/calendar_tick_2" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:textSize="9sp" android:textColor="#AEBDD4" android:gravity="center"/>
+  <TextView android:id="@+id/calendar_tick_3" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:textSize="9sp" android:textColor="#AEBDD4" android:gravity="center"/>
+  <TextView android:id="@+id/calendar_tick_4" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:textSize="9sp" android:textColor="#AEBDD4" android:gravity="end"/>
+ </LinearLayout>
+ <TextView android:id="@+id/calendar_agenda" android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical" android:textSize="12sp" android:textColor="#E8EEF8" android:maxLines="3" android:ellipsize="end"/>
+ <LinearLayout android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical">
+  <Button android:id="@+id/calendar_today" android:layout_width="64dp" android:layout_height="40dp" android:text="Today" android:textSize="12sp" android:textAllCaps="false" android:textColor="#A8B7FF" android:background="@drawable/widget_action" android:minHeight="0dp" android:minWidth="0dp"/>
+  <Button android:id="@+id/calendar_refresh" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="Saved on device · Refresh" android:textSize="11sp" android:textAllCaps="false" android:textColor="#E8EEF8" android:background="@drawable/widget_action" android:minHeight="0dp" android:minWidth="0dp"/>
+ </LinearLayout>
+</LinearLayout>

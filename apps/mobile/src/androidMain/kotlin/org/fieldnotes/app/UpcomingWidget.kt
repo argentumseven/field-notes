@@ -79,7 +79,7 @@ class WidgetRefreshWorker(context:Context,params:WorkerParameters):CoroutineWork
         val app=applicationContext as FieldNotesApplication
         app.initialized.await()
         if(app.model.state.value.ready&&!app.model.state.value.needsLogin)app.model.sync()
-        PlannerWidget.refresh(applicationContext);UpcomingWidget.refresh(applicationContext)
+        PlannerWidget.refresh(applicationContext);UpcomingWidget.refresh(applicationContext);CalendarWidget.refresh(applicationContext)
         return Result.success()
     }
 }

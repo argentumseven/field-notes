@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
-import { readdir, writeFile, mkdir } from "node:fs/promises";
+import { readdir, writeFile, mkdir, readFile } from "node:fs/promises";
 import { join, delimiter } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fixture, password } from "./support.mjs";
@@ -60,13 +60,42 @@ test("the displayed invitation decodes to the exact server-issued code using off
       .fill(Buffer.alloc(32, 18).toString("base64"));
     await page.locator("#dialog-submit").click();
     const invitation = await (await issued).json();
+    await mkdir("dist/qr-check", { recursive: true });
     const image = page.locator(".invite-qr");
     await image.waitFor();
     await image.evaluate((img) => img.decode());
     const expected = join(f.root, "expected.txt"),
       picture = join(f.root, "displayed.png");
-    await writeFile(expected, invitation.code, { mode: 0o600 });
+    await writeFile(expected, invitation.qr_code || invitation.code, {
+      mode: 0o600,
+    });
     assert.match(invitation.qr_png, /^data:image\/png;base64,/);
+    assert(
+      invitation.qr_code.length < invitation.code.length * 0.75,
+      "Camera payload avoids double encoding",
+    );
+    const compact = JSON.parse(invitation.qr_code),
+      full = JSON.parse(
+        Buffer.from(invitation.code.split("#")[1], "base64url").toString(),
+      );
+    assert.equal(compact.t, full.token);
+    assert.equal(compact.u, full.url);
+    assert.deepEqual(compact.w, [
+      full.tunnel.address,
+      full.tunnel.endpoint,
+      full.tunnel.alternate_endpoints,
+      full.tunnel.server_key,
+      full.tunnel.preshared_key,
+      full.tunnel.api,
+      full.tunnel.public_key,
+    ]);
+    assert.equal(
+      compact.c,
+      full.ca
+        .split("\n")
+        .filter((line) => line && !line.startsWith("-----"))
+        .join(""),
+    );
     for (const width of [1440, 390, 360]) {
       await page.setViewportSize({ width, height: 1050 });
       await page.waitForFunction(() => {
@@ -74,6 +103,7 @@ test("the displayed invitation decodes to the exact server-issued code using off
         return i.getBoundingClientRect().width >= i.naturalWidth / 4;
       });
       await image.screenshot({ path: picture });
+      await writeFile(`dist/qr-check/${width}.png`, await readFile(picture));
       const output = execFileSync(
         "java",
         [

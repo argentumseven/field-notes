@@ -19,28 +19,17 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import org.fieldnotes.domain.*
 
-@Composable internal fun ColumnScope.NoteRows(rows: List<VisibleRecord>, query: String, open: (String)->Unit) {
+@Composable internal fun ColumnScope.NoteRows(cache:Cache, rows: List<VisibleRecord>, query: String, open: (String)->Unit) {
     val notes=rows.filter { it.record.kind=="note"&&(it.record.data.text("title")+" "+it.record.data.text("body")).contains(query,true) }.sortedWith(compareByDescending<VisibleRecord> { it.record.flag("pinned") }.thenByDescending { it.record.data.number("updated_at") }.thenBy { it.record.id })
     LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp)) {
         if(notes.isEmpty())item { Text("References, ideas and information can stand on their own. Add a note here.",Modifier.padding(vertical=24.dp)) }
         items(notes,key={it.record.id}) { note -> Column(Modifier.fillMaxWidth().clickable { open(note.record.id) }.padding(vertical=16.dp)) {
             Text(note.record.data.text("title"),fontWeight=FontWeight.Medium)
             Text(note.record.data.text("body").take(180),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(recordHistory(cache,note.record,kotlinx.datetime.TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(note.pending||note.record.flag("pinned"))Text(if(note.pending)"Queued" else "Pinned",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
         };HorizontalDivider() }
     }
-}
-@Composable internal fun ContainerEditor(model:Workspace,state:WorkspaceState,record:Record,close:()->Unit) {
-    var title by rememberSaveable(record.id) { mutableStateOf(record.data.text("title")) };var notes by rememberSaveable(record.id) { mutableStateOf(record.data.text("notes")) };var remove by remember { mutableStateOf(false) }
-    val occupied=projectRecords(state.cache).any { it.record.kind=="task"&&it.record.data.text("project_id")==record.id }
-    val basis=remember(record.id) { state.cache.snapshot!!.basis }
-    AlertDialog(onDismissRequest=close,title={Text("Edit ${record.kind}")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(title,{title=it.take(160)},label={Text("Name")})
-        OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Description")},minLines=3)
-        if(occupied)Text("Move or remove this collection's tasks before deleting it.",style=MaterialTheme.typography.bodySmall)
-        state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-    }},confirmButton={Button(onClick={model.enqueueAsync(record.kind+".update",record.id,obj("title" to title.j(),"notes" to notes.j()),record.revision,basis);close()},enabled=title.isNotBlank()){Text("Save")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { SecondaryButton(onClick={remove=true},enabled=!occupied,dangerous=true){Text("Delete")};SecondaryButton(onClick=close){Text("Close")} }})
-    if(remove)AlertDialog(onDismissRequest={remove=false},title={Text("Delete empty ${record.kind}?")},text={Text("Existing backups are unchanged.")},confirmButton={Button(colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=MaterialTheme.colorScheme.onError),onClick={model.enqueueAsync(record.kind+".delete",record.id,obj(),record.revision,basis);remove=false;close()}){Text("Delete")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Cancel")}})
 }
 @Composable internal fun NoteEditor(model:Workspace,state:WorkspaceState,visible:VisibleRecord,back:()->Unit) {
     val record=visible.record;val draft=state.cache.drafts[record.id]
@@ -56,6 +45,7 @@ import org.fieldnotes.domain.*
             state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
             OutlinedTextField(title,{title=it.take(240);retain()},Modifier.fillMaxWidth(),label={Text("Note title")},enabled=writable)
             OutlinedTextField(body,{body=it.take(16384);retain()},Modifier.fillMaxWidth(),label={Text("Content")},minLines=12,enabled=writable)
+            Text(recordHistory(state.cache,record,kotlinx.datetime.TimeZone.currentSystemDefault()),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row { Checkbox(pinned,{pinned=it;retain()},enabled=writable);Text("Pin note",Modifier.padding(top=12.dp)) }
             if(dirty&&revision!=record.revision&&!visible.pending){Text("Changed on another device. Your draft is kept.",color=MaterialTheme.colorScheme.error);Text("Server: ${record.data.text("title")}\n${record.data.text("body")}");SecondaryButton(onClick={title=record.data.text("title");body=record.data.text("body");pinned=record.flag("pinned");revision=record.revision;dirty=false;model.launch { model.discardDraft(record.id) }}){Text("Use server version")};SecondaryButton(onClick={revision=record.revision;retain()}){Text("Keep draft for a new save")}}
             if(writable)FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) { Button(onClick={val data=fields();val base=revision;model.launch { model.saveDraft(record.id,base,data,basis,"note.update");model.submitDraft(record.id);dirty=false;model.sync() }},enabled=title.isNotBlank()){Text("Save note")};SecondaryButton(onClick={remove=true},dangerous=true){Text("Delete note")} }

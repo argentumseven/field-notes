@@ -25,6 +25,16 @@ export async function demo(image, enrollment = false){
   for(const [name,role]of [['Sam','member'],['Alex','admin'],['Guest','viewer']]){
    assert.equal((await f.request('/api/admin',{token:owner,body:{action:'user.create',name,role,password}})).status,200);
   }
+  // Keep calendar examples on the current local day instead of aging into
+  // an empty month. This fixture contains synthetic household data only.
+  const calendarDay=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const previousZone=process.env.TZ;process.env.TZ='America/New_York';
+  try {
+   const start=new Date(calendarDay+'T10:00:00').getTime()/1000;
+   await command('event.create',randomUUID(),{title:'Household check-in',notes:'Review the week together.',all_day:false,starts_at:start,ends_at:start+3600});
+   const evening=new Date(calendarDay+'T18:30:00').getTime()/1000;
+   await command('event.create',randomUUID(),{title:'Dinner with Sam',notes:'Bring the shopping list.',all_day:false,starts_at:evening,ends_at:evening+5400});
+  } finally { if(previousZone===undefined)delete process.env.TZ;else process.env.TZ=previousZone; }
   const sam=await login('Sam','Sam’s phone · Android');
   const samId=(await f.request('/api/snapshot',{token:sam})).data.actor.user_id,ownerId=meta.actor.user_id;
   await login('Alex','Alex’s computer · Windows');
@@ -45,7 +55,7 @@ export async function demo(image, enrollment = false){
   const ids={home,workshop,weekend};
   for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes,assignee:['boiler','herbs','walk'].includes(key)?samId:['shelves','backup','lamp'].includes(key)?ownerId:null,priority:({shelves:2,backup:1,lamp:2,bench:4})[key]||3,estimate_minutes:({shelves:30,backup:15,walk:20})[key]||0,planned_for:['shelves','walk'].includes(key)?'2026-10-30':'',blocked:key==='herbs',pinned:key==='backup'});}
   ids.groceries=randomUUID();ids.routines=randomUUID();
-  await command('list.create',ids.groceries,{title:'Groceries',notes:'Shared shopping, without a project or deadline.'});
+  await command('list.create',ids.groceries,{title:'Groceries',notes:'Shared shopping, without a project or deadline.',template:'groceries',fields:['quantity','notes'],perpetual:true});
   await command('list.create',ids.routines,{title:'Household routines',notes:'The practical things we keep coming back to.'});
   await command('task.create',randomUUID(),{title:'Oats and coffee',project_id:ids.groceries,priority:4});
   await command('task.create',randomUUID(),{title:'Check parcel delivery',priority:2});

@@ -19,6 +19,12 @@ if(!serial.startsWith('emulator-'))throw Error('Only a disposable emulator is su
 async function call(args,timeout=120000){return(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;}
 const avd=(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()||(await call(['shell','getprop','ro.kernel.qemu.avd_name'])).trim();
 if(avd!=='field-notes-test')throw Error('Use the dedicated field-notes-test AVD. User devices are not modified.');
+// Software-emulated compilation can outlast the AVD's display timeout before
+// the Activity sets KEEP_SCREEN_ON. Keep only this disposable fixture awake,
+// and restore its prior timeout when capture ends.
+const screenTimeout=(await call(['shell','settings','get','system','screen_off_timeout'])).trim();
+await call(['shell','settings','put','system','screen_off_timeout','2147483647']);
+async function restoreTimeout(){await call(['shell','settings',screenTimeout==='null'?'delete':'put','system','screen_off_timeout',...(screenTimeout==='null'?[]:[screenTimeout])]);}
 const output='docs/screenshots/android';await mkdir(output,{recursive:true});
 await call(['shell','wm','size','540x1200']);await call(['shell','wm','density','210']);
 await call(['shell','cmd','uimode','night','yes']);
@@ -39,7 +45,7 @@ async function launcher(){
  const {stdout}=await run(adb,['-s',serial,'exec-out','screencap','-p'],{encoding:'buffer',maxBuffer:8*1024*1024});
  await writeFile(join(output,'17-launcher-icon.png'),stdout);console.log('Captured android/17-launcher-icon (actual AOSP launcher).');
 }
-if(launcherOnly){try{await launcher();}finally{await call(['shell','wm','size','reset']);await call(['shell','wm','density','reset']);}process.exit(0);}
+if(launcherOnly){try{await launcher();}finally{await call(['shell','wm','size','reset']);await call(['shell','wm','density','reset']);await restoreTimeout();}process.exit(0);}
 await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
 await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
 await call(['shell','pm','clear','org.fieldnotes.app']);
@@ -81,7 +87,7 @@ try{
   if(!/OK \(1 test\)/.test(result)||result.includes('FAILURES!!!'))throw Error(result);
  }
  const names=(await call(['shell','run-as','org.fieldnotes.app','ls','files/gallery'])).trim().split(/\s+/);
- if(names.length!==(widgetOnly?1:detailsOnly?4:25)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
+ if(names.length!==(widgetOnly?1:detailsOnly?4:28)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
  const captures=[],seen=new Map();
  for(const name of names){
   const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/gallery/'+name],{encoding:'buffer',maxBuffer:8*1024*1024});
@@ -96,4 +102,5 @@ try{
 }finally{
  hub?.kill('SIGTERM');await browser.close();await f?.close();
  await call(['shell','wm','size','reset']).catch(()=>{});await call(['shell','wm','density','reset']).catch(()=>{});
+ await restoreTimeout().catch(()=>{});
 }

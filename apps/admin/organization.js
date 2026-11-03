@@ -5,92 +5,32 @@ function containers() {
     a.data.title.localeCompare(b.data.title),
   );
 }
-async function newCollection(kind = "list") {
-  await formDialog(
-    kind === "list" ? "New list" : "New project",
-    kind === "list"
-      ? "A shared checklist, shopping list or recurring collection."
-      : "An outcome with related tasks and a place for context.",
-    [
-      {
-        key: "title",
-        label: kind === "list" ? "List name" : "Project name",
-        max: 160,
-      },
-      {
-        key: "notes",
-        label: "Description",
-        type: "textarea",
-        required: false,
-        max: 16384,
-      },
-    ],
-    (v) => mutate(kind + ".create", uuid(), v, null),
-    "Create " + kind,
-  );
-}
-async function editCollection(record) {
-  await formDialog(
-    "Edit " + record.kind,
-    "Tasks must be moved or removed before deleting this collection.",
-    [
-      { key: "title", label: "Name", value: record.data.title, max: 160 },
-      {
-        key: "notes",
-        label: "Description",
-        type: "textarea",
-        value: record.data.notes || "",
-        required: false,
-        max: 16384,
-      },
-      {
-        key: "action",
-        label: "Action",
-        options: [
-          ["save", "Save changes"],
-          ["delete", "Delete empty collection"],
-        ],
-      },
-      {
-        key: "confirmation",
-        label: "For deletion, type DELETE",
-        required: false,
-      },
-    ],
-    async (v) => {
-      if (v.action === "delete") {
-        if (v.confirmation !== "DELETE")
-          throw Error("Type DELETE to remove the collection.");
-        await mutate(record.kind + ".delete", record.id, {}, record.revision);
-        state.project = null;
-        state.page = "collections";
-        render();
-      } else
-        await mutate(
-          record.kind + ".update",
-          record.id,
-          { title: v.title, notes: v.notes },
-          record.revision,
-        );
-    },
-    "Apply",
-  );
-}
 async function newStandaloneTask() {
-  let created;
+  let reminders = { alerts: [], repeat: null },
+    reminderDirty = false;
   await formDialog(
     "New task",
-    "Capture first. Organize and add dates whenever you need them.",
+    "Capture everything you need in one step. Dates stay optional.",
     [
       { key: "title", label: "Task title", max: 240 },
+      {
+        key: "notes",
+        label: "Notes",
+        type: "textarea",
+        required: false,
+        max: 16384,
+      },
       {
         key: "project_id",
         label: "Keep in",
         options: [
           ["", "Inbox"],
-          ...containers().map((c) => [c.id, c.data.title + " · " + c.kind]),
+          ...containers()
+            .filter((c) => c.kind === "project")
+            .map((c) => [c.id, c.data.title]),
         ],
         value: state.project || "",
+        required: false,
       },
       {
         key: "assignee",
@@ -99,15 +39,58 @@ async function newStandaloneTask() {
         value: state.page === "mine" ? state.actor.user_id : "",
         required: false,
       },
+      {
+        key: "priority",
+        label: "Priority",
+        options: [
+          ["1", "Urgent"],
+          ["2", "High"],
+          ["3", "Normal"],
+          ["4", "Low"],
+        ],
+        value: "3",
+      },
+      {
+        key: "due",
+        label: "Due date · optional",
+        type: "date",
+        required: false,
+      },
+      {
+        key: "planned_for",
+        label: "Planned day · optional",
+        type: "date",
+        required: false,
+      },
     ],
     async (v) => {
-      created = await mutate("task.create", uuid(), v, null);
+      const data = { ...v, priority: Number(v.priority) };
+      if (reminderDirty) {
+        FieldReminders.validate(reminders);
+        data.reminders = reminders;
+      }
+      await mutate("task.create", uuid(), data, null);
+      state.selected = null;
+      state.query = "";
+      render();
     },
     "Create task",
+    (nodes) =>
+      FieldReminders.controls(
+        $("#dialog-body"),
+        reminders,
+        () =>
+          nodes.due.value ||
+          nodes.planned_for.value ||
+          FieldPlanning.localDay(),
+        (v) => {
+          reminders = v;
+          reminderDirty = true;
+        },
+      ),
   );
-  state.selected = created.record.id;
-  renderDetail();
 }
+
 async function newNote() {
   let created;
   await formDialog(
@@ -115,6 +98,7 @@ async function newNote() {
     "A shared reference, idea or piece of information that does not need to become a task.",
     [
       { key: "title", label: "Note title", max: 240 },
+      { key: "pinned", label: "Pin note", type: "checkbox", value: false },
       {
         key: "body",
         label: "Content",
@@ -129,58 +113,10 @@ async function newNote() {
     "Create note",
   );
   state.page = "notes";
+  state.query = "";
   state.project = null;
-  state.selected = created.record.id;
+  state.selected = null;
   render();
-}
-function renderCollections(root) {
-  const tools = el("div", "toolbar");
-  if (mayWrite())
-    tools.append(
-      button("New list", () => newCollection("list"), "primary"),
-      button("New project", () => newCollection("project")),
-    );
-  root.append(tools);
-  for (const kind of ["list", "project"]) {
-    const section = el("section", "collection-library");
-    section.append(el("h2", "", kind === "list" ? "Lists" : "Projects"));
-    const group = containers().filter((c) => c.kind === kind);
-    if (!group.length)
-      section.append(
-        el(
-          "p",
-          "muted",
-          kind === "list"
-            ? "Shopping, routines, packing: collect tasks without turning everything into a project."
-            : "Give an outcome its own tasks and context.",
-        ),
-      );
-    for (const c of group) {
-      const row = button(
-        "",
-        () => {
-          state.project = c.id;
-          state.page = "tasks";
-          state.query = "";
-          render();
-        },
-        "collection-row",
-      );
-      row.append(
-        el("strong", "", c.data.title),
-        el(
-          "span",
-          "item-sub",
-          records("task").filter(
-            (t) => t.data.project_id === c.id && t.data.status !== "done",
-          ).length + " open tasks",
-        ),
-        el("span", "muted", c.data.notes || ""),
-      );
-      section.append(row);
-    }
-    root.append(section);
-  }
 }
 function renderNotes(root) {
   const tools = el("div", "toolbar"),
@@ -240,6 +176,7 @@ function renderNotes(root) {
             new Date(n.data.updated_at * 1000).toLocaleDateString(),
         ),
       );
+      row.append(historyNode(n));
       list.append(row);
     }
   }

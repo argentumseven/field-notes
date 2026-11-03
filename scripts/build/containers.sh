@@ -30,6 +30,8 @@ notices=root/'usr/share/doc/field-notes-runtime';notices.mkdir(parents=True)
 for package in ['libc6','libgcc-s1']:
     source=pathlib.Path('/usr/share/doc')/package/'copyright'
     if source.exists():shutil.copy2(source,notices/(package+'-copyright'))
+for source in pathlib.Path('docs/licenses').glob('*-LICENSE.txt'):
+    shutil.copy2(source,notices/source.name)
 for entry in [root,*root.rglob('*')]:
     if entry.is_dir():entry.chmod(0o755)
     elif entry.is_file():entry.chmod(0o755 if entry==target or 'ld-linux' in entry.name else 0o644)

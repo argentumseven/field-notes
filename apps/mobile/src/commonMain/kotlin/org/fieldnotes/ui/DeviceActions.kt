@@ -4,8 +4,12 @@ package org.fieldnotes.ui
 data class DeviceActions(
     val update:org.fieldnotes.domain.AppUpdateUi=org.fieldnotes.domain.AppUpdateUi(),
     val checkUpdate:()->Unit={},val downloadUpdate:()->Unit={},val cancelUpdate:()->Unit={},val installUpdate:()->Unit={},
+    val previewSound:(org.fieldnotes.domain.AlertProfile)->Unit={},
+    val openLink:(String)->Unit={},
     val androidDelivery: Boolean = false,
     val status: String = "",
+    val use24Hour: Boolean = false,
+    val addCalendarWidget: () -> Unit = {},
     val addUpcomingWidget: () -> Unit = {},
     val profileTest: () -> Unit = {},
     val testAlert: () -> Unit = {},

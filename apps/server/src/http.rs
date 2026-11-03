@@ -200,7 +200,7 @@ async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> R
             }
         };
     let headers = response.headers_mut();
-    for (k,v) in [("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("x-frame-options","DENY"),("permissions-policy","camera=(), microphone=(), geolocation=()"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")] {headers.insert(k,HeaderValue::from_static(v));}
+    for (k,v) in [("x-dns-prefetch-control","off"),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("x-frame-options","DENY"),("permissions-policy","camera=(), microphone=(), geolocation=()"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; font-src 'self'; media-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")] {headers.insert(k,HeaderValue::from_static(v));}
     response
 }
 #[derive(Deserialize)]
@@ -665,6 +665,15 @@ pub fn router(app: App) -> Router {
                 }),
             )
             .route(
+                "/lists.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/lists.js"),
+                    )
+                }),
+            )
+            .route(
                 "/organization.js",
                 get(|| async {
                     (
@@ -672,6 +681,65 @@ pub fn router(app: App) -> Router {
                         include_str!("../../admin/organization.js"),
                     )
                 }),
+            )
+            .route(
+                "/reminders.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/reminders.js"),
+                    )
+                }),
+            )
+            .route(
+                "/sounds/v1/{name}",
+                get(
+                    |axum::extract::Path(name): axum::extract::Path<String>| async move {
+                        let bytes: Option<&'static [u8]> = match name.as_str() {
+                            "reminder_chime_25.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_chime_25.wav"
+                            )),
+                            "reminder_chime_50.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_chime_50.wav"
+                            )),
+                            "reminder_chime_75.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_chime_75.wav"
+                            )),
+                            "reminder_chime_100.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_chime_100.wav"
+                            )),
+                            "reminder_bell_25.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_bell_25.wav"
+                            )),
+                            "reminder_bell_50.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_bell_50.wav"
+                            )),
+                            "reminder_bell_75.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_bell_75.wav"
+                            )),
+                            "reminder_bell_100.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_bell_100.wav"
+                            )),
+                            "reminder_pulse_25.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_pulse_25.wav"
+                            )),
+                            "reminder_pulse_50.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_pulse_50.wav"
+                            )),
+                            "reminder_pulse_75.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_pulse_75.wav"
+                            )),
+                            "reminder_pulse_100.wav" => Some(include_bytes!(
+                                "../../mobile/src/androidMain/res/raw/reminder_pulse_100.wav"
+                            )),
+                            _ => None,
+                        };
+                        match bytes {
+                            Some(b) => ([("content-type", "audio/wav")], b).into_response(),
+                            None => StatusCode::NOT_FOUND.into_response(),
+                        }
+                    },
+                ),
             )
             .route(
                 "/calendar.js",

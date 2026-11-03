@@ -60,6 +60,24 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun clearingCheckedIsDurableAtomicAndDependsOnTheOfflineCompletion()=runTest {
+        val list=Record("groceries","list",1,obj("title" to "Groceries".j()))
+        val item=task.copy(data=JsonObject(task.data+mapOf("project_id" to list.id.j())))
+        val other=item.copy(id="leave-unchecked")
+        val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(list,item,other))))
+        val m=model(v,FakeTransport(v.value.snapshot!!),backgroundScope);m.initialize()
+        m.enqueue("task.complete",item.id,obj(),1)
+        v.failing=true
+        assertFails { m.clearChecked(list.id) }
+        assertEquals(1,m.state.value.cache.outbox.size)
+        v.failing=false;m.clearChecked(list.id)
+        val queued=v.value.outbox
+        assertEquals(listOf("task.complete","task.delete"),queued.map { it.command.action })
+        assertEquals(queued.first().command.operation_id,queued.last().dependsOn)
+        val restarted=model(v,FakeTransport(v.value.snapshot!!),backgroundScope);restarted.initialize()
+        assertEquals(queued,restarted.state.value.cache.outbox)
+        assertEquals(listOf(other.id),projectRecords(restarted.state.value.cache).filter { it.record.kind=="task" }.map { it.record.id })
+    }
     @Test fun ddilRestartMergesDifferentItemsIntoARemotelyChangedListAndRetainsSameItemConflicts()=runTest {
         val list=Record("groceries","list",1,obj("title" to "Groceries".j()))
         val first=task.copy(id="milk",data=JsonObject(task.data+mapOf("project_id" to list.id.j(),"title" to "Milk".j())))

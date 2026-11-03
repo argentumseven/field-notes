@@ -25,7 +25,8 @@ class EditorDeviceTest {
         app.model=fixture
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
-                compose.waitUntil(60_000){compose.onAllNodesWithText("Focus").fetchSemanticsNodes().isNotEmpty()}
+                compose.waitUntil(60_000){compose.onAllNodesWithText("Calendar").fetchSemanticsNodes().isNotEmpty()}
+                compose.onNodeWithTag("nav-tasks").performClick()
                 compose.onNodeWithContentDescription("Add").performClick()
                 compose.onNodeWithText("Task title · dates optional").performTextInput("Buy flowers")
                 compose.onNodeWithText("Create").performClick()

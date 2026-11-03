@@ -3,8 +3,10 @@ mod assignment;
 mod auth;
 mod commands;
 mod enrollment;
+mod lists;
 mod organization;
 mod planning;
+mod reminders;
 pub use enrollment::NetworkConfig;
 
 use crate::crypto::{self, Vault};

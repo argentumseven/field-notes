@@ -39,6 +39,19 @@ private class TunnelTransport:Transport {
     }
 }
 class TunnelEnrollmentTest {
+    @Test fun compactCameraCodeIsTheSameInvitationWithLegacyPasteStillSupported() {
+        val der=Base64.encode(ByteArray(500) { 65 })
+        val ca="-----BEGIN CERTIFICATE-----\n"+der.chunked(64).joinToString("\n")+"\n-----END CERTIFICATE-----\n"
+        val invite=tunnelInvite().copy(ca=ca);val t=invite.tunnel!!
+        val compact=obj("fieldnotes" to 2.j(),"u" to invite.url.j(),"c" to der.j(),"t" to invite.token.j(),"n" to invite.user.j(),"r" to invite.role.j(),"e" to invite.expires.j(),
+            "w" to JsonArray(listOf("address","endpoint","alternate_endpoints","server_key","preshared_key","api","public_key").map { t.getValue(it) })).toString()
+        val legacy="fieldnotes://enroll#"+Base64.UrlSafe.encode(WireJson.encodeToString(invite).encodeToByteArray())
+        assertEquals(invite,readInvitation(compact));assertEquals(invite,readInvitation(legacy))
+        assertTrue(compact.length<legacy.length*0.75)
+        assertFails { readInvitation(compact.replace("\"fieldnotes\":2","\"fieldnotes\":9")) }
+        assertFails { readInvitation(compact.dropLast(1)+",\"extra\":true}") }
+    }
+
     @Test fun lostRepliesRestartAndActivationUseOnlyTheSameRestrictedPeerAndNonce()=runTest {
         val vault=TunnelVault();val transport=TunnelTransport()
         fun model()=Workspace(transport,vault,{"11111111-1111-4111-8111-111111111111"},backgroundScope)

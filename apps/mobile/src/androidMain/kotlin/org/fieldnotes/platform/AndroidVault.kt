@@ -75,7 +75,7 @@ class AndroidVault(context: Context, namespace: String = "v1") : Vault {
         else decrypt("effect:$name",AtomicFile(file).readFully())
     } }
     suspend fun writeEffect(name:String,bytes:ByteArray) { withContext(Dispatchers.IO) { mutex.withLock {
-        require(name.matches(Regex("[a-z0-9-]{1,40}")));require(bytes.size<=512*1024)
+        require(name.matches(Regex("[a-z0-9-]{1,40}")));require(bytes.size<=(if(name=="alerts")8*1024*1024 else 512*1024))
         write(File(folder,"effect-$name.encrypted"),encrypt("effect:$name",bytes))
     } } }
     suspend fun clearEffects() { withContext(Dispatchers.IO) { mutex.withLock {

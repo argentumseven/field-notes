@@ -1,4 +1,11 @@
-"use strict";
+function readSetting(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+("use strict");
 // User-controlled strings are assigned through textContent, never HTML.
 const $ = (s) => document.querySelector(s);
 try {
@@ -14,7 +21,8 @@ const state = {
   project: null,
   view: "list",
   query: "",
-  page: "focus",
+  page: "calendar",
+  autoRefresh: readSetting("field-notes-auto-refresh") !== "off",
   month: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   day: FieldPlanning.localDay(),
   selected: null,
@@ -317,121 +325,76 @@ function render() {
   side.append(brand());
   const workspaceNav = el("div", "sidebar-scroll");
   side.append(workspaceNav);
-  const nav = el("nav", "nav");
-  nav.setAttribute("aria-label", "Planner");
-  for (const [key, label] of [
-    ["inbox", "Inbox"],
-    ["focus", "Focus"],
-    ["tasks", "Tasks"],
-    ["assignments", "Assignments"],
-    ["calendar", "Calendar"],
-    ["notes", "Notes"],
-    ["collections", "Collections"],
-  ])
-    nav.append(
-      button(
-        label,
-        () => {
-          state.page = key;
-          state.query = "";
-          state.project = null;
-          closeDetail();
-          render();
-        },
-        state.page === key && !state.project ? "active" : "",
-      ),
+  const selectedCollection = containers().find((c) => c.id === state.project);
+  function destination(key, label) {
+    return button(
+      label,
+      () => {
+        state.page = key;
+        state.project = null;
+        state.query = "";
+        closeDetail();
+        render();
+      },
+      (state.page === key && !state.project) ||
+        (key === "lists" && selectedCollection?.kind === "list") ||
+        (key === "projects" && selectedCollection?.kind === "project")
+        ? "active"
+        : "",
     );
-  workspaceNav.append(nav);
-  const create = el("details", "create-menu"),
-    summary = el("summary", "", "+ New");
-  create.append(summary);
-  for (const [label, fn] of [
-    ["Task", newStandaloneTask],
-    ["List", () => newCollection("list")],
-    ["Project", () => newCollection("project")],
-    ["Note", newNote],
-  ])
-    create.append(
-      button(label, () => {
-        create.open = false;
-        return fn();
-      }),
-    );
-  if (mayWrite()) workspaceNav.append(create);
-  const saved = el("nav", "nav smart-views");
-  saved.setAttribute("aria-label", "Task views");
-  for (const [key, label] of [
-    ["mine", "My tasks"],
-    ["unassigned", "Unassigned"],
-    ["undated", "Unscheduled"],
-    ["waiting", "Waiting"],
-    ["completed", "Completed"],
-  ])
-    saved.append(
-      button(
-        label,
-        () => {
-          state.page = key;
-          state.project = null;
-          state.query = "";
-          closeDetail();
-          render();
-        },
-        state.page === key ? "active" : "",
-      ),
-    );
-  workspaceNav.append(saved);
-  for (const kind of ["list", "project"]) {
-    const section = el("section", "collection-section"),
-      header = el("div", "section-label");
-    header.append(
-      el("span", "eyebrow", kind === "list" ? "Lists" : "Projects"),
-    );
-    if (mayWrite()) {
-      const add = button("+", () => newCollection(kind));
-      add.setAttribute(
-        "aria-label",
-        kind === "list" ? "New list" : "New project",
-      );
-      header.append(add);
-    }
-    section.append(header);
-    const group = el("nav", "nav");
-    for (const c of containers().filter((c) => c.kind === kind)) {
-      const b = button(
-        c.data.title,
-        () => {
-          state.project = c.id;
-          state.page = "tasks";
-          state.query = "";
-          closeDetail();
-          render();
-        },
-        state.project === c.id ? "active" : "",
-      );
-      b.append(
-        el(
-          "span",
-          "count",
-          String(
-            records("task").filter(
-              (t) => t.data.project_id === c.id && t.data.status !== "done",
-            ).length,
-          ),
-        ),
-      );
-      group.append(b);
-    }
-    if (!group.children.length)
-      group.append(
-        el(
-          "span",
-          "sidebar-empty",
-          kind === "list" ? "No lists yet" : "No projects yet",
-        ),
-      );
-    section.append(group);
-    workspaceNav.append(section);
+  }
+  for (const [title, items, defaultOpen] of [
+    [
+      "Plan",
+      [
+        ["calendar", "Calendar"],
+        ["tasks", "Tasks"],
+        ["focus", "Focus"],
+      ],
+      true,
+    ],
+    [
+      "Library",
+      [
+        ["lists", "Lists"],
+        ["projects", "Projects"],
+        ["notes", "Notes"],
+      ],
+      true,
+    ],
+    [
+      "Task views",
+      [
+        ["inbox", "Inbox"],
+        ["mine", "My tasks"],
+        ["assignments", "Assignments"],
+        ["unassigned", "Unassigned"],
+        ["undated", "Unscheduled"],
+        ["waiting", "Waiting"],
+        ["completed", "Completed"],
+      ],
+      false,
+    ],
+  ]) {
+    const group = el("details", "nav-group"),
+      summary = el("summary", "", title),
+      nav = el("nav", "nav");
+    nav.setAttribute("aria-label", title);
+    const saved = readSetting("field-notes-nav-" + title);
+    group.open =
+      items.some(([key]) => state.page === key && !state.project) ||
+      (saved === null ? defaultOpen : saved === "open");
+    group.ontoggle = () => {
+      try {
+        localStorage.setItem(
+          "field-notes-nav-" + title,
+          group.open ? "open" : "closed",
+        );
+      } catch {}
+    };
+    for (const [key, label] of items) nav.append(destination(key, label));
+    group.append(summary, nav);
+    workspaceNav.append(group);
   }
   const bottom = el("div", "sidebar-bottom");
   if (isAdmin())
@@ -446,7 +409,9 @@ function render() {
         state.page === "admin" ? "active" : "",
       ),
     );
-  bottom.append(
+  const settingsNav = el("details", "nav-group preferences-nav");
+  settingsNav.append(el("summary", "", "Preferences"));
+  settingsNav.append(
     button("Change password", changeOwnPassword, "quiet"),
     button(
       "Change theme",
@@ -461,6 +426,7 @@ function render() {
       "quiet",
     ),
   );
+  bottom.append(settingsNav);
   if (state.drafts.size)
     bottom.append(
       button("Retained drafts (" + state.drafts.size + ")", () =>
@@ -500,6 +466,20 @@ function render() {
   );
   out.id = "logout";
   bottom.append(out);
+  const syncChoice = el("label", "auto-refresh-choice"),
+    auto = el("input");
+  auto.type = "checkbox";
+  auto.checked = state.autoRefresh;
+  auto.onchange = () => {
+    state.autoRefresh = auto.checked;
+    try {
+      localStorage.setItem(
+        "field-notes-auto-refresh",
+        auto.checked ? "on" : "off",
+      );
+    } catch {}
+  };
+  syncChoice.append(auto, document.createTextNode("Auto refresh"));
   side.append(bottom);
   const top = el("header", "topline"),
     titles = el("div");
@@ -522,6 +502,8 @@ function render() {
             mine: "My tasks",
             unassigned: "Unassigned",
             calendar: "Calendar",
+            lists: "Lists",
+            projects: "Projects",
             admin: "Management",
           }[state.page],
     ),
@@ -548,7 +530,15 @@ function render() {
   );
   const sync = el("div", "sync");
   sync.id = "sync";
-  top.append(titles, sync);
+  top.append(
+    titles,
+    sync,
+    syncChoice,
+    button("Refresh now", async () => {
+      await refresh();
+      render();
+    }),
+  );
   main.append(top);
   shell.append(side, main);
   $("#app").replaceChildren(shell);
@@ -572,12 +562,16 @@ function render() {
     if (state.selected) renderDetail();
     return;
   }
-  if (state.page === "collections") {
+  if (["collections", "lists", "projects"].includes(state.page)) {
     renderCollections(main);
     return;
   }
   if (state.project) {
     const c = byId(state.project);
+    if (c?.kind === "list") {
+      renderChecklist(main, c);
+      return;
+    }
     if (c) {
       const context = el("div", "collection-context");
       context.append(
@@ -643,41 +637,8 @@ function render() {
     toolbar.append(seg);
   }
   main.append(toolbar);
-  if (mayWrite()) {
-    const form = el("form", "quick-add"),
-      add = el("input");
-    add.placeholder = state.project
-      ? "Add a task to this " + byId(state.project).kind
-      : "Capture a task in Inbox · dates optional";
-    add.setAttribute("aria-label", "New task title");
-    add.maxLength = 240;
-    add.required = true;
-    add.disabled = false;
-    const submit = el("button", "primary", "Add task");
-    submit.disabled = add.disabled;
-    form.append(add, submit);
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      submit.disabled = true;
-      try {
-        await mutate(
-          "task.create",
-          uuid(),
-          {
-            title: add.value,
-            project_id: state.project || "",
-            assignee: state.page === "mine" ? state.actor.user_id : null,
-          },
-          null,
-        );
-      } catch (e) {
-        notice(e.message);
-      } finally {
-        submit.disabled = false;
-      }
-    };
-    main.append(form);
-  }
+  if (mayWrite())
+    toolbar.append(button("New task", newStandaloneTask, "primary"));
   const tasks = el("div");
   tasks.id = "task-view";
   main.append(tasks);
@@ -783,6 +744,29 @@ function renderTasks() {
     for (const t of tasks) root.append(taskCard(t));
   }
 }
+function recordHistory(record) {
+  const d = record.data,
+    by = (id) =>
+      !id
+        ? "unavailable"
+        : (state.people || []).find((p) => p.id === id)?.name ||
+          (id === state.actor.user_id ? state.actor.name : "Former member");
+  const stamp = (seconds) =>
+    seconds
+      ? new Date(seconds * 1000).toLocaleString([], {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : "time unavailable";
+  const creator = d.created_by || d.author_id;
+  return `Created by ${d.created_by_name || by(creator)} · ${stamp(d.created_at)}\nUpdated by ${d.last_activity_by_name || d.updated_by_name || by(d.last_activity_by || d.updated_by || creator)} · ${stamp(d.last_activity_at || d.updated_at || d.created_at)}`;
+}
+function historyNode(record) {
+  return el("p", "record-history", recordHistory(record));
+}
 function taskCard(t) {
   const b = button(
     "",
@@ -801,16 +785,16 @@ function taskCard(t) {
   for (const text of [
     projectName(t.data.project_id),
     ["Urgent", "High", "Normal", "Low"][(t.data.priority || 3) - 1],
-    t.data.due ? "Due " + t.data.due : "No due date",
+    t.data.due ? "Due " + t.data.due : "",
     t.data.planned_for ? "Planned " + t.data.planned_for : "",
     t.data.estimate_minutes ? t.data.estimate_minutes + " min" : "",
     t.data.blocked ? "Blocked" : "",
     t.data.pinned ? "Pinned" : "",
-    t.data.assignee ? "Assigned to " + userName(t.data.assignee) : "Unassigned",
+    t.data.assignee ? "Assigned to " + userName(t.data.assignee) : "",
     t.data.claimant ? userName(t.data.claimant) + " is working" : "",
   ])
     if (text) meta.append(el("span", "", text));
-  content.append(meta);
+  content.append(meta, historyNode(t));
   b.append(content);
   if (state.page === "focus")
     b.append(
@@ -1179,7 +1163,12 @@ function renderDetail() {
           new Date(task.data.completed_at * 1000).toLocaleString(),
       ),
     );
+  detail.append(historyNode(task));
   const actions = el("div", "detail-actions");
+  if (mayWrite())
+    actions.append(
+      button("Reminders & sound", () => FieldReminders.edit(task)),
+    );
   if (mayWrite()) {
     if (
       task.data.status === "todo" &&
@@ -1362,6 +1351,8 @@ async function formDialog(
   fields,
   onSubmit,
   submitText = "Continue",
+  configure = () => {},
+  readOnly = false,
 ) {
   const dialog = $("#dialog"),
     body = $("#dialog-body"),
@@ -1390,8 +1381,12 @@ async function formDialog(
     if (f.min) nodes[f.key].minLength = f.min;
     if (f.autocomplete) nodes[f.key].autocomplete = f.autocomplete;
   }
+  configure(nodes);
+  for (const node of Object.values(nodes)) node.disabled = readOnly;
   $("#dialog-error").textContent = "";
   $("#dialog-submit").textContent = submitText;
+  $("#dialog-submit").hidden = readOnly;
+  $("#dialog-cancel").textContent = readOnly ? "Close" : "Cancel";
   dialog.showModal();
   return new Promise((resolve, reject) => {
     let done = false,
@@ -1406,7 +1401,8 @@ async function formDialog(
       for (const node of Object.values(nodes))
         if (node.type === "password") node.value = "";
       for (const image of body.querySelectorAll(".invite-qr")) image.remove();
-      for (const secret of body.querySelectorAll(".invitation-material")) secret.remove();
+      for (const secret of body.querySelectorAll(".invitation-material"))
+        secret.remove();
       dialog.close();
       if (ok) resolve();
       else reject(Error("Action canceled."));
@@ -1422,6 +1418,7 @@ async function formDialog(
     };
     form.onsubmit = async (e) => {
       e.preventDefault();
+      if (readOnly) return;
       if (submitting) return;
       submitting = true;
       const submit = $("#dialog-submit");
@@ -1509,6 +1506,8 @@ setInterval(async () => {
         await renderAdmin();
       return;
     }
+    updateCalendarClock();
+    if (!state.autoRefresh) return;
     const head = await api("/head");
     if (
       head.epoch !== state.snapshot.epoch ||

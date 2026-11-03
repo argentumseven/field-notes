@@ -9,32 +9,64 @@ Screenshots do not prove live enrollment, home firewall isolation, camera optics
 GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
 capture protection enabled. Test invitations expire and their fixture is deleted.
 
-The November 2 enrollment captures show the 0.3.6 PC phone-key form, key-bound
+The enrollment captures show the PC phone-key form, compact key-bound
 PNG invitation, Android public-key screen and real open keyboard. Rendered QR
 codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Calendar first, local time, and an actual month widget
+
+The 0.4.0 calendar is the landing view. Scheduling uses local date and clock
+controls; 10 AM stays 10 AM when saving and reopening in the same zone. The
+launcher **Calendar** provider adds a month grid, busy-time strip, month controls
+and today's agenda, separately from **Upcoming**. Local queued edits repaint
+it without an app visit or a refresh tap. See [calendar controls and privacy](CALENDAR.md).
+
+![Calendar home on Android](screenshots/android/30-calendar-home.png)
+![Local date and time editor](screenshots/android/31-local-event.png)
+![Clock picker with optional numeric entry](screenshots/android/33-time-picker.png)
+![Actual launcher month widget after an offline edit](screenshots/android/32-home-calendar.png)
+![Local scheduling on the management PC](screenshots/web/34-local-event-time.png)
+![Day timeline and occupied blocks](screenshots/web/36-calendar-blocks.png)
+
+Multiple alerts and daily/weekly time windows support independent importance,
+sound and relative loudness. Start-only events remain point markers. Android's
+volume/DND and GrapheneOS's receiving-profile Other users channel remain in
+control. See [reminder controls and profile limitations](REMINDERS.md).
+
+![Daily and weekly reminder windows on Android](screenshots/android/40-reminder-rules.png)
+![Independent sound, importance and relative level](screenshots/android/41-reminder-sound.png)
+
 ## Workspace, lists and shared notes
 
 Capture unfiled tasks in Inbox. Lists keep groceries, routines and checklists
-separate from outcome-oriented Projects. Collections brings both together, and
-Notes holds shared reference material independently of tasks. Unscheduled,
+separate from outcome-oriented Projects. Library groups Lists, Projects and
+Notes, with creation controls inside each page. Notes holds shared reference
+material independently of tasks. Unscheduled,
 Waiting and Completed are useful views of the same task data. Keep in moves a
 task between Inbox, a List and a Project with revision checks.
 
 ![Inbox accepts tasks without a project](screenshots/web/20-inbox.png)
-![Lists and Projects in Collections](screenshots/web/21-collections.png)
+![Lists library](screenshots/web/21-collections.png)
 ![Standalone shared Notes](screenshots/web/22-notes.png)
 ![Shared note editor](screenshots/web/23-shared-note.png)
 ![Groceries as a List](screenshots/web/24-grocery-list.png)
+![Online shopping fields with optional price](screenshots/web/37-list-fields.png)
+![Rolling list with a private attached thumbnail and activity](screenshots/web/38-shopping-list.png)
+
+Choose General, Groceries, Online shopping or Custom; customize visible fields
+without erasing hidden values. Clear checked items retains unchecked work and
+uses revision checks against remote edits. Previews use attached images only.
+See [list behavior and offline deletion](LISTS.md).
 
 ## Tasks, assignments and handoffs
 
 Tasks includes all work. Assignments groups open work by responsible person;
 My tasks and Unassigned are direct filters. The Task view selector keeps these
 available in a small browser viewport as well as the sidebar. Management and
-Change theme now share the navigation text baseline; on desktop their footer
+Change theme share the navigation text baseline; preferences expand as a group.
+On desktop the footer
 stays visible while the workspace destinations scroll.
 
 A task can be assigned before anyone starts it. A working claim is exclusive;
@@ -55,8 +87,8 @@ its score calculation. Planned day and due date are separate, optional fields;
 clearing either does not clear priority. Blocked, completed, other-claimed and
 future-planned work stay in All tasks (your already-started task remains in Focus).
 
-![Charcoal Focus with undated priorities and visible scores](screenshots/web/02-focus.png)
-![Paper theme](screenshots/web/03-focus-paper.png)
+![Dark Focus with undated priorities and visible scores](screenshots/web/02-focus.png)
+![Light theme](screenshots/web/03-focus-paper.png)
 ![All task rows](screenshots/web/04-task-list.png)
 ![Status board](screenshots/web/05-board.png)
 ![Task editor: priority, clearable dates, estimates, pins, blocked state and score](screenshots/web/06-task-planning.png)
@@ -66,19 +98,23 @@ future-planned work stay in All tasks (your already-started task remains in Focu
 
 Task deadlines/planned days and dedicated events share a workspace calendar. Undated
 tasks remain available in Focus and All tasks. All-day events use floating dates
-and an exclusive end day. Timed events use explicit offsets, store UTC instants,
-and render in your current time zone without a Google/OS calendar dependency.
+and an inclusive last day in the form (exclusive in storage). Timed events use
+local clock controls, store instants, and render in your current time zone.
+Day/week timelines arrange overlaps and show actual occupied time; an optional
+end avoids invented durations. No Google/OS calendar dependency is involved.
 Events sync through your Field Notes server alongside tasks. External calendar
 sync (including CalDAV), import and subscription are not implemented.
 
-![Month and selected-day agenda](screenshots/web/08-calendar.png)
+![Week timeline](screenshots/web/08-calendar.png)
 ![Create a calendar event](screenshots/web/09-calendar-event.png)
 
 ## Enrollment tied to tunnel provisioning
 
-From Management, select an existing account and create its ten-minute invitation.
-On the phone, scan on trusted home Wi-Fi, review the account/server and confirm
-the trusted source. The phone keeps its private key. Enter its displayed code in
+On the phone, choose enrollment and copy its public key to your management PC.
+From Management, select the account, paste that public key and create its
+ten-minute invitation. Scan it on the phone, review the account/server and confirm
+the trusted source. Enrollment uses the restricted notes tunnel; the phone does
+not need management access. The phone keeps its private key. Enter its displayed code in
 **Approve** on the server. **Provisioning** means the host has not acknowledged
 peer installation; it is not activated access. Once acknowledged, the phone
 activates through its assigned WireGuard address and synchronizes automatically.
@@ -112,7 +148,7 @@ phones unless wider sign-out is selected.
 
 <img src="screenshots/android/20-unassigned.png" width="300" alt="Android unassigned work">
 
-The installed page glyph in the actual AOSP launcher:
+The installed calendar glyph in the actual AOSP launcher:
 
 <img src="screenshots/android/17-launcher-icon.png" width="300" alt="Current Field Notes icon in the actual Android launcher">
 
@@ -184,8 +220,9 @@ checksum and certificate downloads have outlined controls.
 ## App updates
 
 The paired server selects the APK. These actual update settings components use
-a synthetic next-version offer to show download and install states; they do not
-claim that 0.3.4 is published. The distributed version is 0.3.3.
+a synthetic 0.3.6 → 0.4.0 offer to show download and install states. Actual
+publication and downloaded-artifact verification are recorded in
+[VALIDATION.md](VALIDATION.md).
 
 | Update offered | Verified and ready for Android installation |
 | --- | --- |
@@ -207,13 +244,14 @@ the Android app-contained tunnel; the website remains a home-LAN interface.
 source scripts/dev-env.sh
 cargo build --locked
 python3 -B scripts/android_artifact.py \
-  --apk dist/android/field-notes-0.3.3-android-arm64-debug.apk \
+  --apk dist/android/field-notes-0.4.0-android-arm64-release.apk \
   --output dist/android-download # Fresh destination; do not overwrite an existing bundle.
 FIELD_NOTES_DOWNLOADS="$PWD/dist/android-download" node scripts/capture-web.mjs
 bash scripts/build/android-emulator.sh
 # Only on the disposable field-notes-test AVD:
 node scripts/capture-android.mjs
 node scripts/capture-home-widget.mjs
+node scripts/capture-calendar.mjs
 # Refresh only settings/help/renderer after a settings change:
 node scripts/capture-android.mjs --details-only
 ```

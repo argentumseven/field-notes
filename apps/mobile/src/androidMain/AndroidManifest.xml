@@ -26,6 +26,10 @@
    <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
    <meta-data android:name="android.appwidget.provider" android:resource="@xml/planner_widget"/>
   </receiver>
+  <receiver android:name=".CalendarWidget" android:exported="false" android:label="Field Notes · Calendar">
+   <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+   <meta-data android:name="android.appwidget.provider" android:resource="@xml/calendar_widget"/>
+  </receiver>
   <receiver android:name=".UpcomingWidget" android:exported="false" android:label="Field Notes · Upcoming">
    <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
    <meta-data android:name="android.appwidget.provider" android:resource="@xml/upcoming_widget"/>

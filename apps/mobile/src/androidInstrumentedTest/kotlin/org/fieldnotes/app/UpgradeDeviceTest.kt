@@ -19,12 +19,22 @@ class UpgradeDeviceTest {
   val context=InstrumentationRegistry.getInstrumentation().targetContext
   val app=context.applicationContext as FieldNotesApplication;app.initialized.await()
   val proof=File(context.filesDir,"upgrade-proof.txt")
-  fun digest(cache:Cache)=MessageDigest.getInstance("SHA-256").digest(WireJson.encodeToString(cache).toByteArray()).joinToString(""){"%02x".format(it)}
+  // New default preferences legitimately add serialized fields. Compare the
+  // retained identity, binding, commands and original delivery choices instead
+  // of treating a compatible schema extension as corruption.
+  fun digest(cache:Cache):String {
+   val stable=obj("keys" to (cache.keys ?: JsonNull),"config" to (cache.config ?: JsonNull),
+    "commands" to WireJson.encodeToJsonElement(cache.outbox.map { it.command }),
+    "preferences" to obj("backgroundSync" to JsonPrimitive(cache.preferences.backgroundSync),"reminders" to JsonPrimitive(cache.preferences.reminders),"liveUpdates" to JsonPrimitive(cache.preferences.liveUpdates),"widgetTitles" to JsonPrimitive(cache.preferences.widgetTitles)))
+   return MessageDigest.getInstance("SHA-256").digest(stable.toString().toByteArray()).joinToString(""){"%02x".format(it)}
+  }
   if(phase=="seed"){
    val keys=app.transport.keys()
-   val command=Command("11111111-1111-4111-8111-111111111111","upgrade-epoch",1,"task.create","22222222-2222-4222-8222-222222222222",null,obj("title" to "Keep this queued household edit".j()))
+   val command=obj("operation_id" to "11111111-1111-4111-8111-111111111111".j(),"epoch" to "upgrade-epoch".j(),"generation" to 1.j(),"action" to "task.create".j(),"target" to "22222222-2222-4222-8222-222222222222".j(),"expected_revision" to JsonNull,"data" to obj("title" to "Keep this queued household edit".j()))
    val config=obj("server_key" to "saved-upgrade-server".j(),"private_key" to keys.getValue("private_key"),"preshared_key" to "synthetic per-phone PSK".j(),"ca_pem" to "synthetic pinned CA".j(),"address" to "10.82.0.2/32".j(),"endpoint" to "127.0.0.1:49272".j(),"api" to "https://10.82.0.1:8443".j())
-   val cache=Cache(keys=keys,config=config,preferences=Preferences(backgroundSync=false,reminders=false,liveUpdates=false),outbox=listOf(Pending(command)))
+   // Decode the legacy wire shape with the installed app's serializer. Calling
+   // a newer Preferences constructor against an older APK is not ABI-safe.
+   val cache=WireJson.decodeFromJsonElement<Cache>(obj("keys" to keys,"config" to config,"preferences" to obj("backgroundSync" to JsonPrimitive(false),"reminders" to JsonPrimitive(false),"liveUpdates" to JsonPrimitive(false)),"outbox" to JsonArray(listOf(obj("command" to command)))))
    app.vault.save(cache);proof.writeText(digest(cache));assertNotNull(app.vault.load().keys)
   }else{
    val loaded=app.vault.load();assertEquals(proof.readText(),digest(loaded))

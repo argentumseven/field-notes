@@ -50,11 +50,12 @@ object Alerts {
         val manager = context.getSystemService(NotificationManager::class.java)
         return manager.areNotificationsEnabled() && manager.getNotificationChannel(channel)?.importance != NotificationManager.IMPORTANCE_NONE
     }
-    fun post(context: Context, channel: String, key: String, title: String, text: String): Boolean {
+    fun post(context: Context, channel: String, key: String, title: String, text: String, target:String?=null): Boolean {
         channels(context)
         if (!allowed(context, channel)) return false
         val intent = Intent(context, MainActivity::class.java)
-            .setData(Uri.parse("fieldnotes://notification/" + digest(key)))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .setData(Uri.parse("fieldnotes://notification/" + digest(key))).putExtra("open_record",target)
         val open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_field_notes)
             .setContentTitle(title).setContentText(text).setContentIntent(open)
@@ -84,7 +85,8 @@ object Alerts {
 }
 
 @Serializable private data class AlertState(
-    val scope: String = "", val scheduled: Map<String, Long> = emptyMap(), val seen: Map<String, Long> = emptyMap(),
+    val scope: String = "", val scheduled: Map<String, Long> = emptyMap(), val seen: Map<String, Long> = emptyMap(),val delivered:Map<String,Long> = emptyMap(),
+    val applyPending:Boolean = false,
 )
 
 /** One process-local coordinator and a purpose-separated encrypted receipt file.
@@ -111,7 +113,7 @@ object LocalAlarms {
         // Local alarms must not wait for DNS or a network tunnel to initialize.
         return app.vault.load().takeIf { it.token != null && it.snapshot != null }
     }
-    suspend fun reconcile(context: Context, force: Boolean = false) = mutex.withLock {
+    suspend fun reconcile(context: Context, force: Boolean = false) = withContext(Dispatchers.IO) { mutex.withLock {
         val app = context.applicationContext as FieldNotesApplication
         Alerts.channels(context)
         val previous = state(app)
@@ -119,15 +121,25 @@ object LocalAlarms {
         val binding = cache?.let(::scope) ?: ""
         val same = binding == previous.scope
         val seen = if (same) previous.seen else emptyMap()
+        val active=mutableSetOf("overdue")
+        cache?.let { value -> for(row in projectRecords(value)) {
+            val r=row.record;if(r.kind=="task")active+="task:${r.id}" else if(r.kind=="event")active+="calendar:${r.id}"
+            reminderSet(r)?.let { rules -> for(rule in rules.alerts)active+="${r.id}:${rule.id}";rules.repeat?.let { active+="${r.id}:${it.id}" } }
+        } }
+        val delivered=if(same)previous.delivered.filterKeys { it in active } else emptyMap()
         val now = Clock.System.now()
-        val desired = if (cache == null || !Alerts.allowed(context, Alerts.REMINDERS)) emptyMap() else
-            localAlerts(cache, now, TimeZone.currentSystemDefault()).filter { it.key !in seen }.take(64).associate { it.key to it.at }
+        val desired = if (cache == null) emptyMap() else
+            localAlerts(cache, now, TimeZone.currentSystemDefault(),seen.keys,delivered).filter { alert ->
+                alert.key !in seen && Alerts.allowed(context,alert.profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS)
+            }.take(64).associate { it.key to it.at }
+        if(!force&&!previous.applyPending&&same&&previous.scheduled==desired&&previous.delivered==delivered) return@withLock
         val alarms = context.getSystemService(AlarmManager::class.java)
         // Save desired state before external effects; boot/restart forcefully
         // reapplies it, including after a crash between two OS calls.
-        save(app, AlertState(binding, desired, seen))
+        val next=AlertState(binding, desired, seen,delivered,applyPending=true)
+        save(app,next)
         for (key in previous.scheduled.keys - desired.keys) alarms.cancel(intent(context, key))
-        for ((key, at) in desired) if (force || !same || previous.scheduled[key] != at) {
+        for ((key, at) in desired) if (force || previous.applyPending || !same || previous.scheduled[key] != at) {
             val whenMs = maxOf(at * 1000, System.currentTimeMillis() + 1000)
             val action = intent(context, key)
             try {
@@ -135,43 +147,55 @@ object LocalAlarms {
                 else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, action)
             } catch (_: SecurityException) { alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMs, action) }
         }
+        // A cancellation or storage failure leaves applyPending set. The next
+        // reconciliation reapplies the same immutable PendingIntents safely.
+        save(app,next.copy(applyPending=false))
     }
-    suspend fun fire(context: Context, key: String) = mutex.withLock {
+    }
+    suspend fun fire(context: Context, key: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
         val app = context.applicationContext as FieldNotesApplication
         val cache = cache(app) ?: return@withLock
         val now = Clock.System.now()
-        val candidates = localAlerts(cache, now, TimeZone.currentSystemDefault())
         val previous = state(app)
+        val candidates = localAlerts(cache, now, TimeZone.currentSystemDefault(),previous.seen.keys,previous.delivered)
         val binding = scope(cache)
         if (previous.scope != binding || key in previous.seen) return@withLock
-        if (candidates.none { it.key == key && it.at <= now.epochSeconds + 1 }) return@withLock
+        if (previous.scheduled[key]?.let { it<=now.epochSeconds+1 } != true && candidates.none { it.key == key && it.at <= now.epochSeconds + 1 }) return@withLock
         // Drain simultaneous reminders in one alert. Android limits idle alarm
         // frequency; a household with many 09:00 due dates needs one digest.
         val due = candidates.filter { it.at <= now.epochSeconds + 1 && it.key !in previous.seen }
-        val keys = due.map { it.key }.sorted()
-        val text = if (due.size > 1) "${due.size} reminders are ready. Open Field Notes for details." else when (due.single().kind) {
-            "calendar" -> "A calendar event is coming up. Open Field Notes for details."
-            "overdue" -> "You have overdue household work to review."
-            else -> "You have a household task due today."
+        val posted=mutableListOf<String>()
+        val records=projectRecords(cache).associateBy { it.record.id }
+        for((profile,group) in due.groupBy { it.profile }) {
+            val keys=group.map { it.key }.sorted()
+            val content=if(cache.preferences.notificationTitles)group.mapNotNull { records[it.target]?.record?.data?.text("title") }.distinct().take(3).joinToString(" · ") else "Open Field Notes for details."
+            val channel=profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS
+            val title=if(group.size==1)"Field Notes reminder" else "${group.size} Field Notes reminders"
+            if(Alerts.post(context,channel,"$binding:"+keys.joinToString("|"),title,content,group.singleOrNull()?.target))posted+=keys
         }
-        if (Alerts.post(context, Alerts.REMINDERS, "$binding:" + keys.joinToString("|"), "Field Notes reminder", text)) {
-            val receipts = (previous.seen + keys.associateWith { now.epochSeconds }).entries
-                .sortedByDescending { it.value }.take(2048).associate { it.toPair() }
-            save(app, previous.copy(seen = receipts, scheduled = previous.scheduled - keys.toSet()))
-            val alarms = context.getSystemService(AlarmManager::class.java)
-            for (other in keys) alarms.cancel(intent(context, other))
+        if(posted.isNotEmpty()) {
+            val receipts=(previous.seen+posted.associateWith { now.epochSeconds }).entries.sortedByDescending { it.value }.take(2048).associate { it.toPair() }
+            val progress=previous.delivered.toMutableMap()
+            for(alert in due.filter { it.key in posted })progress[alert.progressKey]=maxOf(progress[alert.progressKey] ?: Long.MIN_VALUE,alert.at)
+            save(app,previous.copy(seen=receipts,delivered=progress,scheduled=previous.scheduled-posted.toSet()))
+            val alarms=context.getSystemService(AlarmManager::class.java)
+            for(other in posted)alarms.cancel(intent(context,other))
         }
         PlannerWidget.refresh(context)
-        UpcomingWidget.refresh(context)
+        UpcomingWidget.refresh(context);CalendarWidget.refresh(context)
+        }
+        // Refill the bounded rolling alarm set even with no network or UI.
+        reconcile(context)
     }
-    suspend fun clear(context: Context) = mutex.withLock {
+    suspend fun clear(context: Context) = withContext(Dispatchers.IO) { mutex.withLock {
         val app = context.applicationContext as FieldNotesApplication
         val previous = state(app)
         val alarms = context.getSystemService(AlarmManager::class.java)
         alarms.cancel(Alerts.profileTestIntent(context))
         for (key in previous.scheduled.keys) alarms.cancel(intent(context, key))
         save(app, AlertState())
-    }
+    } }
 }
 
 class AlertReceiver : BroadcastReceiver() {
@@ -187,7 +211,7 @@ class AlertReceiver : BroadcastReceiver() {
                         if(cache?.token!=null)Alerts.post(context,Alerts.REMINDERS,"profile-test:"+intent.getStringExtra("nonce"),"Field Notes profile test","This alert was generated in the Field Notes profile. GrapheneOS forwarding and sound settings control delivery to your active profile.")
                     }
                     else if (intent.action == "org.fieldnotes.ALERT") LocalAlarms.fire(context, intent.getStringExtra("occurrence") ?: return@withTimeout)
-                    else { LocalAlarms.reconcile(context, true); PlannerWidget.refresh(context); UpcomingWidget.refresh(context) }
+                    else { LocalAlarms.reconcile(context, true); PlannerWidget.refresh(context); UpcomingWidget.refresh(context);CalendarWidget.refresh(context) }
                 }
             } catch(_:Exception){app.deliveryError.value="Reminder delivery needs attention. Open Field Notes."}
             finally { pending.finish() }

@@ -154,3 +154,21 @@ keys, unique private /32s, and bounded private files. It supplies PSKs to `wg`
 through a file descriptor rather than command arguments. The content process
 has no shell/network administration endpoint or NET_ADMIN capability. Root spool,
 WireGuard config and the host disk still contain key material and require protection.
+
+## Camera and QR image import (0.4.0)
+
+New managers render a compact QR containing the same pinned CA, expiring token,
+phone public key and restricted tunnel as the full invitation. The camera uses
+a square decoding area in portrait and landscape. Use **Scan invitation QR**
+and keep the entire white border inside that square. Alternatively choose
+**Choose a QR image** to decode a saved invitation image locally with Android's
+scoped picker. It needs no Google services or storage permission and does not
+save or upload the image. Camera, image import and pasted invitations all pass
+through the same validation and explicit trust review.
+
+Update the APK to 0.4.0 to scan compact codes. Older APKs can still use the full
+invitation from **Copy invitation**; URI paste and old invitations remain
+supported. No existing phone needs to be unpaired or enrolled again for this
+update. The short code displayed *after* the phone requests enrollment is still
+a deliberate administrator approval step on the PC, separate from scanning the
+initial invitation.

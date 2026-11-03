@@ -50,12 +50,26 @@ class MainActivity : ComponentActivity() {
     private val app get() = application as FieldNotesApplication
     private var invitationCode by mutableStateOf<String?>(null)
     private var invitationSequence by mutableIntStateOf(0)
+    private var requestedRecord by mutableStateOf<String?>(null)
+    private var navigationSequence by mutableIntStateOf(0)
+    private var requestedDate by mutableStateOf<String?>(null)
     private var requestedPage by mutableStateOf<String?>(null)
     private var invitationScanError by mutableStateOf<String?>(null)
     private var unlocked by mutableStateOf(false)
     private var prompting = false
     private var lastUnlock = 0L
     private var deliveryStatus by mutableStateOf("")
+    private val invitationImage = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if(uri!=null) lifecycleScope.launch {
+            try {
+                val raw=withContext(Dispatchers.IO) { readInvitationQrImage(contentResolver,uri) }
+                invitationCode=raw;invitationSequence++;invitationScanError=null
+            } catch(e:Exception) {
+                if(e is CancellationException)throw e
+                invitationScanError=e.message ?: "This QR image could not be read."
+            }
+        }
+    }
     private val invitationScanner = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let { raw ->
             if (raw.length <= 20000) {
@@ -84,6 +98,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        navigationSequence++
+        requestedRecord = intent.getStringExtra("open_record")
+        requestedDate = intent.getStringExtra("open_date")
         requestedPage = intent.getStringExtra("open_page")
         intent.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }?.let {
             invitationCode = it
@@ -112,6 +129,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestedRecord = intent?.getStringExtra("open_record")
+        requestedDate = intent?.getStringExtra("open_date")
         requestedPage = intent?.getStringExtra("open_page")
         invitationCode = intent?.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -119,7 +138,7 @@ class MainActivity : ComponentActivity() {
             app.initialized.await()
             CatchUpWorker.schedule(this@MainActivity, app.model.state.value.cache.preferences)
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (isActive) { if (unlocked) app.model.poll(); delay(15_000) }
+                while (isActive) { if (unlocked && app.model.state.value.cache.preferences.autoRefresh) app.model.poll(); delay(15_000) }
             }
         }
         setContent {
@@ -163,8 +182,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 FieldNotesApp(app.model,
-                    requestedPage=requestedPage,
-                    deviceActions=DeviceActions(androidDelivery=true,status=deliveryStatus,
+                    requestedRecord=requestedRecord,requestedPage=requestedPage,requestedDate=requestedDate,navigationSequence=navigationSequence,
+                    deviceActions=DeviceActions(previewSound={profile->app.scope.launch { try { withContext(Dispatchers.IO){ReminderSounds.preview(this@MainActivity,profile)} }catch(_:Exception){Toast.makeText(this@MainActivity,"Sound preview unavailable. Check Android notification settings.",Toast.LENGTH_LONG).show()} }},openLink={url->
+                        val uri=Uri.parse(url)
+                        if(uri.scheme in setOf("http","https")&&!uri.host.isNullOrBlank())try{startActivity(Intent(Intent.ACTION_VIEW,uri).addCategory(Intent.CATEGORY_BROWSABLE))}catch(_:Exception){Toast.makeText(this,"No browser is available to open this link.",Toast.LENGTH_LONG).show()}
+                    },androidDelivery=true,status=deliveryStatus,use24Hour=android.text.format.DateFormat.is24HourFormat(this),addCalendarWidget={if(!CalendarWidget.pin(this))Toast.makeText(this,"Add Field Notes · Calendar from your launcher’s widget picker.",Toast.LENGTH_LONG).show()},
                         update=updateState,checkUpdate={app.updates.checkForUpdate()},downloadUpdate={app.updates.download()},cancelUpdate={app.updates.cancel()},installUpdate={app.updates.install(this)},
                         addUpcomingWidget={DeliverySettings.pin(this)},profileTest={val ok=Alerts.scheduleProfileTest(this);Toast.makeText(this,if(ok)"Test scheduled for 30 seconds. Switch profiles now." else "Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},testAlert={if(!Alerts.test(this))Toast.makeText(this,"Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},
                         notificationSettings={DeliverySettings.open(this,"notifications")},alarmSettings={DeliverySettings.open(this,"alarms")},
@@ -174,7 +196,7 @@ class MainActivity : ComponentActivity() {
                     invitationCode = invitationCode,
                     invitationScanError = invitationScanError,
                     invitationSequence = invitationSequence,
-                    scanInvitation = { if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scanInvitation() else cameraPermission.launch(Manifest.permission.CAMERA) },
+                    chooseInvitationImage = { invitationImage.launch(arrayOf("image/*")) }, scanInvitation = { if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scanInvitation() else cameraPermission.launch(Manifest.permission.CAMERA) },
                     copyText = { text -> getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Field Notes", text).apply { description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) } }) },
                     attachImage = { id -> pendingImage = id; pendingEpoch = app.model.state.value.cache.snapshot?.epoch; pendingGeneration = app.model.state.value.cache.snapshot?.generation; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     configureBackground = { preferences ->

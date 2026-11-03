@@ -55,6 +55,7 @@ class GalleryDeviceTest {
             instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("isn't responding").isNullOrEmpty()
         }
     }
+    private fun focus() { compose.onNodeWithContentDescription("Browse workspace").performClick();compose.onNodeWithTag("drawer-focus").performClick() }
     private fun text(value: String): SemanticsNodeInteraction {
         dismissEmulatorSystemDialog()
         return compose.onNodeWithText(value, useUnmergedTree = true)
@@ -171,7 +172,7 @@ class GalleryDeviceTest {
                             androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
                                 Column(androidx.compose.ui.Modifier.padding(28.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
                                     androidx.compose.material3.Text("Settings",style=androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-                                    org.fieldnotes.ui.AppUpdatesCard(org.fieldnotes.ui.DeviceActions(update=AppUpdateUi(installed="0.3.3",offered="0.3.4",available=true,ready=ready,message=if(ready)"Verified update 0.3.4. Android will ask before installing; your keys and edits are preserved." else "Update 0.3.4 is available from your paired server. Pairing and queued edits stay in place.")))
+                                    org.fieldnotes.ui.AppUpdatesCard(org.fieldnotes.ui.DeviceActions(update=AppUpdateUi(installed="0.3.6",offered="0.4.0",available=true,ready=ready,message=if(ready)"Verified update 0.4.0. Android will ask before installing; your keys and edits are preserved." else "Update 0.4.0 is available from your paired server. Pairing and queued edits stay in place.")))
                                 }
                             }
                         } } }
@@ -180,8 +181,8 @@ class GalleryDeviceTest {
                     }
                 }
                 if (args.getString("galleryMode") == "widget-preview") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; widgetPreview(); return }
-                if (args.getString("galleryMode") == "details") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; awaitText("Focus"); compose.onNodeWithTag("nav-focus").assertExists(); widgetSettings(); widgetPreview(); return }
-                if (args.getString("galleryMode") == "light") { compose.onNodeWithTag("nav-focus").assertExists(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
+                if (args.getString("galleryMode") == "details") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; awaitText("Calendar"); focus(); compose.onNodeWithTag("nav-calendar").assertExists(); widgetSettings(); widgetPreview(); return }
+                if (args.getString("galleryMode") == "light") { focus(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
                 awaitText("Enroll this phone"); shot("01-enroll")
                 runBlocking { model.beginEnrollment(Invitation(1,"https://192.168.1.10:9443/api/enrollment",config.text("ca_pem"),"a".repeat(64),"owner","owner",kotlinx.datetime.Clock.System.now().epochSeconds+600), "My GrapheneOS phone"); model.advanceEnrollment() }
                 awaitText("1234 ABCD"); shot("02-phone-confirmation")
@@ -195,7 +196,7 @@ class GalleryDeviceTest {
                 val image = seed.records.single { it.kind == "image" }
                 val imageScope = MessageDigest.getInstance("SHA-256").digest("${config.text("server_key")}:${seed.actor.user_id}".toByteArray()).joinToString("") { "%02x".format(it) }
                 runBlocking { app.vault.saveImage(imageScope, image.id, Base64.decode(fixture.text("image"), Base64.NO_WRAP)) }
-                compose.onNodeWithTag("nav-focus").assertExists(); shot("03-focus")
+                focus(); shot("03-focus")
                 compose.onNodeWithTag("nav-tasks").performClick(); shot("04-tasks")
                 compose.onNodeWithTag("nav-calendar").performClick(); shot("05-calendar")
                 compose.onNodeWithContentDescription("Add").performClick(); awaitText("New calendar event"); shot("06-new-event"); text("Close").performClick()
@@ -205,13 +206,14 @@ class GalleryDeviceTest {
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); shot("12-workspace-navigation")
                 compose.onNodeWithTag("drawer-notes").performClick(); awaitText("Household reference"); shot("13-notes")
                 text("Household reference").performClick(); awaitText("Shared note"); shot("14-shared-note"); compose.onNodeWithContentDescription("Back").performClick()
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-collections").performClick(); awaitText("Groceries"); shot("16-collections")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("group-task views").performClick();compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-lists").performClick(); awaitText("Groceries"); shot("16-collections")
+                text("Groceries").performClick(); text("List settings").performClick(); text("Online shopping").performClick(); field("List name").performTextReplacement("Home purchases"); compose.onNode(isToggleable() and hasAnySibling(hasText("Include a price field"))).performClick(); shot("34-list-fields"); text("Cancel").performClick(); shot("35-grocery-list"); compose.onNodeWithContentDescription("Add").performClick(); awaitText("New item"); shot("36-list-item"); text("Close").performClick()
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-assignments").performClick(); awaitText("Find assigned work"); shot("18-assignments")
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performClick(); shot("19-my-tasks")
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
-                compose.onNodeWithContentDescription("Add").performClick(); awaitText("Add task"); shot("21-new-task"); text("Cancel").performClick()
-                compose.onNodeWithTag("nav-focus").performClick()
+                compose.onNodeWithContentDescription("Add").performClick(); awaitText("New task"); shot("21-new-task"); text("Cancel").performClick()
+                focus()
                 updatePreview()
                 widgetPreview()
             } finally {

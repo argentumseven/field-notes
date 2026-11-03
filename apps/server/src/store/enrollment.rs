@@ -884,11 +884,32 @@ fn invitation_image(identifier: &str, invitation: &Value) -> Result<Value> {
                 .map_err(|_| Fault(500, "Invitation serialization failed".into()))?
         )
     );
+    // The camera payload avoids a second base64 layer and PEM line escapes.
+    // Keep the full URI for clipboard/deep-link compatibility. Both representations
+    // carry exactly the same scoped keys, trust anchor and expiring capability.
+    let ca = invitation["ca"].as_str().unwrap_or_default();
+    let der: String = ca
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .collect();
+    let qr_code = if invitation["version"] == 2
+        && ca.matches("-----BEGIN CERTIFICATE-----").count() == 1
+        && STANDARD.decode(&der).is_ok()
+    {
+        let t = &invitation["tunnel"];
+        json!({"fieldnotes":2,"u":invitation["url"],"c":der,"t":invitation["token"],
+            "n":invitation["user"],"r":invitation["role"],"e":invitation["expires"],
+            "w":[t["address"],t["endpoint"],t["alternate_endpoints"],t["server_key"],
+                t["preshared_key"],t["api"],t["public_key"]]})
+        .to_string()
+    } else {
+        code.clone()
+    };
     // Integer-sized modules and an opaque quiet zone survive camera capture.
     // Keep SVG for older managers, but serve PNG to current browsers. An
     // unusually large CA can exceed QR capacity; copying still works.
     let (qr_svg, qr_png) =
-        match qrcode::QrCode::with_error_correction_level(code.as_bytes(), qrcode::EcLevel::M) {
+        match qrcode::QrCode::with_error_correction_level(qr_code.as_bytes(), qrcode::EcLevel::M) {
             Ok(qr) => {
                 let svg = qr
                     .render::<qrcode::render::svg::Color>()
@@ -913,7 +934,7 @@ fn invitation_image(identifier: &str, invitation: &Value) -> Result<Value> {
             Err(_) => (None, None),
         };
     Ok(
-        json!({"id":identifier,"code":code,"qr_svg":qr_svg,"qr_png":qr_png,"expires":invitation["expires"],"user":invitation["user"],"role":invitation["role"]}),
+        json!({"id":identifier,"code":code,"qr_code":qr_code,"qr_svg":qr_svg,"qr_png":qr_png,"expires":invitation["expires"],"user":invitation["user"],"role":invitation["role"]}),
     )
 }
 

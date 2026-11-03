@@ -1,6 +1,6 @@
 [package]
 name = "field-notes-server"
-version = "0.3.6"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.90"
 
@@ -25,3 +25,4 @@ base64 = "=0.22.1"
 image = { version = "=0.25.8", default-features = false, features = ["png", "jpeg", "webp"] }
 zeroize = "=1.8.2"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+chrono-tz = { version = "=0.10.4", default-features = false, features = ["std"] }
