@@ -1,6 +1,6 @@
 {
-  "version": "0.3.5",
-  "android_version_code": 8,
+  "version": "0.3.6",
+  "android_version_code": 9,
   "protocol": 1,
   "schema": 2,
   "channel": "development",

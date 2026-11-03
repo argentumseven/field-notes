@@ -29,6 +29,10 @@ if (avd !== "field-notes-test")
   throw Error(
     "Use the dedicated field-notes-test AVD. Existing user devices are not cleared.",
   );
+// The AVD presents a hardware keyboard; explicitly exercise the real soft IME.
+await call(["shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1"]);
+await call(["shell", "input", "keyevent", "KEYCODE_WAKEUP"]);
+await call(["shell", "wm", "dismiss-keyguard"]);
 const network = await call(["shell", "ip", "-4", "addr"]);
 if (!/\binet 10\.0\.2\.(15|16)\//.test(network))
   throw Error(

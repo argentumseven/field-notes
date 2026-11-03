@@ -24,6 +24,7 @@ import urllib.request
 import uuid
 import zlib
 import struct
+import ctypes
 
 sys.dont_write_bytecode=True
 HERE=pathlib.Path(__file__).resolve().parent
@@ -46,6 +47,8 @@ def png():
 
 
 def main():
+    if not (ROOT/'dist/native/linux-x64/libfieldnotes.so').is_file():
+        raise SystemExit('Build the actual native client first: bash scripts/build/native.sh linux')
     engine=Engine();suffix=uuid.uuid4().hex[:12];project='field-notes-test-'+suffix
     temporary=pathlib.Path(tempfile.mkdtemp(prefix=project+'-',dir=ROOT/'dist'))
     settings=None;peer_id=None;external_id=None;fixture_tag='field-notes-gateway-fixture:'+suffix
@@ -157,13 +160,15 @@ def main():
         print('PASS: local namespace verifies actual server version, pinned TLS 1.3 and HTTP 403 source restriction without an admin ACL exception',flush=True)
         csrf=login['csrf'];actor=login['actor']
         assert request('/api/reauth',{'password':'container-fixture-password-only'})[0]==200
-        status,invitation=request('/api/enrollment/invitations',{'user_id':actor['user_id']});assert status==200
-        payload=json.loads(base64.urlsafe_b64decode(invitation['code'].split('#')[1]+'=='))
         client_private=engine.call(['run','--rm','--network=none','--cap-drop=ALL','--entrypoint=wg',gateway_image,'genkey']).stdout.strip()
         client_public=engine.call(['run','--interactive','--rm','--network=none','--cap-drop=ALL','--entrypoint=wg',gateway_image,'pubkey'],input=client_private+'\n').stdout.strip()
+        status,invitation=request('/api/enrollment/tunnel-invitations',{'user_id':actor['user_id'],'public_key':client_public});assert status==200
+        payload=json.loads(base64.urlsafe_b64decode(invitation['code'].split('#')[1]+'=='))
+        assert payload['version']==2 and payload['url']=='https://10.82.0.1:8443/api/enrollment'
+        assert 'private_key' not in payload['tunnel'] and payload['tunnel']['public_key']==client_public
         secret=secrets.token_hex(32)
-        status,claim=request('/api/enrollment/claim',{'token':payload['token'],'claim_secret':secret,'public_key':client_public,'name':'Container phone fixture'});assert status==200
-        assert request('/api/enrollment/devices/'+claim['id']+'/approve',{'verification':claim['verification']})[0]==200
+        claim_body={'token':payload['token'],'claim_secret':secret,'public_key':client_public,'name':'Container phone fixture'}
+        assert request('/api/enrollment/claim',claim_body)[0]==403,'A v2 phone must not enroll through management'
         helper=module('container_peers',HERE/'peer-agent.py')
         cfg={'desired':str(data/'peers.json'),'status':str(runtime/'status.json'),'state':str(temporary/'helper-state'),
              'interface':'fieldnotes','overlay':settings['overlay'],'uid':os.getuid(),'gid':os.getgid()}
@@ -171,10 +176,9 @@ def main():
         # Production acknowledgements are written by the root host helper. The
         # app deliberately refuses an acknowledgement owned by its own UID.
         ownership(runtime/'status.json',0,os.getgid())
-        status,ready=request('/api/enrollment/status',{'id':claim['id'],'claim_secret':secret});assert status==200 and ready['state']=='ready'
         peer_dir.mkdir(mode=0o700);private_dirs.append(peer_dir)
         shutil.copy2(config/'tls/ca.crt',peer_dir/'ca.crt')
-        phone=ready['configuration']
+        phone=payload['tunnel']
         (peer_dir/'phone.conf').write_text(f'[Interface]\nAddress = 10.82.0.2/32\nPrivateKey = {client_private}\nMTU = 1280\n[Peer]\nPublicKey = {public}\nPresharedKey = {phone["preshared_key"]}\nEndpoint = 172.17.0.1:{udp}\nAllowedIPs = 10.82.0.0/24, {external_ip}/32\nPersistentKeepalive = 25\n')
         (peer_dir/'phone.conf').chmod(0o600);ownership(peer_dir,0)
         command=['run','--detach','--name',project+'-phone','--network=bridge','--cap-drop=ALL','--cap-add=NET_ADMIN','--cap-add=MKNOD','--device-cgroup-rule=c 10:200 rwm','--read-only','--tmpfs=/run:mode=0700','--tmpfs=/tmp:size=8m','--mount','type=bind,source='+str(peer_dir)+',target=/peer,readonly']
@@ -195,6 +199,25 @@ except urllib.error.HTTPError as e:
         def peer(path,body=None,token=None):
             result=engine.call(['exec','-i',peer_id,'python3','-c',script],input=json.dumps(dict(path=path,body=body,token=token)))
             return json.loads(result.stdout)
+        claim_reply=None
+        for attempt in range(20):
+            try:
+                claim_reply=peer('/api/enrollment/claim',claim_body);break
+            except subprocess.CalledProcessError:time.sleep(.5)
+        assert claim_reply and claim_reply['status']==200,'Claim must use the pre-provisioned private tunnel'
+        claim=claim_reply['body']
+        assert peer('/api/enrollment/claim',claim_body)['body']==claim,'Lost replies must retry the same claim'
+        assert peer('/api/snapshot')['status']==401,'Unapproved peer must have no content access'
+        assert peer('/api/admin')['status'] in (401,403,404)
+        assert peer('/downloads/android')['status'] in (401,403,404)
+        pending=peer('/api/enrollment/status',{'id':claim['id'],'claim_secret':secret})
+        assert pending['status']==200 and 'configuration' not in pending['body'] and 'activation_secret' not in pending['body']
+        assert request('/api/enrollment/status',{'id':claim['id'],'claim_secret':secret})[0]==403
+        assert request('/api/enrollment/devices/'+claim['id']+'/approve',{'verification':claim['verification']})[0]==200
+        helper.reconcile(cfg,engine.peer_runner(settings));ownership(runtime/'status.json',0,os.getgid())
+        response=peer('/api/enrollment/status',{'id':claim['id'],'claim_secret':secret});assert response['status']==200
+        ready=response['body'];assert ready['state']=='ready'
+        print('PASS: phone-key-bound enrollment uses only WireGuard/private API, rejects management bootstrap and withholds content until PC approval',flush=True)
         activated=None
         for attempt in range(20):
             try:
@@ -208,6 +231,49 @@ except urllib.error.HTTPError as e:
                     result=engine.call(['exec',identifier,'wg','show',interface,field]);print(field,result.stdout,file=sys.stderr)
             raise AssertionError('Source-bound activation through real WireGuard failed')
         token=activated['body']['token'];snapshot=peer('/api/snapshot',token=token)['body']
+        # Exercise the exact Go C bridge with the installer's real CA and Rust
+        # TLS listener, not only a Python client or a synthetic TLS test server.
+        native=ctypes.CDLL(str(ROOT/'dist/native/linux-x64/libfieldnotes.so'))
+        native.FieldFree.argtypes=[ctypes.c_void_p];native.FieldFree.restype=None
+        for name in ('FieldKeys','FieldConfigure','FieldExchange'):
+            f=getattr(native,name);f.restype=ctypes.c_void_p;f.argtypes=[] if name=='FieldKeys' else [ctypes.c_char_p]
+        native.FieldStop.argtypes=[];native.FieldStop.restype=None
+        def native_call(name,value=None):
+            function=getattr(native,name);pointer=function() if value is None else function(json.dumps(value).encode())
+            try:return json.loads(ctypes.string_at(pointer))
+            finally:native.FieldFree(pointer)
+        def native_request(path,body=None,session=None):
+            return native_call('FieldExchange',{'method':'POST' if body is not None else 'GET','path':path,'token':session or '', 'body':json.dumps(body) if body is not None else ''})
+        native_id=None
+        try:
+            native_keys=native_call('FieldKeys')
+            status,native_invite=request('/api/enrollment/tunnel-invitations',{'user_id':actor['user_id'],'public_key':native_keys['public_key']});assert status==200
+            native_payload=json.loads(base64.urlsafe_b64decode(native_invite['code'].split('#')[1]+'=='));native_id=native_invite['device_id']
+            helper.reconcile(cfg,engine.peer_runner(settings));ownership(runtime/'status.json',0,os.getgid())
+            native_config={k:v for k,v in native_payload['tunnel'].items() if k!='public_key'}
+            native_config.update(private_key=native_keys['private_key'],ca_pem=(ROOT/'tests/fixtures/enrollment-ca.crt').read_text())
+            assert 'error' not in native_call('FieldConfigure',native_config)
+            native_nonce=secrets.token_hex(32)
+            native_claim_body={'token':native_payload['token'],'claim_secret':native_nonce,'public_key':native_keys['public_key'],'name':'Native tunnel phone'}
+            failure=native_request('/api/enrollment/claim',native_claim_body)
+            assert 'TLS authority mismatch' in failure.get('error',''),'Native client must reject a wrong pinned CA distinctly'
+            native_config['ca_pem']=native_payload['ca'];assert 'error' not in native_call('FieldConfigure',native_config)
+            native_claim=native_request('/api/enrollment/claim',native_claim_body);assert native_claim.get('status')==200
+            native_claim=json.loads(native_claim['body']);assert native_claim['id']==native_id
+            assert native_request('/api/snapshot').get('status')==401
+            assert request('/api/enrollment/devices/'+native_id+'/approve',{'verification':native_claim['verification']})[0]==200
+            helper.reconcile(cfg,engine.peer_runner(settings));ownership(runtime/'status.json',0,os.getgid())
+            native_ready=native_request('/api/enrollment/status',{'id':native_id,'claim_secret':native_nonce});assert native_ready.get('status')==200
+            native_ready=json.loads(native_ready['body']);assert native_ready['state']=='ready'
+            native_active=native_request('/api/device/activate',{'id':native_id,'activation_secret':native_ready['activation_secret']});assert native_active.get('status')==200
+            native_session=json.loads(native_active['body'])['token']
+            assert native_request('/api/snapshot',session=native_session).get('status')==200
+            print('PASS: actual Go C bridge pairs over WireGuard with the installer CA/Rust TLS, classifies a wrong CA and never dials management',flush=True)
+        finally:
+            native.FieldStop()
+        if native_id:
+            assert request('/api/enrollment/devices/'+native_id+'/revoke',{})[0]==200
+            helper.reconcile(cfg,engine.peer_runner(settings));ownership(runtime/'status.json',0,os.getgid())
         offered=peer('/api/device/update',token=token)
         assert offered['status']==200 and offered['body']['available']
         assert request('/api/device/update')[0]==404

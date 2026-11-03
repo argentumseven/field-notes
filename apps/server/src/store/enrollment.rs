@@ -1,3 +1,4 @@
+mod tunnel;
 use super::*;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use std::{
@@ -208,43 +209,7 @@ impl Store {
                 .map_err(|_| Fault(500, "Network serialization failed".into()))?,
         )?;
         let invitation = json!({"version":1,"url":network.bootstrap_url,"ca":network.ca_pem,"token":raw,"user":name,"role":role,"expires":expires});
-        let code = format!(
-            "fieldnotes://enroll#{}",
-            URL_SAFE_NO_PAD.encode(
-                serde_json::to_vec(&invitation)
-                    .map_err(|_| Fault(500, "Invitation serialization failed".into()))?
-            )
-        );
-        // Integer-sized modules and an opaque quiet zone survive camera capture.
-        // Keep SVG for older managers, but serve PNG to current browsers. An
-        // unusually large CA can exceed QR capacity; copying still works.
-        let (qr_svg, qr_png) = match qrcode::QrCode::with_error_correction_level(
-            code.as_bytes(),
-            qrcode::EcLevel::M,
-        ) {
-            Ok(qr) => {
-                let svg = qr
-                    .render::<qrcode::render::svg::Color>()
-                    .module_dimensions(8, 8)
-                    .build();
-                let pixels = qr
-                    .render::<image::Luma<u8>>()
-                    .module_dimensions(8, 8)
-                    .build();
-                let mut png = std::io::Cursor::new(Vec::new());
-                image::DynamicImage::ImageLuma8(pixels)
-                    .write_to(&mut png, image::ImageFormat::Png)
-                    .map_err(|_| Fault(500, "Invitation image encoding failed".into()))?;
-                (
-                    Some(svg),
-                    Some(format!(
-                        "data:image/png;base64,{}",
-                        STANDARD.encode(png.into_inner())
-                    )),
-                )
-            }
-            Err(_) => (None, None),
-        };
+        let result = invitation_image(&identifier, &invitation)?;
         let tx = rusqlite::Transaction::new_unchecked(
             &self.db,
             rusqlite::TransactionBehavior::Immediate,
@@ -268,9 +233,7 @@ impl Store {
             &json!({"expires":expires}),
         )?;
         tx.commit()?;
-        Ok(
-            json!({"id":identifier,"code":code,"qr_svg":qr_svg,"qr_png":qr_png,"expires":expires,"user":name,"role":role}),
-        )
+        Ok(result)
     }
     pub fn enrollment_claim(&mut self, input: Value, source: &str) -> Result<Value> {
         fields(&input, &["token", "public_key", "claim_secret", "name"])?;
@@ -319,9 +282,27 @@ impl Store {
         }
         let claim_hash = crypto::digest(claim.as_bytes());
         if let Some(existing) = row.5 {
-            let device = self.device(&existing)?;
+            let mut device = self.device(&existing)?;
             if device.state != "active" && device.expires <= now() {
                 return fail(410, "Enrollment expired; request a fresh invitation");
+            }
+            if device.data["tunnel_enrollment"] == true {
+                if device.public != public || device.address.as_deref() != Some(source) {
+                    return fail(403, "Invitation belongs to another phone tunnel");
+                }
+                if device.state == "invited" {
+                    device.verification = crypto::token()[..8].to_ascii_uppercase();
+                    device.state = "pending_approval".into();
+                    device.claim = claim_hash.clone();
+                    device.name = name.clone();
+                    device
+                        .data
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("issued_invitation");
+                    self.save_device_data(&device.id, &device.data)?;
+                    self.db.execute("UPDATE devices SET state='pending_approval',claim_hash=?,name=?,verification=? WHERE id=?", params![claim_hash,name,device.verification,device.id])?;
+                }
             }
             if device.public != public || device.claim != claim_hash || device.name != name {
                 return fail(409,"This invitation was claimed by another request; ask your administrator to reissue it");
@@ -612,7 +593,11 @@ impl Store {
             }
         };
         let device = self.device(&id)?;
-        if device.claim != crypto::digest(claim.as_bytes()) {
+        if !(device.state == "invited"
+            && device.data["tunnel_enrollment"] == true
+            && input.get("token").is_some())
+            && device.claim != crypto::digest(claim.as_bytes())
+        {
             return fail(403, "Enrollment credential not accepted");
         }
         if device.state == "active" {
@@ -692,6 +677,7 @@ impl Store {
         };
         let result = json!({"token":token,"actor":actor,"device_id":id});
         device.data["activation_result"] = result.clone();
+        device.data["activated_once"] = json!(true);
         self.save_device_data(&id, &device.data)?;
         self.audit(&actor, "device.activate", &id, &json!({}))?;
         tx.commit()?;
@@ -798,14 +784,37 @@ impl Store {
         if self.network.is_none() {
             return Ok(());
         }
-        self.db.execute("UPDATE devices SET state='expired',address=NULL WHERE state='pending_approval' AND expires<=?",[now()])?;
+        let expired = self.db.prepare("SELECT id FROM devices WHERE state IN ('invited','pending_approval') AND expires<=?")?.query_map([now()], |r| r.get::<_,String>(0))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        for id in expired {
+            let mut device = self.device(&id)?;
+            if device.data["tunnel_enrollment"] == true {
+                device
+                    .data
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("issued_invitation");
+                self.save_device_data(&id, &device.data)?;
+                self.db
+                    .execute("UPDATE devices SET state='revoking' WHERE id=?", [id])?;
+            } else {
+                self.db.execute(
+                    "UPDATE devices SET state='expired',address=NULL WHERE id=?",
+                    [id],
+                )?;
+            }
+        }
         self.db.execute("UPDATE devices SET state='revoking' WHERE state IN ('provisioning','ready') AND expires<=?",[now()])?;
         self.db.execute("UPDATE devices SET state='revoking' WHERE user_id IN (SELECT id FROM users WHERE active=0) AND state NOT IN ('revoked','expired')",[])?;
-        let ids=self.db.prepare("SELECT id FROM devices WHERE state IN ('provisioning','ready','active') ORDER BY id")?.query_map([],|r|r.get::<_,String>(0))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let ids=self.db.prepare("SELECT id FROM devices WHERE state IN ('invited','pending_approval','provisioning','ready','active') ORDER BY id")?.query_map([],|r|r.get::<_,String>(0))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let mut peers = Vec::new();
         let mut public = Vec::new();
         for id in ids {
             let device = self.device(&id)?;
+            if ["invited", "pending_approval"].contains(&device.state.as_str())
+                && device.data["tunnel_enrollment"] != true
+            {
+                continue;
+            }
             let address = format!(
                 "{}/32",
                 device
@@ -867,16 +876,57 @@ impl Store {
     }
 }
 
+fn invitation_image(identifier: &str, invitation: &Value) -> Result<Value> {
+    let code = format!(
+        "fieldnotes://enroll#{}",
+        URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&invitation)
+                .map_err(|_| Fault(500, "Invitation serialization failed".into()))?
+        )
+    );
+    // Integer-sized modules and an opaque quiet zone survive camera capture.
+    // Keep SVG for older managers, but serve PNG to current browsers. An
+    // unusually large CA can exceed QR capacity; copying still works.
+    let (qr_svg, qr_png) =
+        match qrcode::QrCode::with_error_correction_level(code.as_bytes(), qrcode::EcLevel::M) {
+            Ok(qr) => {
+                let svg = qr
+                    .render::<qrcode::render::svg::Color>()
+                    .module_dimensions(8, 8)
+                    .build();
+                let pixels = qr
+                    .render::<image::Luma<u8>>()
+                    .module_dimensions(8, 8)
+                    .build();
+                let mut png = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::ImageLuma8(pixels)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(|_| Fault(500, "Invitation image encoding failed".into()))?;
+                (
+                    Some(svg),
+                    Some(format!(
+                        "data:image/png;base64,{}",
+                        STANDARD.encode(png.into_inner())
+                    )),
+                )
+            }
+            Err(_) => (None, None),
+        };
+    Ok(
+        json!({"id":identifier,"code":code,"qr_svg":qr_svg,"qr_png":qr_png,"expires":invitation["expires"],"user":invitation["user"],"role":invitation["role"]}),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    struct Directory(std::path::PathBuf);
+    pub(super) struct Directory(std::path::PathBuf);
     impl Drop for Directory {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
-    fn ack(store: &Store) {
+    pub(super) fn ack(store: &Store) {
         let raw = std::fs::read(store.data_dir.join("peers.json")).unwrap();
         let mut manifest: Value = serde_json::from_slice(&raw).unwrap();
         for peer in manifest["peers"].as_array_mut().unwrap() {
@@ -884,7 +934,7 @@ mod tests {
         }
         std::fs::write(store.peer_status.as_ref().unwrap(),serde_json::to_vec(&json!({"version":1,"digest":crypto::digest(&raw),"peers":manifest["peers"],"applied_at":now(),"error":null})).unwrap()).unwrap();
     }
-    fn setup() -> (Directory, Store, String, Actor) {
+    pub(super) fn setup() -> (Directory, Store, String, Actor) {
         let dir = Directory(std::env::temp_dir().join(format!("field-notes-enrollment-{}", id())));
         std::fs::create_dir(&dir.0).unwrap();
         let key = dir.0.join("master");

@@ -52,8 +52,12 @@ test("the displayed invitation decodes to the exact server-issued code using off
     await page.getByRole("button", { name: "Verify", exact: true }).click();
     const issued = page.waitForResponse(
       (r) =>
-        r.url().endsWith("/api/enrollment/invitations") && r.status() === 200,
+        r.url().endsWith("/api/enrollment/tunnel-invitations") &&
+        r.status() === 200,
     );
+    await page
+      .getByLabel("Phone public key", { exact: true })
+      .fill(Buffer.alloc(32, 18).toString("base64"));
     await page.locator("#dialog-submit").click();
     const invitation = await (await issued).json();
     const image = page.locator(".invite-qr");
@@ -65,6 +69,10 @@ test("the displayed invitation decodes to the exact server-issued code using off
     assert.match(invitation.qr_png, /^data:image\/png;base64,/);
     for (const width of [1440, 390, 360]) {
       await page.setViewportSize({ width, height: 1050 });
+      await page.waitForFunction(() => {
+        const i = document.querySelector(".invite-qr");
+        return i.getBoundingClientRect().width >= i.naturalWidth / 4;
+      });
       await image.screenshot({ path: picture });
       const output = execFileSync(
         "java",
@@ -120,7 +128,7 @@ test("an unreadable QR offers selectable invitation text and removes it on expir
       args: ["--no-sandbox"],
     });
     const page = await browser.newPage();
-    await page.route("**/api/enrollment/invitations", async (route) => {
+    await page.route("**/api/enrollment/tunnel-invitations", async (route) => {
       const response = await route.fetch(),
         data = await response.json();
       await route.fulfill({
@@ -139,6 +147,9 @@ test("an unreadable QR offers selectable invitation text and removes it on expir
       .click();
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Verify", exact: true }).click();
+    await page
+      .getByLabel("Phone public key", { exact: true })
+      .fill(Buffer.alloc(32, 18).toString("base64"));
     await page.locator("#dialog-submit").click();
     await page
       .getByText("The QR image could not be displayed.", { exact: false })

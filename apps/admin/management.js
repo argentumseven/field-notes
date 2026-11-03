@@ -230,7 +230,7 @@ async function renderAdmin() {
         let invite;
         await formDialog(
           "Enroll a phone",
-          "Choose the account. The phone cannot choose its role.",
+          "Copy the public key shown on the phone’s enrollment screen and paste it here. Choose its account; the phone cannot choose its role. Management stays on your PC.",
           [
             {
               key: "user_id",
@@ -244,20 +244,27 @@ async function renderAdmin() {
                 )
                 .map((u) => [u.id, u.name + " · " + u.role]),
             },
+            {
+              key: "public_key",
+              label: "Phone public key",
+              min: 44,
+              max: 44,
+              autocomplete: "off",
+            },
           ],
           async (v) => {
-            invite = await api("/enrollment/invitations", v);
+            invite = await api("/enrollment/tunnel-invitations", v);
           },
           "Create invitation",
         );
         const waiting = formDialog(
-          "Scan on home Wi-Fi",
+          "Scan on this phone",
           invite.user +
             " · " +
             invite.role +
             " · expires " +
             new Date(invite.expires * 1000).toLocaleTimeString() +
-            ". Then enter the code shown on that phone in its Approve dialog.",
+            ". The phone connects through its restricted WireGuard tunnel. It cannot access management. Then enter its displayed code in Approve.",
           [],
           async () => {},
           "Done",
@@ -275,10 +282,16 @@ async function renderAdmin() {
         const sizeQr = () => {
           if (!picture.naturalWidth) return;
           const modules = picture.naturalWidth / 8;
-          picture.style.width =
-            Math.floor(Math.min(512, material.clientWidth) / modules) *
-              modules +
-            "px";
+          const pixels =
+            Math.floor(Math.min(512, material.clientWidth) / modules) * modules;
+          picture.style.width = pixels + "px";
+          // Center with an integer offset too: a half-pixel origin blurs a
+          // one-pixel module even when its width is an exact integer multiple.
+          picture.style.marginLeft =
+            Math.floor((material.clientWidth - pixels) / 2) + "px";
+          picture.style.transform = "none";
+          const bounds = picture.getBoundingClientRect();
+          picture.style.transform = `translate(${Math.round(bounds.left) - bounds.left}px, ${Math.round(bounds.top) - bounds.top}px)`;
         };
         const resize = new ResizeObserver(sizeQr);
         resize.observe(material);
@@ -354,7 +367,7 @@ async function renderAdmin() {
       "p",
       "muted",
       enroll.configured
-        ? "Enrollment: scan → confirm phone code → install peer → prove tunnel access. One phone, one key, one /32 address."
+        ? "Enrollment: phone public key → restricted peer → scan → confirm phone code → activate. The phone never connects to management. One phone, one key, one /32 address."
         : "Host networking is not configured. Run the Linux installer before enrolling phones.",
     ),
   );
@@ -391,7 +404,7 @@ async function renderAdmin() {
             await reauthenticate();
             await formDialog(
               "Approve " + d.name,
-              "Read the eight-character code directly from your phone. This authorizes its tunnel; the host must finish provisioning before it becomes usable.",
+              "Read the eight-character code directly from your phone. Its restricted tunnel is already provisioned. Approval grants task access after the host acknowledgement and activation checks.",
               [{ key: "verification", label: "Code shown on phone", max: 9 }],
               (v) => api("/enrollment/devices/" + d.id + "/approve", v),
               "Approve phone",

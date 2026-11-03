@@ -101,16 +101,19 @@ async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> R
         "/api/enrollment/claim" | "/api/enrollment/status" | "/api/enrollment/cancel"
     );
     if bootstrap
-        && (request.headers().contains_key("cookie") || request.headers().contains_key("origin"))
+        && (request.headers().contains_key("cookie")
+            || request.headers().contains_key("origin")
+            || request.headers().contains_key("authorization"))
     {
         return Fault(
             403,
-            "Enrollment must be initiated by the phone through its pinned LAN connection".into(),
+            "Enrollment must be initiated by the phone through its pinned connection".into(),
         )
         .into_response();
     }
     if app.device
         && app.bind_devices
+        && !bootstrap
         && !matches!(path, "/health" | "/api/login" | "/api/device/activate")
     {
         let peer = match request.extensions().get::<ConnectInfo<SocketAddr>>() {
@@ -427,6 +430,16 @@ async fn invite(
         blocking(app, move |s| s.enrollment_invite(&token, &user)).await?,
     ))
 }
+async fn tunnel_invite(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, false)?;
+    Ok(Json(
+        blocking(app, move |s| s.tunnel_invitation(&token, input)).await?,
+    ))
+}
 async fn devices(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
     let token = credential(&h, false)?;
     Ok(Json(
@@ -518,8 +531,10 @@ async fn claim(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(input): Json<Value>,
 ) -> Result<Json<Value>, Fault> {
+    let private = app.device;
     Ok(Json(
         blocking(app, move |s| {
+            s.authorize_enrollment_source(&input, peer.ip(), private)?;
             s.enrollment_claim(input, &peer.ip().to_string())
         })
         .await?,
@@ -541,8 +556,10 @@ async fn enrollment_status(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(input): Json<Value>,
 ) -> Result<Json<Value>, Fault> {
+    let private = app.device;
     Ok(Json(
         blocking(app, move |s| {
+            s.authorize_enrollment_source(&input, peer.ip(), private)?;
             s.budget(&format!("enroll-status:{}", peer.ip()), 300)?;
             s.enrollment_status(input)
         })
@@ -554,8 +571,10 @@ async fn cancel_enrollment(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(input): Json<Value>,
 ) -> Result<Json<Value>, Fault> {
+    let private = app.device;
     Ok(Json(
         blocking(app, move |s| {
+            s.authorize_enrollment_source(&input, peer.ip(), private)?;
             s.budget(&format!("enroll-cancel:{}", peer.ip()), 30)?;
             s.enrollment_cancel(input)
         })
@@ -609,6 +628,9 @@ pub fn router(app: App) -> Router {
                 get(device_update_chunk),
             )
             .route("/api/device/activate", post(activate))
+            .route("/api/enrollment/claim", post(claim))
+            .route("/api/enrollment/status", post(enrollment_status))
+            .route("/api/enrollment/cancel", post(cancel_enrollment))
             .route("/api/device/revoke-self", post(revoke_self));
     }
     if !app.device {
@@ -619,6 +641,7 @@ pub fn router(app: App) -> Router {
             .route("/downloads/field-notes.apk.signer.txt", get(android_signer))
             .route("/api/account/password", post(change_password))
             .route("/api/enrollment/invitations", post(invite))
+            .route("/api/enrollment/tunnel-invitations", post(tunnel_invite))
             .route("/api/enrollment/devices", get(devices))
             .route("/api/enrollment/devices/{id}/approve", post(approve))
             .route("/api/enrollment/devices/{id}/revoke", post(revoke_device))

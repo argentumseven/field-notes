@@ -1,5 +1,27 @@
 # Server startup and account recovery
 
+## Enrollment says unavailable or TLS could not be verified
+
+Version 0.3.5 and earlier tried LAN HTTPS on the management listener. If that
+listener is restricted to your PC's source network, the phone can be dropped
+before TLS; the old combined error did not establish a certificate problem.
+Do not widen the management ACL or forward its port to accommodate a phone.
+
+Update server and APK to 0.3.6 or later. Copy the phone public key into the PC
+invitation form, then scan the new v2 invitation. The phone uses only its
+key-bound WireGuard peer and private API. If an old attempt expired before
+configuration/activation, **Use a fresh invitation · keep phone keys** removes
+only that expired local attempt. Follow [enrollment](ENROLLMENT.md).
+
+New errors distinguish TLS authority/address/time failures from a refused
+connection, timeout, missing route or Android network denial. Keep TLS validation
+enabled. Verify the selected UDP endpoint/forward, the PC's host peer-agent
+status and Field Notes' GrapheneOS Network permission in the relevant profile.
+Respect an existing VPN/lockdown policy; management access from the phone is not
+part of this topology. Neither a TLS repair nor an APK upgrade should reset keys.
+
+## Startup and account recovery
+
 Use the existing installation. Reinstalling or deleting its directories is not
 a password reset or a startup repair: it can destroy keys and household data.
 Run these recovery commands in a root shell.

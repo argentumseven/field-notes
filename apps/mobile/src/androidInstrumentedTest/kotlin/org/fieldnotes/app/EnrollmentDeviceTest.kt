@@ -6,6 +6,11 @@ import android.util.Base64
 import android.Manifest
 import android.view.KeyEvent
 import android.view.WindowManager
+import android.graphics.Bitmap
+import java.io.File
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
@@ -22,14 +27,45 @@ import org.junit.Test
 /** Synthetic invitations only. No server contact or changes to the real vault. */
 class EnrollmentDeviceTest {
     @get:Rule val compose = createEmptyComposeRule()
+    private fun dismissFixtureSystemDialog():Boolean {
+        val root=InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow ?: return false
+        val titles=root.findAccessibilityNodeInfosByText("isn't responding")
+        if(titles.isEmpty())return false
+        assertTrue("An application ANR must fail the test",titles.all { it.text.toString().let { s->s.contains("System UI")||s.contains("Quickstep") } })
+        val close=root.findAccessibilityNodeInfosByText("Close app").firstOrNull() ?: throw AssertionError("No close action for the emulator system dialog")
+        assertTrue(close.performAction(AccessibilityNodeInfo.ACTION_CLICK));return true
+    }
     private fun visibleText(text: String) = try {
-        compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        if(dismissFixtureSystemDialog())false
+        else {
+            var resumed=false
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { resumed=ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).any { it is MainActivity } }
+            resumed && compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
     } catch (_: IllegalStateException) { false } // Camera return briefly has no Compose root.
+    private fun capture(activity:ActivityScenario<MainActivity>,name:String) {
+        if(InstrumentationRegistry.getArguments().getString("fieldNotesEnrollmentCapture")!="synthetic-only")return
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        activity.onActivity { it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);it.window.decorView.invalidate() }
+        try {
+            instrumentation.waitForIdleSync()
+            // Let SurfaceFlinger apply the synthetic window's protection change.
+            // Capturing immediately can return a valid PNG containing a black layer.
+            Thread.sleep(1500)
+            instrumentation.uiAutomation.takeScreenshot().let { bitmap->
+                assertTrue("Capture is still protected or blank",(1..5).count { bitmap.getPixel(bitmap.width*it/6,bitmap.height/3) and 0x00ffffff != 0 }>=3)
+                File(instrumentation.targetContext.filesDir,name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle()
+            }
+        }
+        finally { activity.onActivity { it.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) } }
+    }
 
     private fun invitation(user: String = "Alex"): String {
-        val value = Invitation(1, "https://192.168.1.10:9443/api/enrollment",
+        fun key(n:Int)=Base64.encodeToString(ByteArray(32){n.toByte()},Base64.NO_WRAP)
+        val value = Invitation(2, "https://10.82.0.1:8443/api/enrollment",
             "-----BEGIN CERTIFICATE-----\n" + "A".repeat(128) + "\n-----END CERTIFICATE-----",
-            "a".repeat(64), user, "member", System.currentTimeMillis() / 1000 + 600)
+            "a".repeat(64), user, "member", System.currentTimeMillis() / 1000 + 600,
+            obj("public_key" to key(1).j(),"server_key" to key(2).j(),"preshared_key" to key(3).j(),"address" to "10.82.0.2/32".j(),"api" to "https://10.82.0.1:8443".j(),"endpoint" to "home.example:49272".j(),"alternate_endpoints" to kotlinx.serialization.json.JsonArray(emptyList())))
         return "fieldnotes://enroll#" + Base64.encodeToString(
             WireJson.encodeToString(value).toByteArray(), Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
@@ -38,6 +74,7 @@ class EnrollmentDeviceTest {
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as FieldNotesApplication
         runBlocking { app.initialized.await() }
         val original = app.model
+        dismissFixtureSystemDialog()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         var saved = Cache(preferences = Preferences(backgroundSync=false, reminders=false, liveUpdates=false))
         val vault = object : Vault {
@@ -46,7 +83,7 @@ class EnrollmentDeviceTest {
             override suspend fun clearImages() {}
         }
         val transport = object : Transport {
-            override suspend fun keys() = obj()
+            override suspend fun keys() = obj("public_key" to Base64.encodeToString(ByteArray(32){1},Base64.NO_WRAP).j(),"private_key" to Base64.encodeToString(ByteArray(32){9},Base64.NO_WRAP).j())
             override suspend fun configure(configuration: kotlinx.serialization.json.JsonObject) {}
             override suspend fun stop() {}
             override suspend fun exchange(path: String, token: String?, body: kotlinx.serialization.json.JsonObject?, serverKey: String?) = error("No contact before explicit trust")
@@ -76,6 +113,21 @@ class EnrollmentDeviceTest {
             compose.onNodeWithText("Request enrollment").assertIsNotEnabled()
             assertNull(model.state.value.cache.enrollment)
             assertNull(model.state.value.cache.config)
+            // ActivityScenario identifies lifecycle events by the launch intent.
+            // Production correctly updates it for each deep link; restore only
+            // this test's ownership marker after verifying both replacements.
+            activity.onActivity { it.intent=intent }
+        }
+    }
+
+    @Test fun firstScreenOffersPhonePublicKeyBeforeScanning() = unpaired { model ->
+        ActivityScenario.launch(MainActivity::class.java).use { activity ->
+            compose.waitUntil(60_000) { visibleText("Copy phone public key") }
+            compose.onNodeWithText("Copy phone public key").assertIsEnabled()
+            compose.onNodeWithText("Scan invitation QR").assertExists()
+            compose.onNodeWithText("Review invitation").assertIsNotEnabled()
+            capture(activity,"enrollment-start.png")
+            assertNull(model.state.value.cache.enrollment)
         }
     }
 
@@ -100,6 +152,7 @@ class EnrollmentDeviceTest {
             compose.onNodeWithText("Scan invitation QR").performClick()
             var scanner: EnrollmentCaptureActivity? = null
             compose.waitUntil(30_000) {
+                dismissFixtureSystemDialog()
                 instrumentation.runOnMainSync {
                     scanner = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
                         .filterIsInstance<EnrollmentCaptureActivity>().firstOrNull()
@@ -114,6 +167,33 @@ class EnrollmentDeviceTest {
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             compose.waitUntil(30_000) { visibleText("Keep this pasted draft") }
             compose.onNodeWithText("Request enrollment").assertDoesNotExist()
+            assertNull(model.state.value.cache.enrollment)
+        }
+    }
+
+    @Test fun phoneNameTrustAndRequestStayAboveTheRealKeyboard() = unpaired { model ->
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        ActivityScenario.launch<MainActivity>(Intent(context,MainActivity::class.java).setData(Uri.parse(invitation()))).use { activity ->
+            compose.waitUntil(60_000) { visibleText("Alex · member") }
+            // Synthetic capture only, before the IME inherits its target's
+            // screenshot policy. The normal APK always keeps protection on.
+            if(InstrumentationRegistry.getArguments().getString("fieldNotesEnrollmentCapture")=="synthetic-only")activity.onActivity { it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+            val name=compose.onNodeWithTag("phone-name")
+            name.performClick().performTextClearance();name.performTextInput("Alex’s GrapheneOS phone")
+            var keyboardTop=0
+            compose.waitUntil(30_000) {
+                if(dismissFixtureSystemDialog())name.performClick()
+                var shown=false
+                activity.onActivity { a->val insets=ViewCompat.getRootWindowInsets(a.window.decorView);shown=insets?.isVisible(WindowInsetsCompat.Type.ime())==true;keyboardTop=a.window.decorView.height-(insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom?:0) }
+                shown && compose.onNodeWithText("Request enrollment").fetchSemanticsNode().boundsInRoot.bottom<=keyboardTop
+            }
+            name.assertIsDisplayed();compose.onNode(isToggleable()).assertIsDisplayed()
+            compose.onNodeWithText("Request enrollment").assertIsDisplayed().assertIsNotEnabled()
+            assertTrue(name.fetchSemanticsNode().boundsInRoot.bottom<=keyboardTop)
+            capture(activity,"enrollment-keyboard.png")
+            name.performImeAction()
+            compose.onNodeWithText("Request enrollment").performScrollTo().assertIsDisplayed()
             assertNull(model.state.value.cache.enrollment)
         }
     }

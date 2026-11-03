@@ -60,6 +60,31 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun ddilRestartMergesDifferentItemsIntoARemotelyChangedListAndRetainsSameItemConflicts()=runTest {
+        val list=Record("groceries","list",1,obj("title" to "Groceries".j()))
+        val first=task.copy(id="milk",data=JsonObject(task.data+mapOf("project_id" to list.id.j(),"title" to "Milk".j())))
+        val second=task.copy(id="bread",data=JsonObject(task.data+mapOf("project_id" to list.id.j(),"title" to "Bread".j())))
+        val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(list,first,second))))
+        val keys=v.value.keys;val t=FakeTransport(v.value.snapshot!!);var nextOperation=0
+        fun restored()=Workspace(t,v,{"ddil-operation-${nextOperation++}"},backgroundScope)
+        var m=restored();m.initialize()
+        t.networkFailure=true
+        m.enqueue("task.update",first.id,obj("notes" to "Phone offline: oat milk".j()),1)
+        m.enqueue("task.create","eggs",obj("project_id" to list.id.j(),"title" to "Eggs".j()),null)
+        m.sync();assertEquals(2,v.value.outbox.size)
+        t.snapshot=t.snapshot.copy(records=listOf(list.copy(revision=2,data=obj("title" to "Weekly groceries".j())),first,second.copy(revision=2,data=JsonObject(second.data+("title" to "Wholemeal bread".j())))))
+        m=restored();m.initialize();assertEquals(2,v.value.outbox.size)
+        t.networkFailure=false;m.sync()
+        assertTrue(v.value.outbox.isEmpty());assertTrue(v.value.conflicts.isEmpty());assertEquals(keys,v.value.keys)
+        val merged=v.value.snapshot!!.records.associateBy { it.id }
+        assertEquals("Weekly groceries",merged.getValue(list.id).data.text("title"));assertEquals("Wholemeal bread",merged.getValue(second.id).data.text("title"))
+        assertEquals("Phone offline: oat milk",merged.getValue(first.id).data.text("notes"));assertEquals(list.id,merged.getValue("eggs").data.text("project_id"))
+        t.networkFailure=true;m.enqueue("task.update",first.id,obj("notes" to "Second offline edit".j()),merged.getValue(first.id).revision);m.sync()
+        t.snapshot=t.snapshot.copy(records=t.snapshot.records.map { if(it.id==first.id)it.copy(revision=it.revision+1,data=JsonObject(it.data+("notes" to "Partner edit while absent".j()))) else it })
+        m=restored();m.initialize();t.networkFailure=false;m.sync()
+        assertEquals(1,v.value.conflicts.size);assertEquals("Second offline edit",v.value.conflicts.single().command.data.text("notes"))
+        assertEquals("Partner edit while absent",v.value.snapshot!!.records.single { it.id==first.id }.data.text("notes"));assertEquals(keys,v.value.keys)
+    }
     @Test fun softwareUpdatesSharePauseRevocationAndRouteFencesWithoutTouchingQueuedEdits()=runTest{
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
         m.enqueue("task.update","task",obj("notes" to "Keep during APK update".j()),1)

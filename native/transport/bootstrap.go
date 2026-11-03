@@ -71,7 +71,7 @@ func bootstrap(input bootstrapRequest, dial func(context.Context, string, string
 	request.Header.Set("X-Field-Protocol", "1")
 	response, err := client.Do(request)
 	if err != nil {
-		return "", errors.New("home enrollment server unavailable or its TLS identity could not be verified")
+		return "", connectionFailure(err, false)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, 32769))

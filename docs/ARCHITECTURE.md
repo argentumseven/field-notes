@@ -22,7 +22,7 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | `apps/mobile/src/commonMain/.../ui/` | Compose planner/task editor; separate organization, calendar/date/event and theme components |
 | `apps/mobile/src/androidMain/` | Keystore vault, credential lock, offline camera scanner, widget, scheduler, manifests/resources |
 | `apps/mobile/src/jvmMain/` | JNI adapter shared by Android and actual JVM integration checks |
-| `native/transport/`, `native/bridge/`, `native/android/` | Userspace WireGuard/HTTPS, scoped LAN bootstrap, C ABI, JNI byte bridge |
+| `native/transport/`, `native/bridge/`, `native/android/` | Userspace WireGuard/HTTPS, key-bound tunnel enrollment, C ABI, JNI byte bridge |
 | `scripts/peer-agent.py` | Constrained root-side desired-peer reconciliation and acknowledgement |
 | `scripts/tls.py` | Host-only local CA/leaf issuance and renewal |
 | `scripts/container_deployment.py`, `container-runtime.py`, `deploy/containers/` | Immutable offline images, isolated shared network namespace, egress denial, paired lifecycle |
@@ -56,14 +56,18 @@ packaging and host requirements. [UNINSTALL.md](UNINSTALL.md) defines scoped
 cleanup, retained recovery data and explicit purge. There is no automatic
 migration from a native installation and no shared Docker daemon reconfiguration.
 
-A LAN-only, ten-minute QR invitation is scoped to an existing account and role.
-The phone generates its own private key and persists a claim nonce before
-sending its public key. The administrator enters the code displayed by that
-phone. Approval creates a desired peer; only a fresh, matching root acknowledgement
-releases the connection configuration. Activation travels through WireGuard and
-must originate from the assigned inner address. Native sessions are bound to
-that device and account. Revocation denies application access immediately; the
-website keeps removal pending until the host acknowledges peer removal.
+A ten-minute v2 invitation is bound to the phone public key and an existing
+account/role. The PC administrator pastes that key before issuance. The server
+reserves a PSK and /32 and publishes a restricted preapproval peer. The phone
+claims/status-polls only over WireGuard and pinned TLS to the private task API;
+it never contacts management. These three routes require actual-source/claim
+proof, grant no content session and reject browser credentials. Administrator
+phone-code approval, fresh matching host acknowledgement and activation are
+required before content access. Expired/revoked peers retain their address until
+root removal acknowledgement. Never-activated reservations may then be replaced;
+offline active phones are preserved. Older LAN bootstrap routes remain only for
+legacy recovery and are not used for new invitations. Native sessions are bound
+to that device/account; revocation denies content immediately.
 
 See [NETWORK.md](NETWORK.md) and [ENROLLMENT.md](ENROLLMENT.md) for constraints,
 expiry/retry/recovery, and the trust bootstrap.

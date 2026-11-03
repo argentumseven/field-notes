@@ -1,5 +1,48 @@
 # Implementation and validation record
 
+## 0.3.6 tunnel enrollment, keyboard and disconnected work
+
+The previous phone bootstrap depended on LAN HTTPS on the management listener.
+That conflicts with PC-only management access and can be dropped before TLS,
+which the old combined error failed to distinguish. New invitations bind the
+phone public key on the PC, preprovision a restricted /32 peer, and perform
+claim/status/cancel over WireGuard and pinned TLS to the private task API only.
+PC code approval and fresh host acknowledgement remain required before task
+credentials. No management ACL, listener, public TCP port, egress policy or OS
+VPN slot was added or weakened. Legacy LAN routes remain for recovery only.
+
+All 11 Rust tests/clippy, 34 Node API checks, seven Chromium workflows, 98 Python
+checks, Go vet/race checks and 48 shared Kotlin tests pass. New coverage includes
+wrong phone/peer rejection, proof-free header rejection, idempotent issuance and
+claims, failed audit/manifest recovery, fresh-root-ack address retirement,
+replacement of unused expired reservations, preservation of previously activated
+bindings, lost replies/restart/activation through the same private peer, and
+keeping phone keys when abandoning an expired unactivated attempt.
+
+The full real Docker/WireGuard/TLS fixture passes. It proves preapproval peers
+cannot obtain task data, v2 claims cannot use management, and modified phone
+traffic cannot reach management/SSH/LAN/other peers. The actual Go C bridge also
+pairs against the installer's real CA and Rust TLS, distinguishes an incorrect
+pinned CA, activates and reads a snapshot without calling management. APK download
+chunks, namespace isolation, key/certificate permissions and cleanup pass.
+
+The disconnected-work regression survives an outage and restart, merges edits
+and a new task into a remotely renamed/edited list, then retains a same-task
+collision as a conflict without overwriting the partner's edit. It does not
+claim automatic text/field merging within one record. See [OFFLINE.md](OFFLINE.md).
+
+Enrollment and sign-in consume system/keyboard insets. The name field, trust
+checkbox and request control share a scroll target; Done dismisses the keyboard,
+and the raw invitation collapses after review. The real Android IME check passed,
+asserting those controls remain above its visible bounds. Camera cancellation,
+invalid-code handling and the phone-key start screen passed in separate targeted
+checks. Early AOSP runs were obstructed by System UI ANRs/screen sleep; the fixture
+wakes the dedicated AVD, enables its soft keyboard, and closes only allowlisted
+System UI/Quickstep dialogs, never an app ANR. A deep-link check's assertions
+completed but ActivityScenario lost its launch-intent lifecycle marker; its test
+cleanup now restores that marker and its rerun is pending. Physical GrapheneOS
+camera optics, VPN coexistence and prolonged DDIL/profile behavior remain unrun.
+
 ## 0.3.5 QR enrollment
 
 An actual ZXing decode of the old manager's displayed QR failed. The manager now

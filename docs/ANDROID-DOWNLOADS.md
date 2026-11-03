@@ -6,22 +6,24 @@ Existing phones should use their paired server's APK updates when it uses a
 different signing key. A public APK cannot replace another signer in place;
 keep the original signer and queued work.
 
-The Linux server bundle includes its matching signed ARM64 Android APK. On home
-Wi-Fi, open your trusted management URL in the phone browser. **Download APK**
+The Linux server bundle includes its matching signed ARM64 Android APK. On your
+PC, open the trusted management URL. **Download APK**
 appears on Sign in and in Management, with checksum and signing-certificate
-links. Download, verify, temporarily allow installation from that browser/file
-manager, install, then [enroll the phone](ENROLLMENT.md). No SDK, developer mode,
+links. Download and verify on the PC, copy the APK/checksum to the phone (for
+example over USB), then allow installation from its file manager and
+[enroll the phone](ENROLLMENT.md). The phone needs no management access or LAN
+browser CA installation. No SDK, developer mode,
 Google account, store or public service is required on the installed server or phone.
 
 The public APK uses the release variant and the pinned public certificate. A
 local development build is also available at
-`dist/android/field-notes-0.3.5-android-arm64-debug.apk`, with `.sha256` and
+`dist/android/field-notes-0.3.6-android-arm64-debug.apk`, with `.sha256` and
 `.signer.txt` alongside. This is a signed **development** build. Keep the same
 signing key for in-place updates; changing signers normally requires uninstall
 and loses phone-local keys and unsynchronized edits. Never uninstall over retained
 work just to resolve a signature mismatch. Existing installations use
 **Settings & widgets → App updates** through their paired server starting with
-0.3.2. For an older app, install 0.3.5 over it using the same signer, without
+0.3.2. For an older app, install 0.3.6 over it using the same signer, without
 uninstalling or clearing storage; see
 [UPDATES.md](UPDATES.md) for in-place upgrades and stable signing.
 
@@ -47,8 +49,8 @@ source-bound in-app updates use separate metadata/chunk routes on the same
 private notes endpoint. Downloads remain local;
 the server does not fetch APKs, contact GitHub, or acquire an outbound exception.
 Trust the management CA through the fingerprint procedure in [RUNNING.md](RUNNING.md).
-A phone browser needs that trust for a LAN download too; alternatively download
-on the trusted administrator computer and copy the APK/checksum to the phone.
+Download on the trusted administrator computer and copy the APK/checksum to the
+phone. Keep the PC-only management source restriction.
 QR enrollment inside the app needs no system-wide CA installation.
 Do not disable certificate verification or expose the manager to the Internet.
 
@@ -87,7 +89,7 @@ Build Android before the server. A release build can replace the default develop
 bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 # After a separately configured stable-key release build:
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.5-android-arm64-release.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.6-android-arm64-release.apk \
   bash scripts/build/server.sh
 ```
 
@@ -126,8 +128,8 @@ The public release certificate is pinned in `release.json`. Build and package
 from a clean source tag, then queue the verified payload through GitHub Actions:
 
 ```bash
-python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.3.5-android-arm64-release.apk --output dist/android-release
-python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.3.5 --queue --apply
+python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.3.6-android-arm64-release.apk --output dist/android-release
+python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.3.6 --queue --apply
 ```
 
 The existing tag must already be pushed and point to this clean checkout on

@@ -584,7 +584,14 @@ dialog::backdrop {
 }
 dialog.invitation-dialog {
   width: min(620px, calc(100vw - 24px));
+  max-width: calc(100vw - 4px);
   padding: 20px;
+}
+@media (max-width: 600px) {
+  dialog.invitation-dialog {
+    width: calc(100vw - 4px);
+    padding: 8px;
+  }
 }
 .invite-qr {
   display: block;

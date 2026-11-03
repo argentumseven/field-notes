@@ -218,7 +218,13 @@ func Exchange(raw string) (string, error) {
 	if !devicePath(r.Path) || strings.ContainsAny(r.Path, "?#%\\\r\n") || strings.Contains(r.Path, "..") || len(r.Path) > 150 {
 		return "", errors.New("invalid device API path")
 	}
+	if strings.HasPrefix(r.Path, "/api/enrollment/") && (r.Method != "POST" || r.Token != "") {
+		return "", errors.New("enrollment requires a credential-free POST through the private tunnel")
+	}
 	if r.Token != "" {
+		if strings.HasPrefix(r.Path, "/api/enrollment/") {
+			return "", errors.New("enrollment cannot send a content session")
+		}
 		if len(r.Token) != 64 {
 			return "", errors.New("invalid session")
 		}
@@ -267,7 +273,7 @@ func Exchange(raw string) (string, error) {
 		}
 	}
 	if e != nil {
-		return "", errors.New("server unavailable or TLS verification failed")
+		return "", connectionFailure(e, true)
 	}
 	defer response.Body.Close()
 	data, e := io.ReadAll(io.LimitReader(response.Body, 16*1024*1024+1))
@@ -286,6 +292,8 @@ func Exchange(raw string) (string, error) {
 
 func devicePath(path string) bool {
 	switch path {
+	case "/api/enrollment/claim", "/api/enrollment/status", "/api/enrollment/cancel":
+		return true
 	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/device/activate", "/api/device/revoke-self", "/api/device/update":
 		return true
 	}

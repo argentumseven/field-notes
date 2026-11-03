@@ -8,13 +8,14 @@ A self-hosted household planner: Inbox, lists, projects, standalone notes, comme
 images, optional dates, priorities and a private calendar. Compact charcoal/paper, teal accents, clean rows.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.3.5.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.3.6.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
+[Offline work and reconnect](docs/OFFLINE.md) ·
 [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Compact Focus view with ranked and undated tasks](docs/screenshots/web/02-focus.png)
@@ -35,7 +36,7 @@ services. iOS/native desktop packages are deferred.
   zones have distinct semantics; no Google or OS Calendar integration.
 - Task notes, image attachments and comments; encrypted offline edits/outbox,
   replay-safe retries, server-arbitrated claims and retained conflicts.
-- QR enrollment: select an account, scan on home Wi-Fi, enter the phone's code
+- QR enrollment: bind the phone public key on your PC, scan, enter the phone's code
   on the server, then wait for peer installation and tunnel activation. Private
   keys stay on phones. Revocation stops content access immediately and tracks
   confirmed peer removal separately.
@@ -69,7 +70,7 @@ on your phone and choose **Download APK** on Sign in or in Management; checksum
 and signer links are beside it. [Download and release details](docs/ANDROID-DOWNLOADS.md).
 
 The signed arm64 development APK, checksum and signer report are also under
-`dist/android/field-notes-0.3.5-android-arm64-debug.apk`. Copy it to your phone,
+`dist/android/field-notes-0.3.6-android-arm64-debug.apk`. Copy it to your phone,
 verify hash/signer, and open it to sideload. Preserve the development signer for
 in-place updates. Operator release builds require your separately protected key.
 
@@ -120,7 +121,7 @@ them. It leaves Docker and shared packages alone. [Removal guide](docs/UNINSTALL
 - `apps/server/src/store/`: transactional auth, commands/planning, enrollment, admin and backup.
 - `apps/admin/`: bundled planner/calendar/management, no external page dependencies.
 - `apps/mobile/`: shared Kotlin domain/UI, Android adapters/widget/scanner and tests.
-- `native/`: endpoint-only WireGuard/HTTPS, scoped LAN enrollment, C/JNI bridge.
+- `native/`: endpoint-only WireGuard/HTTPS, key-bound tunnel enrollment, C/JNI bridge.
 - `scripts/`, `deploy/`, `tests/`: reproducible builds/install, constrained helpers,
   cross-language planning fixtures and real-process/transport checks.
 

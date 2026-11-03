@@ -6,7 +6,7 @@ Notes checks automatically while the unlocked app is in the foreground, at most
 once per six hours, and **Check for updates** checks immediately.
 
 If the installed app predates 0.3.2, it does not yet have this screen. Download
-0.3.5 from the updated server and install it **over the existing app**, with the
+0.3.6 from the updated server and install it **over the existing app**, with the
 same signing key. Do not uninstall or clear storage. Later updates use the flow
 below.
 
@@ -89,7 +89,7 @@ git switch main
 git pull --ff-only origin main
 # On the builder, with the original stable signing key configured:
 bash scripts/build/android.sh release
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.5-android-arm64-release.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.3.6-android-arm64-release.apk \
   bash scripts/build/server.sh
 ```
 

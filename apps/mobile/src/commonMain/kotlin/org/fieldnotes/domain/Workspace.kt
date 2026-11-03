@@ -49,6 +49,7 @@ class Workspace(
     suspend fun beginEnrollment(invitation: Invitation, name: String) = connection.withLock {
         check(cache.config == null && cache.enrollment == null && cache.snapshot == null && cache.outbox.isEmpty() && cache.drafts.isEmpty() && cache.conflicts.isEmpty()) { "This workspace already has a connection or retained data." }
         require(name.trim().encodeToByteArray().size in 1..80) { "Enter a short phone name." }
+        if(invitation.version==2)invitation.tunnelConfiguration(checkNotNull(cache.keys))
         val secret = (newId() + newId()).replace("-", "")
         check(secret.matches(Regex("[a-f0-9]{64}")))
         pairingGeneration.update { it+1 }
@@ -64,7 +65,11 @@ class Workspace(
         try {
         val invitation = pending.invitation
         suspend fun bootstrap(path: String, body: JsonObject): JsonObject {
-            val reply = transport.bootstrap(invitation.url, invitation.ca, path, body)
+            val reply = if(invitation.version==2) {
+                val config=invitation.tunnelConfiguration(checkNotNull(cache.keys))
+                if(!prepared) { transport.configure(config); currentAttempt(); prepared=true }
+                transport.exchange("/api/enrollment"+path,null,body,config.text("server_key"))
+            } else transport.bootstrap(invitation.url, invitation.ca, path, body)
             currentAttempt()
             val result = WireJson.parseToJsonElement(reply.body).jsonObject
             if (reply.status >= 400) throw ApiError(reply.status, result.text("error", "Enrollment failed."))
@@ -84,6 +89,10 @@ class Workspace(
             if (configuration != null) {
                 check(configuration.keys.all { it in setOf("address", "endpoint", "alternate_endpoints", "server_key", "preshared_key", "api", "ca_pem") }) { "Unexpected connection fields." }
                 check(configuration.text("ca_pem") == invitation.ca) { "The approved server identity changed." }
+                if(invitation.version==2) {
+                    val expected=invitation.tunnelConfiguration(checkNotNull(cache.keys))
+                    for(field in listOf("address","api","server_key","preshared_key"))check(configuration[field]==expected[field]) { "The approved tunnel identity changed." }
+                }
                 val full = JsonObject(configuration + ("private_key" to cache.keys!!.getValue("private_key")))
                 current = current.copy(stage = "activating", activationSecret = status.text("activation_secret"))
                 // Keep configuration and receipt credential together across process death.
@@ -133,12 +142,24 @@ class Workspace(
         check(cache.snapshot == null && cache.outbox.isEmpty() && cache.drafts.isEmpty())
         val proof = if(current.id.isNotEmpty()) obj("id" to current.id.j(), "claim_secret" to current.claimSecret.j())
             else obj("token" to current.invitation.token.j(),"claim_secret" to current.claimSecret.j(),"public_key" to cache.keys!!.getValue("public_key"))
-        val result = transport.bootstrap(current.invitation.url, current.invitation.ca, "/cancel", proof)
-        check(result.status in 200..299 || result.status == 410) { "Connect to your home LAN to cancel. Your administrator can also revoke this phone. An older server may need updating to cancel an attempt with a lost claim reply." }
+        val result = if(current.invitation.version==2) {
+            val config=current.invitation.tunnelConfiguration(checkNotNull(cache.keys))
+            if(!prepared) { transport.configure(config);prepared=true }
+            transport.exchange("/api/enrollment/cancel",null,proof,config.text("server_key"))
+        } else transport.bootstrap(current.invitation.url, current.invitation.ca, "/cancel", proof)
+        check(result.status in 200..299 || result.status == 410) { if(current.invitation.version==2)"Reconnect the private task tunnel to cancel, or revoke the invitation from your PC. Saved phone keys and the pending proof are retained." else "This is a legacy LAN attempt. Your PC administrator can revoke it; after expiry an unused attempt can be replaced while keeping phone keys." }
         transport.stop()
         prepared=false
         val keys = cache.keys ?: transport.keys()
         update { it.copy(enrollment = null, config = null, keys = keys, token = null) }
+    }
+    /** Only abandon an expired, never-activated attempt; keys and queued work stay intact. */
+    suspend fun forgetExpiredEnrollment() = connection.withLock {
+        val current=checkNotNull(cache.enrollment)
+        check(current.invitation.expires<=Clock.System.now().epochSeconds && current.activationSecret==null && cache.config==null && cache.snapshot==null && cache.outbox.isEmpty() && cache.drafts.isEmpty() && cache.conflicts.isEmpty()) { "Keep this pairing attempt; it may have activated or contain retained work." }
+        transport.stop();prepared=false;pairingGeneration.update { it+1 }
+        update { it.copy(enrollment=null,preferences=it.preferences.copy(connectionPaused=false)) }
+        _state.update { it.copy(connectionPaused=false,error=null) }
     }
     suspend fun resetConnection(newKeys:Boolean=false) = connection.withLock {
         check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Copy and resolve retained changes before enrolling again." }

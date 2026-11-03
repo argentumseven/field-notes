@@ -29,7 +29,7 @@ Established replies remain allowed. See [CONTAINERS.md](CONTAINERS.md).
 | Source | Allowed destination |
 | --- | --- |
 | Internet | The selected WireGuard UDP port only (operator-selected) |
-| Enrolled phone peer | Exactly overlay server `.1`, TCP 8443, device routes and device-bound authentication |
+| Phone peer (pending or enrolled) | Exactly overlay server `.1`, TCP 8443, device routes and device-bound authentication |
 | Phone interface | No LAN/admin, SSH, other host services, peer-to-peer, IPv6 or forwarded Internet traffic |
 | Selected management LAN CIDR | Management IP:chosen HTTPS port (operator-selected); login, roles, CSRF and recent admin reauthentication still apply |
 
@@ -37,7 +37,10 @@ The installer generates nftables input/forward isolation before starting
 WireGuard. Peer traffic to every other host port/address is dropped, including
 established flows and IPv6. Client AllowedIPs and a fixed inner HTTPS dial target
 also limit intent, but the server firewall is the security boundary against a
-modified client. Device routes exclude management handlers. Authorization checks
+modified client. Device routes exclude management handlers. Pending peers may use only the three
+proof/source-bound enrollment routes and cannot obtain task sessions before
+PC approval. The PC binds an invitation to the phone public key before its
+restricted peer is installed. Phones never dial the management listener. Authorization checks
 the actual TCP source; `X-Forwarded-For`, `Host` and similar headers confer no
 identity. Never put a forwarding proxy in front of the device listener.
 

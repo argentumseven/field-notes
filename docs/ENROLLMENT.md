@@ -1,46 +1,67 @@
 # Enroll and revoke a phone
 
-1. Install the APK. Join the trusted home LAN; first pairing requires LAN access.
-2. On the server website, create the person's account and choose its role under
-   **Management → People**. Roles are household-wide.
-3. Under **Devices**, select **Create invitation**, reauthenticate, choose the
-   existing account, and display its QR. It expires in ten minutes. Treat the QR
-   and copyable invitation as temporary secrets.
-4. On the phone choose **Scan invitation QR**, allow camera access while scanning,
-   review the account/server address, name the phone, confirm the trusted source,
-   and request enrollment. You can paste an invitation when no camera is available.
-   Scanning alone does not authorize a server or send credentials.
-   The local scanner opens a camera screen and returns directly to invitation
-   review. It uses no Google services and does not save or upload camera frames.
-   Back cancels scanning and keeps anything you already pasted. If permission is
-   denied, allow Camera in Android app settings or use the paste option.
-5. On the website, find that phone and choose **Approve**. Enter the eight-character
-   code shown directly on the phone. Do not copy a code supplied by another person.
-6. The site shows **provisioning** until the constrained root helper has installed
-   the public key, unique PSK and /32 peer. The phone then proves access through
-   its new tunnel and receives a device-bound application session. No password
-   is sent during this process. Keep enrollment open until the workspace appears.
+Management is used from your PC. The phone never needs to reach the management
+IP/HTTPS port. Enrollment and normal sync use the same restricted WireGuard
+path to the private task API, TCP 8443 inside the tunnel.
 
-The phone generates its private key locally and never uploads it. The invitation
-is scoped to the selected account/role; a phone cannot request a different role.
-Invitations are hashed at rest, single claimant, expiring, and rate-limited. Expired QR displays stop offering scan/copy; server expiry
-remains authoritative even if a browser clock is wrong. Closing an invitation or
-losing the browser session removes its QR. Reinstalling the phone creates new
-keys; the normal flow always claims with the phone’s current key.
-Claims include a separate random secret persisted in the encrypted phone vault
-before any request. Exact retries return the same pending phone; different
-claimants are rejected. QR theft cannot bypass the separate code approval.
+1. Install the matching APK on the phone. On **Enroll this phone**, select
+   **Copy phone public key**. Transfer that public key to your PC; it is safe
+   to copy. The private key stays on the phone. No Google clipboard service is
+   required or used.
+2. On the PC's server website, create the person's account and role under
+   **Management → People**. Roles apply across the household.
+3. Under **Devices → Create invitation**, reauthenticate, choose the account,
+   and paste **Phone public key**. The server reserves a unique /32 and PSK and
+   asks its constrained root helper to install that peer. The invitation is
+   bound to this phone key and expires in ten minutes.
+4. On that phone, choose **Scan invitation QR** and allow camera access. Review
+   the account and server, enter a phone name, confirm the trusted source, then
+   choose **Request enrollment**. The keyboard leaves the name and confirmation
+   controls in a scrollable area; **Done** dismisses it. Paste remains available.
+   A QR for another phone is rejected before any claim is sent.
+5. The phone contacts only the private API through its app-contained tunnel.
+   On the PC, choose **Approve** for that phone and enter the eight-character
+   code displayed directly on it. Do not accept a code supplied by someone else.
+6. Task credentials are released only after approval, a fresh matching host peer
+   acknowledgement and private-source activation. Keep enrollment open until the
+   workspace appears. No account password is sent during enrollment.
 
-Approval is not the same as activation: unapproved/provisioning phones get no
-content credentials. Configuration is released only after a fresh matching host
-acknowledgement. Activation checks the actual inner TCP address and an independent
-secret. A LAN web session is not accepted as a phone session, and phone tokens cannot
-authorize the LAN website. The native transport
-can dial only the paired notes endpoint; LAN bootstrap supports only claim,
-status and cancellation, over pinned HTTPS with no redirects.
+Only the selected UDP port must be reachable from the phone. On home Wi-Fi this
+can use the installer's LAN UDP alternative; away from home it uses your chosen
+public/DDNS endpoint and router UDP forward. Neither case opens management to
+the phone or requires forwarding TCP 8443. Existing VPN/lockdown and GrapheneOS
+Network permission remain authoritative; no OS VPN slot or bypass is used.
+
+The scanner runs locally without Google services and saves/uploads no camera
+frames. Back cancels scanning and preserves a pasted draft. If Camera permission
+is denied, allow it in Android app settings or paste the invitation instead.
+
+The QR contains public server trust, peer connection details, a PSK and a
+short-lived token, never the phone private key or a content session. Treat it as
+a temporary secret. Lookup tokens are hashed; an unclaimed v2 invitation is also
+stored encrypted so a failed PC request can recover the same QR. That recovery
+copy is removed when claimed or expired. Retrying issuance for the same pending
+phone returns the same invitation rather than allocating another peer.
+
+The server binds claim/status/cancel requests to the assigned inner /32 and
+still requires the invitation/claim proof. The peer can reach only the task API;
+unapproved peers receive no task credentials. Browser cookies or Authorization
+headers are rejected on enrollment routes. Phone tokens cannot manage the server.
+A stolen QR alone cannot prove possession of the phone's private key or replace
+PC approval. Expiry/revocation removes the bootstrap peer; addresses stay reserved
+until fresh root removal acknowledgement. An unused expired reservation can then
+be replaced using the same phone key. An offline active phone never qualifies.
 
 ## Interruptions and recovery
 
+- Version 0.3.6 and later issue v2 key-bound tunnel invitations. Update both
+  server and APK. An old saved LAN attempt may still show its legacy connection
+  error. If it expired before any tunnel configuration/activation was received,
+  choose **Use a fresh invitation · keep phone keys**. This clears only the
+  expired attempt; it cannot clear queued edits or an uncertain activation.
+  Copy the same public key into a new PC invitation. An expired unused reservation
+  is reusable only after the host acknowledges removal. Active pairings remain
+  bound and ordinary updates do not require re-enrollment or key deletion.
 - If the QR is difficult to read, show the whole square without covering its
   white border and move the camera back until it fits the guide. The manager
   displays a crisp PNG with whole pixels per square. **Can’t scan? Paste the

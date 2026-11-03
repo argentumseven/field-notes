@@ -27,6 +27,7 @@ test('invitation expiry, replacement and session loss remove stale QR and passwo
         await page.getByRole('button', { name: 'Verify', exact: true }).click();
       }
       await page.getByRole('heading', { name: 'Enroll a phone', exact: true }).waitFor();
+      await page.getByLabel('Phone public key',{exact:true}).fill(Buffer.alloc(32,1+Math.floor(Math.random()*200)).toString('base64'));
       await page.locator('#dialog-submit').click();
       await page.locator('.invite-qr').waitFor();
       return page.locator('.invite-qr').getAttribute('src');

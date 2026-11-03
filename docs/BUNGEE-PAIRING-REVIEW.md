@@ -1,5 +1,25 @@
 # Pairing and failure handling compared with Bungee
 
+## Tunnel bootstrap correction, November 2
+
+Rechecked current main at `a6dbb71f6d24df1474665a7243bc61c87e0530d1`, especially
+`server/src/enrollment.rs`, Android `Identity.kt`/`MainActivity.kt` and the native
+transport. Bungee obtains the phone public key before issuing the invitation,
+preprovisions its peer, and performs enrollment inside the tunnel. The previous
+Field Notes flow instead required LAN HTTPS on the management listener; its
+PC-only source firewall could drop the phone before TLS. That dependency was an
+architectural mismatch, not proof of an invalid certificate.
+
+Field Notes v2 invitations now bind the phone public key before issuance,
+publish a limited peer, and send claim/status/cancel through the existing private
+API. They retain Field Notes' account scoping, explicit trusted-source review,
+administrator phone-code approval, actual /32 source checks and host-acknowledged
+activation. No management exposure, new TCP listener, VPN slot, TLS exception or
+server egress exception was added. Same-attempt issuance and claim retries are
+idempotent. Never-activated expired reservations wait for root removal before
+replacement; offline active phones remain protected. Legacy LAN routes support
+old recovery only. This is independently implemented; no AGPL code was copied.
+
 ## QR follow-up, November 2
 
 Reviewed [Bungee at a6dbb71](https://github.com/argentumseven/bungee/tree/a6dbb71f6d24df1474665a7243bc61c87e0530d1):

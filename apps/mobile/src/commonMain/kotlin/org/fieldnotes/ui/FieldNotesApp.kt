@@ -12,6 +12,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -23,9 +27,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,7 +53,7 @@ import org.fieldnotes.domain.*
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             when {
                 !state.ready -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Opening encrypted workspace"); state.error?.let { ErrorText(it); Button(onClick = { model.launch { model.initialize() } }) { Text("Retry") }; if(deviceActions.androidDelivery)SecondaryButton(onClick=deviceActions.appSettings){Text("Android app settings and removal")} } ?: CircularProgressIndicator() }
-                (state.cache.enrollment?.stage?.let { it != "sign_in" } == true) || state.cache.config == null -> EnrollmentScreen(model, state, invitationCode, scanInvitation, enrollmentPolling, invitationScanError, invitationSequence)
+                (state.cache.enrollment?.stage?.let { it != "sign_in" } == true) || state.cache.config == null -> EnrollmentScreen(model, state, invitationCode, scanInvitation, enrollmentPolling, invitationScanError, invitationSequence, copyText)
                 state.needsLogin -> LoginScreen(model, state, copyText)
                 state.cache.snapshot == null -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Connected. Download your workspace."); state.error?.let { ErrorText(it) }; Button(onClick = { model.launch { model.sync() } }) { Text("Sync workspace") };if(deviceActions.androidDelivery)AppUpdatesCard(deviceActions) }
                 else -> WorkspaceScreen(model, state, copyText, attachImage, configureBackground, registerBack, imageContent,deviceActions,requestedPage)
@@ -53,10 +61,15 @@ import org.fieldnotes.domain.*
         }
     }
 }
-@Composable private fun EnrollmentScreen(model: Workspace, state: WorkspaceState, incoming: String?, scan: () -> Unit, polling: Boolean, scanError:String?, invitationSequence:Int) {
+@Composable private fun EnrollmentScreen(model: Workspace, state: WorkspaceState, incoming: String?, scan: () -> Unit, polling: Boolean, scanError:String?, invitationSequence:Int, copy:(String)->Unit) {
     var raw by rememberSaveable { mutableStateOf("") }; var name by rememberSaveable { mutableStateOf("My phone") }
     var invitation by remember { mutableStateOf<Invitation?>(null) }; var error by remember { mutableStateOf<String?>(null) }
     var trusted by rememberSaveable { mutableStateOf(false) }; var busy by remember { mutableStateOf(false) }
+    val focus=LocalFocusManager.current
+    val phoneField=remember { BringIntoViewRequester() }
+    var nameFocused by remember { mutableStateOf(false) }
+    val keyboardBottom=WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(nameFocused,keyboardBottom) { if(nameFocused) { withFrameNanos { };phoneField.bringIntoView() } }
     LaunchedEffect(incoming, invitationSequence) { incoming?.let {
         raw = it; trusted = false
         try { invitation = readInvitation(it); error = null }
@@ -74,23 +87,34 @@ import org.fieldnotes.domain.*
             }
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Spacer(Modifier.height(28.dp)); Brand(); Text("Enroll this phone", style = MaterialTheme.typography.headlineSmall)
+    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Brand(); Text("Enroll this phone", style = MaterialTheme.typography.headlineSmall)
+        (error ?: state.error)?.let { ErrorText(it) }
         if (pending == null) {
-            Text("On home Wi-Fi, open Management → Devices on your server. Create an invitation for your account, then scan it here.")
-            Button(onClick = scan, modifier = Modifier.fillMaxWidth().testTag("scan-invitation")) { Text("Scan invitation QR") }
+          if(invitation==null) {
+            Text("On your PC, open Management → Devices. Paste this phone’s public key and choose your account to create its invitation. Then scan the QR here. The phone connects only through its restricted tunnel; management stays on the PC.")
+            val public=state.cache.keys?.text("public_key").orEmpty()
+            Text("This phone’s public key",style=MaterialTheme.typography.labelLarge)
+            SelectionContainer { Text(public,style=MaterialTheme.typography.bodySmall) }
+            SecondaryButton(onClick={copy(public)},enabled=public.isNotEmpty()) { Text("Copy phone public key") }
+            Button(onClick = { focus.clearFocus();scan() }, modifier = Modifier.fillMaxWidth().testTag("scan-invitation")) { Text("Scan invitation QR") }
             scanError?.let { ErrorText(it) }
             OutlinedTextField(raw, { raw = it; invitation = null; trusted = false }, Modifier.fillMaxWidth(), label = { Text("Or paste invitation") }, minLines = 2, maxLines = 4, keyboardOptions = KeyboardOptions(autoCorrectEnabled = false))
-            SecondaryButton(onClick = { try { invitation = readInvitation(raw); error = null } catch (e: Exception) { error = e.message } }, enabled = raw.isNotBlank()) { Text("Review invitation") }
+            SecondaryButton(onClick = { try { invitation = readInvitation(raw); error = null;focus.clearFocus() } catch (e: Exception) { error = e.message } }, enabled = raw.isNotBlank()) { Text("Review invitation") }
+          }
             invitation?.let { invite ->
                 Text("${invite.user} · ${invite.role}", style = MaterialTheme.typography.titleMedium)
-                Text(invite.url.substringBefore("/api/"), style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(name, { name = it.take(80) }, Modifier.fillMaxWidth(), label = { Text("Phone name") })
+                Text(if(invite.version==2)"Restricted tunnel · "+invite.tunnel!!.text("endpoint") else invite.url.substringBefore("/api/"), style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.fillMaxWidth().bringIntoViewRequester(phoneField),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(name, { name = it.take(80) }, Modifier.fillMaxWidth().testTag("phone-name").onFocusChanged { nameFocused=it.isFocused }, label = { Text("Phone name") },singleLine=true,keyboardOptions=KeyboardOptions(autoCorrectEnabled=false,imeAction=ImeAction.Done),keyboardActions=KeyboardActions(onDone={focus.clearFocus()}))
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(trusted, { trusted = it }); Text("This invitation came from my trusted home server.", Modifier.weight(1f)) }
-                Button(onClick = { busy = true; model.launch { try { model.beginEnrollment(invite, name); model.advanceEnrollment() } finally { busy = false } } }, enabled = trusted && name.isNotBlank() && !busy) { Text("Request enrollment") }
+                Button(onClick = { focus.clearFocus();busy = true; model.launch { try { model.beginEnrollment(invite, name); model.advanceEnrollment() } finally { busy = false } } }, enabled = trusted && name.isNotBlank() && !busy) { Text("Request enrollment") }
+                }
+                SecondaryButton(onClick={focus.clearFocus();invitation=null;trusted=false;error=null}) { Text("Use a different invitation") }
             }
         } else {
             Text("${pending.name} · ${pending.invitation.user}")
+            Text(if(pending.invitation.version==2)"Connecting only to the private task API through WireGuard." else "This saved attempt uses legacy LAN enrollment. Management access is not required by new tunnel invitations.",style=MaterialTheme.typography.bodySmall)
             Text(if(state.connectionPaused)"Pairing paused on this phone. Saved credentials are kept; the server invitation can still expire." else when(pending.stage) { "claiming" -> "Contacting your home server…"; "pending_approval" -> "Ask your administrator to enter this phone's code."; "provisioning" -> "Approved. Waiting for the server to install your tunnel peer."; "ready", "activating" -> "Verifying access through your private tunnel…"; else -> pending.stage })
             if (pending.verification.isNotEmpty()) Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) { Text(pending.verification.chunked(4).joinToString(" "), Modifier.padding(24.dp).testTag("enrollment-verification"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold) }
             Text("Keep this screen open. Approval expires after 10 minutes. The code proves which phone you are approving; never enter a code supplied by someone else.", style = MaterialTheme.typography.bodySmall)
@@ -98,15 +122,15 @@ import org.fieldnotes.domain.*
             if(!state.connectionPaused)SecondaryButton(onClick={model.launch { model.pauseConnection() }}){Text("Pause pairing")}
             if (pending.activationSecret != null) SecondaryButton(onClick = { model.launch { model.resumeConnection(); model.enrollmentSignIn(true) } }) { Text("Recover an activated phone with password") }
             SecondaryButton(onClick = { model.launch { model.cancelEnrollment() } }) { Text("Cancel invitation on server") }
+            if(pending.invitation.expires<=Clock.System.now().epochSeconds && pending.activationSecret==null && state.cache.config==null)SecondaryButton(onClick={model.launch { model.forgetExpiredEnrollment() }}) { Text("Use a fresh invitation · keep phone keys") }
         }
-        (error ?: state.error)?.let { ErrorText(it) }
         HorizontalDivider(); Text("Your private key stays here. Field Notes uses its own WireGuard connection to the notes endpoint and keeps Android's VPN slot available.", style = MaterialTheme.typography.bodySmall)
     }
 }
 @Composable private fun LoginScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit) {
     var review by remember { mutableStateOf(false) }; var reset by remember { mutableStateOf(false) }; var newKeys by remember { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf(state.cache.snapshot?.actor?.name ?: "") }; var password by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp), verticalArrangement = Arrangement.Center) {
+    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(26.dp), verticalArrangement = Arrangement.Center) {
         Brand(); Spacer(Modifier.height(28.dp)); Text("Sign in", style = MaterialTheme.typography.headlineMedium)
         Text("Use the account assigned to this enrolled phone.", Modifier.padding(vertical = 16.dp))
         if (state.cache.outbox.isNotEmpty()) Text("Your queued edits are kept. Sign in to the same account to reconcile them.")
