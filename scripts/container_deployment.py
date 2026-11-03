@@ -89,6 +89,30 @@ def compose(settings):
                                    'labels':{**labels,ROLE:'network'}}}}
 
 
+def docker_failure(error):
+    """Report a bounded operation/reason, never Docker output or configuration."""
+    operation=getattr(error,'field_notes_operation','Docker command')
+    component=getattr(error,'field_notes_component',None)
+    if component in ('app','gateway'):operation+=' ('+component+')'
+    if isinstance(error,subprocess.TimeoutExpired):return operation+' timed out'
+    code=getattr(error,'returncode',None)
+    code=str(code) if isinstance(code,int) else 'unknown'
+    diagnostic=(getattr(error,'stderr','') or '')
+    if isinstance(diagnostic,bytes):diagnostic=diagnostic.decode(errors='replace')
+    diagnostic=diagnostic.lower()
+    reasons=(('no such image','the pinned runtime image is missing'),
+             ('cannot connect to the docker daemon','the local Docker daemon is unavailable'),
+             ('permission denied','Docker reported a permissions failure'),
+             ('read-only file system','Docker attempted to write a read-only path'),
+             ('no such container','a container disappeared during the operation'),
+             ('port is already allocated','the selected listener port is already allocated'),
+             ('address already in use','the selected listener address/port is already in use'),
+             ('cannot assign requested address','the selected LAN address is unavailable'),
+             ('has active endpoints','the private network still has active endpoints'))
+    reason=next((message for needle,message in reasons if needle in diagnostic),'inspect the local Docker error for this operation')
+    return operation+' failed (exit '+code+'): '+reason
+
+
 class Engine:
     def __init__(self, runner=subprocess.run):
         self.runner=runner
@@ -96,8 +120,16 @@ class Engine:
         # Runtime controls always target the local engine; no context can point
         # uninstall at another machine. Registry credentials remain untouched.
         env={key:value for key,value in os.environ.items() if key not in SELECTORS}
-        return self.runner([DOCKER,'--host=unix:///var/run/docker.sock',*args],check=True,
-                           capture_output=True,text=True,env=env,**kwargs)
+        try:
+            return self.runner([DOCKER,'--host=unix:///var/run/docker.sock',*args],check=True,
+                               capture_output=True,text=True,env=env,**kwargs)
+        except (subprocess.CalledProcessError,subprocess.TimeoutExpired) as error:
+            allowed={('image','inspect'),('image','ls'),('image','rm'),('container','ls'),
+                     ('container','inspect'),('container','stop'),('container','rm'),
+                     ('network','ls'),('network','inspect'),('network','rm')}
+            prefix=tuple(args[:2])
+            error.field_notes_operation='Docker '+(' '.join(prefix) if prefix in allowed else 'compose up' if args and args[0]=='compose' else 'operation')
+            raise
     def read(self,args):
         return json.loads(self.call(args).stdout)
     def objects(self,settings):
@@ -134,22 +166,29 @@ class Engine:
     def image_inventory(self,settings,tags):
         result={}
         for role,tag in tags.items():
-            rows=self.call(['image','ls','--no-trunc','--filter','reference='+tag,'--format','{{.ID}}']).stdout.split()
-            if not rows:continue
-            if len(set(rows))!=1 or rows[0]!=settings['images'][role]:raise ValueError('Image tag was replaced by another build: '+tag)
-            row=self.read(['image','inspect',rows[0]])[0]
-            if row['Config'].get('Labels',{}).get(ROLE)!=role or row['Config']['Labels'].get('org.fieldnotes.runtime')!='1':
+            # Tags can move during a rebuild. Only the inventoried digest can
+            # authorize cleanup; an unrelated replacement tag is never removed.
+            try:row=self.read(['image','inspect',settings['images'][role]])[0]
+            except subprocess.CalledProcessError as error:
+                if 'no such image' in (error.stderr or '').lower():continue
+                raise
+            if row.get('Id')!=settings['images'][role] or row['Config'].get('Labels',{}).get(ROLE)!=role or row['Config']['Labels'].get('org.fieldnotes.runtime')!='1':
                 raise ValueError('Unrecognized Field Notes runtime image')
             result[role]=row
         return result
     def remove_images(self,settings,tags):
-        for role in self.image_inventory(settings,tags):
+        for role,row in self.image_inventory(settings,tags).items():
+            aliases=row.get('RepoTags') or []
+            if tags[role] not in aliases and aliases:continue # Other aliases are not ours.
             users=self.call(['container','ls','--all','--filter','ancestor='+settings['images'][role],'--format','{{.ID}}']).stdout.split()
             if users:raise ValueError('Runtime image is still used by another container; cache retained')
-            self.call(['image','rm',tags[role]])  # no force and no global prune
+            self.call(['image','rm',tags[role] if tags[role] in aliases else settings['images'][role]])  # no force and no global prune
     def verify_images(self,settings):
         for role,image in validate(settings)['images'].items():
-            row=self.read(['image','inspect',image])[0]
+            try:row=self.read(['image','inspect',image])[0]
+            except subprocess.SubprocessError as error:
+                error.field_notes_component=role
+                raise
             if row.get('Id')!=image or row['Config'].get('Labels',{}).get(ROLE)!=role or row['Config']['Labels'].get('org.fieldnotes.runtime')!='1':
                 raise ValueError('Runtime image is not the expected Field Notes component')
     def stop(self,settings,remove=True):

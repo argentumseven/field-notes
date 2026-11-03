@@ -11,8 +11,8 @@ HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('field_notes_removal',HERE/'uninstall-server.py');removal=importlib.util.module_from_spec(spec);spec.loader.exec_module(removal)
 HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py')
 
-def build_from_source(host,record,root=HERE.parent,runner=subprocess.run):
- if record is None or record['phase']!='installed' or record['runtime']!='containers':raise ValueError('Complete the retained installation check before upgrading')
+def build_from_source(host,record,root=HERE.parent,runner=subprocess.run,recover=False):
+ if record is None or record['phase'] not in (('installed','installing') if recover else ('installed',)) or record['runtime']!='containers':raise ValueError('Complete the retained installation check before upgrading')
  installed=verify_android(host.path(record['prefix']+'/downloads'))
  if installed['signing']!='development':raise ValueError('Operator-signed installations need a matching --bundle built with the original signing key')
  env=os.environ.copy();env.setdefault('FIELD_NOTES_TOOLS',str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
@@ -25,19 +25,20 @@ def build_from_source(host,record,root=HERE.parent,runner=subprocess.run):
  runner(['bash','scripts/build/android.sh','debug'],cwd=root,env=env,check=True)
  runner(['bash','scripts/build/server.sh'],cwd=root,env=env,check=True)
  folder=root/('dist/server/linux-'+os.uname().machine)
- preview(record,folder,host) # Verify the signer before any service is stopped.
+ if recover:preview(record,folder,host,recover=True)
+ else:preview(record,folder,host) # Verify the signer before any service is stopped.
  return folder
 
 def wrapper(config):
  return '#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+shlex.quote(config)+' "$@"\n'
 
-def bundle_info(folder,current):
+def bundle_info(folder,current,recover=False):
  folder=pathlib.Path(folder).resolve();release=json.loads((folder/'release.json').read_text())
  if release['schema']!=2 or release['protocol']!=1:raise ValueError('This upgrader supports only compatible schema 2/protocol 1; use a separately reviewed migration')
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6') or version(release['version'])<=version(current):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -52,16 +53,30 @@ def bundle_info(folder,current):
  if actual!=expected:raise ValueError('Offline image archive checksum mismatch')
  return release,info,index
 
-def preview(record,folder,host=None):
- if record is None or record['phase']!='installed' or record['runtime']!='containers' or record['legacy']:raise ValueError('Upgrade requires an installed inventoried container deployment; native/partial installations are not adopted')
+def preview(record,folder,host=None,recover=False):
+ if record is None or record['phase'] not in (('installed','installing') if recover else ('installed',)) or record['runtime']!='containers' or record['legacy']:raise ValueError('Upgrade requires an installed inventoried container deployment; native/partial installations are not adopted')
  current=record['docker']['tags']['app'].split(':')[1]
- release,apk,images=bundle_info(folder,current)
+ release,apk,images=bundle_info(folder,current,recover)
  old=validate(record['docker']['settings'])
  existing=(host.path(record['prefix']) if host else pathlib.Path(record['prefix']))/'downloads'
  if existing.exists() and verify_android(existing)['signer_sha256']!=apk['signer_sha256']:
   raise ValueError('APK signer changed. Rebuild with the existing stable signer; do not uninstall or reset phone pairing')
+ if recover:
+  if host is None:raise ValueError('Runtime recovery needs the existing host inventory')
+  required={'field-notes.service','field-notes-peers.service','field-notes-peers.timer','field-notes-certificates.service','field-notes-certificates.timer'}
+  if not required.issubset(record['unit_hashes']):raise ValueError('Runtime recovery requires a complete installed service inventory')
+  installed=verify_android(existing,current)
+  database=host.path(record['data']+'/field-notes.sqlite3')
+  if not database.is_file():raise ValueError('Existing Field Notes database is missing; recovery will not initialize an empty workspace')
+  with database.open('rb') as file:
+   if file.read(16)!=b'SQLite format 3\x00':raise ValueError('Existing Field Notes database is invalid; recovery will not initialize an empty workspace')
+  if release['version']==current:
+   if apk['version_code']!=installed['version_code']:raise ValueError('Same-version recovery cannot change the Android version code')
+   previous=host.path(record['prefix']+'/field-notes-server');candidate=pathlib.Path(folder)/'field-notes-server'
+   with previous.open('rb') as a,candidate.open('rb') as b:
+    if hashlib.file_digest(a,'sha256').digest()!=hashlib.file_digest(b,'sha256').digest():raise ValueError('Same-version recovery requires the identical server executable; use a newer compatible bundle')
  new=copy.deepcopy(old);new['images']={role:entry['id'] for role,entry in images.items()}
- return dict(from_version=current,to_version=release['version'],apk_version_code=apk['version_code'],apk_signer=apk['signer_sha256'],apk_sha256=apk['sha256'],preserve=['database and queued server work','users/password hashes','CA and recovery master key','WireGuard hub key, phone peers and PSKs','management/UDP/API ports and network settings'],management=f"https://{old['lan_ip']}:{old['web_port']}",admin_browser_check_required=ipaddress.ip_address(old['lan_ip']) not in ipaddress.ip_network(old['lan_prefix']),settings=new,tags={role:entry['tag'] for role,entry in images.items()})
+ return dict(from_version=current,to_version=release['version'],apk_version_code=apk['version_code'],apk_signer=apk['signer_sha256'],apk_sha256=apk['sha256'],recover_runtime=recover,preserve=['database and queued server work','users/password hashes','CA and recovery master key','WireGuard hub key, phone peers and PSKs','management/UDP/API ports and network settings'],management=f"https://{old['lan_ip']}:{old['web_port']}",admin_browser_check_required=ipaddress.ip_address(old['lan_ip']) not in ipaddress.ip_network(old['lan_prefix']),settings=new,tags={role:entry['tag'] for role,entry in images.items()})
 
 def write(path,data,mode=0o600):
  with tempfile.NamedTemporaryFile(dir=path.parent,prefix='.upgrade-',delete=False) as file:
@@ -91,13 +106,14 @@ def readiness(settings,apk,host):
   except (OSError,ValueError):time.sleep(.2)
  raise ValueError('New TLS service/APK did not become ready')
 
-def apply(host,record,folder,engine=None,health=readiness):
- folder=pathlib.Path(folder).resolve();plan=preview(record,folder,host);engine=engine or Engine(runner=host.runner)
+def apply(host,record,folder,engine=None,health=readiness,recover=False):
+ folder=pathlib.Path(folder).resolve();plan=preview(record,folder,host,recover);engine=engine or Engine(runner=host.runner)
  removal.preflight(host,record,False);old=record['docker']['settings'];engine.objects(old)
  config=host.path(record['config']);prefix=host.path(record['prefix'])
  master=config/'master.key';meta=master.stat()
  if master.is_symlink() or meta.st_uid not in (host.owner,record['uid']) or meta.st_mode&0o777 not in (0o600,0o640):raise ValueError('Recovery key ownership/mode requires review; never replace the key')
- required=sum(p.stat().st_size for p in prefix.rglob('*') if p.is_file())+sum(p.stat().st_size for p in host.path(record['data']).rglob('*') if p.is_file())+256*1024*1024
+ data_bytes=sum(p.stat().st_size for p in host.path(record['data']).rglob('*') if p.is_file())
+ required=sum(p.stat().st_size for p in prefix.rglob('*') if p.is_file())+data_bytes*(2 if recover else 1)+256*1024*1024
  if shutil.disk_usage(config).free<required:raise ValueError('Insufficient room for the private program snapshot and encrypted backup')
  backup=config/('upgrade-'+uuid.uuid4().hex);backup.mkdir(mode=0o700)
  for name in ('deployment.json','compose.json',RECORD):shutil.copy2(config/name,backup/name)
@@ -107,7 +123,9 @@ def apply(host,record,folder,engine=None,health=readiness):
  stage=pathlib.Path(tempfile.mkdtemp(prefix='.field-notes-upgrade-',dir=prefix.parent));stage.chmod(0o755)
  try:
   shutil.copy2(folder/'field-notes-server',stage/'field-notes-server');(stage/'field-notes-server').chmod(0o755)
-  for name in HELPERS:shutil.copy2(folder/'scripts'/name,stage/name);(stage/name).chmod(0o755)
+  for name in HELPERS:
+   source=HERE/name if recover and name in ('upgrade-server.py','container-runtime.py','container_deployment.py') else folder/'scripts'/name
+   shutil.copy2(source,stage/name);(stage/name).chmod(0o755)
   (stage/'uninstall-server.sh').write_text(uninstall_wrapper(record['config']));(stage/'uninstall-server.sh').chmod(0o755)
   (stage/'upgrade-server.sh').write_text(wrapper(record['config']));(stage/'upgrade-server.sh').chmod(0o755)
   shutil.copytree(folder/'downloads',stage/'downloads')
@@ -115,10 +133,18 @@ def apply(host,record,folder,engine=None,health=readiness):
    host.command(['/usr/bin/systemctl','stop','field-notes-peers.timer','field-notes-peers.service','field-notes-certificates.timer','field-notes-certificates.service'])
    host.command(['/usr/bin/systemctl','stop','field-notes'])
    engine.stop(old) # Recheck ownership, namespace membership and completed removal.
+   if recover:
+    # Keep quiesced encrypted database/WAL bytes before opening them with the
+    # verified target. This snapshot is retained, never restored over new writes.
+    host.check_tree(record['data'])
+    if any(p.is_symlink() for p in host.path(record['data']).rglob('*')):raise ValueError('Review symlinks in the data directory before runtime recovery')
+    shutil.copytree(host.path(record['data']),backup/'pre-recovery-state',symlinks=True)
+    (backup/'pre-recovery-state').chmod(0o700)
    # Repair the earlier owner/group mode bug without generating/replacing any key.
    os.chown(master,record['uid'],record['gid']);master.chmod(0o600)
    destination=backup/'data';destination.mkdir(mode=0o700);os.chown(destination,record['uid'],record['gid'])
-   engine.call(['run','--rm','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges:true','--user',f"{record['uid']}:{record['gid']}",'--mount',f"type=bind,src={host.path(record['data'])},dst=/state",'--mount',f'type=bind,src={master},dst=/key,readonly','--mount',f'type=bind,src={destination},dst=/backup',old['images']['app'],'backup','--data','/state','--key-file','/key','--file','/backup/workspace.backup'],timeout=180)
+   backup_image=plan['settings']['images']['app'] if recover else old['images']['app']
+   engine.call(['run','--rm','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges:true','--user',f"{record['uid']}:{record['gid']}",'--mount',f"type=bind,src={host.path(record['data'])},dst=/state",'--mount',f'type=bind,src={master},dst=/key,readonly','--mount',f'type=bind,src={destination},dst=/backup',backup_image,'backup','--data','/state','--key-file','/key','--file','/backup/workspace.backup'],timeout=180)
    saved=destination/'workspace.backup'
    if saved.is_symlink() or not saved.is_file() or {p.name for p in destination.iterdir()}!={'workspace.backup'}:raise ValueError('Encrypted pre-upgrade backup was not produced safely')
    fd=os.open(saved,os.O_RDONLY|os.O_NOFOLLOW)
@@ -130,8 +156,10 @@ def apply(host,record,folder,engine=None,health=readiness):
    displaced=backup/'displaced-programs';os.replace(prefix,displaced);os.replace(stage,prefix)
    settings=plan['settings'];write(config/'deployment.json',json.dumps(settings).encode());write(config/'compose.json',json.dumps(compose(settings)).encode())
    updated=copy.deepcopy(record);updated['docker']={'settings':settings,'tags':plan['tags']};host.write_record(updated)
+   host.command(['/usr/bin/systemctl','reset-failed','field-notes.service'])
    host.command(['/usr/bin/systemctl','start','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
    health(settings,verify_android(folder/'downloads',plan['to_version']),host)
+   if recover and updated['phase']=='installing':updated['phase']='installed';host.write_record(updated)
    write(backup/'checkpoint.json',json.dumps({'installation':record['id'],'from':plan['from_version'],'to':plan['to_version'],'phase':'completed'}).encode())
    # Keep old images available for explicit rollback. No shared cache is pruned.
    return {**plan,'backup':str(backup),'upgraded':True}
@@ -150,14 +178,14 @@ def apply(host,record,folder,engine=None,health=readiness):
   if stage.exists():shutil.rmtree(stage)
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next bundle using the existing development APK signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next bundle using the existing development APK signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Recover a stopped runtime using a verified compatible bundle and retained data; never initializes a new workspace');args=parser.parse_args()
  host=Host();record=load(host,args.config)
  if args.build_from_source:
   if not args.apply or os.geteuid()!=0:raise ValueError('--build-from-source requires --apply as root; it never creates a fresh installation')
-  if record is None or record['phase']!='installed' or record['runtime']!='containers':raise ValueError('Complete container-runtime.py check --complete-installation before upgrading')
+  if record is None or record['phase'] not in (('installed','installing') if args.recover_runtime else ('installed',)) or record['runtime']!='containers':raise ValueError('Complete container-runtime.py check --complete-installation before upgrading')
   removal.preflight(host,record,False)
-  args.bundle=str(build_from_source(host,record))
- print(json.dumps(preview(record,args.bundle),indent=2))
+  args.bundle=str(build_from_source(host,record,recover=True) if args.recover_runtime else build_from_source(host,record))
+ print(json.dumps(preview(record,args.bundle,host,args.recover_runtime),indent=2))
  removal.preflight(host,record,False)
  if not args.apply:return
  if os.geteuid()!=0:raise ValueError('--apply requires root')
@@ -165,7 +193,7 @@ def main():
  try:
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);current=load(host,args.config)
   if current!=record:raise ValueError('Installation changed during upgrade preparation')
-  print(json.dumps(apply(host,current,args.bundle),indent=2))
+  print(json.dumps(apply(host,current,args.bundle,recover=args.recover_runtime),indent=2))
  finally:os.close(lock)
 
 if __name__=='__main__':

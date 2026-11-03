@@ -34,6 +34,52 @@ class FakeEngine:
  def stop(self,*a):self.objects(a[0]);self.calls.append(['stop-owned'])
 
 class Upgrade(unittest.TestCase):
+ def recovery_ready(self,phase='installed'):
+  import shutil
+  installed=self.host.path(self.host.record['prefix']+'/downloads');shutil.copytree(self.folder/'downloads',installed)
+  info=json.loads((installed/'android.json').read_text());info.update(version='0.3.0',version_code=3);(installed/'android.json').write_text(json.dumps(info))
+  database=self.host.path(self.host.record['data']+'/field-notes.sqlite3');database.write_bytes(b'SQLite format 3\x00ENCRYPTED WORKSPACE FIXTURE')
+  self.host.record['phase']=phase;self.host.write_record(self.host.record)
+  return database
+ def execute_recovery(self,health=lambda *a:None):
+  with mock.patch.object(upgrade.removal,'preflight',side_effect=self.preflight),mock.patch.object(upgrade.os,'chown'):
+   return upgrade.apply(self.host,self.host.record,self.folder,self.engine,health,recover=True)
+ def test_recovery_uses_verified_target_image_when_old_image_is_unavailable_and_retains_raw_snapshot(self):
+  database=self.recovery_ready('installing');original=database.read_bytes();key=self.host.path(self.host.record['config']+'/master.key').read_bytes()
+  result=self.execute_recovery();backup=pathlib.Path(result['backup'])
+  command=next(c for c in self.engine.calls if c[0]=='run')
+  self.assertEqual(command[command.index('backup')-1],result['settings']['images']['app'])
+  self.assertIn('--network=none',command);self.assertIn('--read-only',command)
+  self.assertEqual((backup/'pre-recovery-state/field-notes.sqlite3').read_bytes(),original)
+  self.assertEqual(database.read_bytes(),original);self.assertEqual(self.host.path(self.host.record['config']+'/master.key').read_bytes(),key)
+  self.assertEqual(installation.load(self.host)['phase'],'installed');self.assertEqual(self.host.bungee.read_text(),'BUNGEE MUST SURVIVE\n')
+ def test_same_version_recovery_requires_identical_server_and_unchanged_android_code(self):
+  self.recovery_ready();release=self.folder/'release.json';value=json.loads(release.read_text());value.update(version='0.3.0',android_version_code=3);release.write_text(json.dumps(value))
+  index=self.folder/'images.json';value=json.loads(index.read_text())
+  for role in value:value[role]['tag']='field-notes-'+role+':0.3.0'
+  index.write_text(json.dumps(value))
+  info=self.folder/'downloads/android.json';value=json.loads(info.read_text());value.update(version='0.3.0',version_code=3);info.write_text(json.dumps(value))
+  with self.assertRaisesRegex(ValueError,'same-version replacements'):upgrade.preview(self.host.record,self.folder,self.host)
+  with self.assertRaisesRegex(ValueError,'identical server executable'):upgrade.preview(self.host.record,self.folder,self.host,recover=True)
+  (self.folder/'field-notes-server').write_bytes(self.host.path(self.host.record['prefix']+'/field-notes-server').read_bytes())
+  self.assertTrue(upgrade.preview(self.host.record,self.folder,self.host,recover=True)['recover_runtime'])
+  value=json.loads(info.read_text());value['version_code']=4;info.write_text(json.dumps(value));value=json.loads(release.read_text());value['android_version_code']=4;release.write_text(json.dumps(value))
+  with self.assertRaisesRegex(ValueError,'cannot change the Android version code'):upgrade.preview(self.host.record,self.folder,self.host,recover=True)
+ def test_recovery_refuses_empty_workspace_incomplete_inventory_and_different_signer_before_stop(self):
+  database=self.recovery_ready();database.unlink()
+  with self.assertRaisesRegex(ValueError,'database is missing'):self.execute_recovery()
+  self.assertFalse(self.engine.calls)
+  database.write_bytes(b'SQLite format 3\x00RETAINED');self.host.record['unit_hashes'].pop('field-notes-peers.timer')
+  with self.assertRaisesRegex(ValueError,'complete installed service inventory'):self.execute_recovery()
+  self.assertFalse(self.engine.calls)
+ def test_recovery_rollback_keeps_original_snapshot_and_any_accepted_database_writes(self):
+  database=self.recovery_ready('installing');original=database.read_bytes()
+  def fail(*args):database.write_bytes(original+b'ACCEPTED AFTER START');raise ValueError('injected failed readiness')
+  with self.assertRaisesRegex(ValueError,'previous programs/settings were restored'):self.execute_recovery(fail)
+  self.assertEqual(database.read_bytes(),original+b'ACCEPTED AFTER START')
+  snapshots=list(self.host.path(self.host.record['config']).glob('upgrade-*/pre-recovery-state/field-notes.sqlite3'))
+  self.assertEqual(len(snapshots),1);self.assertEqual(snapshots[0].read_bytes(),original)
+  self.assertEqual(installation.load(self.host)['phase'],'installing')
  def test_source_build_refuses_missing_original_signer_before_building(self):
   installed=self.host.path(self.host.record['prefix']+'/downloads');installed.mkdir();artifacts.AndroidArtifact().bundle(installed)
   with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(pathlib.Path(self.tmp.name)/'tools')}):

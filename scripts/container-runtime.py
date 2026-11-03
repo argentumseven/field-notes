@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 sys.dont_write_bytecode=True
-from container_deployment import Engine, validate
+from container_deployment import Engine, validate, docker_failure
 from server_installation import Host, validate as validate_record, digest, TIMERS
 
 
@@ -74,7 +74,11 @@ def main():
         except Exception:pass
         # Keep the failed container's logs inspectable until the next start.
         # Stop both members so a failed app never leaves its gateway alone.
-        engine.stop(settings,remove=False)
+        try:engine.stop(settings,remove=False)
+        except subprocess.SubprocessError as cleanup:
+            print('Additional cleanup failure: '+docker_failure(cleanup),file=sys.stderr,flush=True)
+        except Exception:
+            print('Additional cleanup failed; inspect the owned runtime resources.',file=sys.stderr,flush=True)
         raise
     else:engine.stop(settings)
 
@@ -82,4 +86,4 @@ def main():
 if __name__=='__main__':
     try:main()
     except (OSError,ValueError) as error:raise SystemExit('Field Notes runtime stopped: '+str(error)) from None
-    except subprocess.SubprocessError:raise SystemExit('Field Notes runtime stopped. Inspect: docker --host=unix:///var/run/docker.sock logs --tail 40 field-notes-app') from None
+    except subprocess.SubprocessError as error:raise SystemExit('Field Notes runtime stopped: '+docker_failure(error)+'. Inspect: docker --host=unix:///var/run/docker.sock logs --tail 40 field-notes-app') from None

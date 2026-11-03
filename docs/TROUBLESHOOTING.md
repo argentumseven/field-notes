@@ -157,6 +157,12 @@ service is unavailable. Keep the same signer for future updates. See
 
 ## Inspect a different startup failure
 
+If Docker reports **No such image** for an installed SHA-256 ID, see
+[runtime recovery](RUNTIME-RECOVERY.md). A readiness check followed by `&& upgrade`
+will stop before upgrading when the runtime is already unavailable. Recovery
+uses the verified target bundle to make its backup and preserves the existing
+installation's identities and data.
+
 ```bash
 systemctl --no-pager --full status field-notes
 journalctl -u field-notes -n 40 --no-pager

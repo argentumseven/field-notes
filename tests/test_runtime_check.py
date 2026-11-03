@@ -6,6 +6,17 @@ from test_containers import settings
 spec=importlib.util.spec_from_file_location('runtime_check',ROOT/'scripts/container-runtime.py');runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
 
 class RuntimeCheck(unittest.TestCase):
+ def test_cleanup_failure_preserves_the_original_failed_start(self):
+  import contextlib,io
+  with tempfile.TemporaryDirectory() as root:
+   c=settings();c['runtime']=root+'/runtime'
+   first=subprocess.CalledProcessError(1,['docker','image','inspect'],stderr='No such image: private-fixture-output')
+   second=subprocess.CalledProcessError(2,['docker','container','stop'],stderr='private-fixture-output')
+   engine=mock.Mock();engine.start.side_effect=first;engine.diagnostics.return_value='app: missing';engine.stop.side_effect=second
+   host=mock.Mock();host.trusted.return_value=json.dumps(c).encode();output=io.StringIO()
+   with mock.patch.object(runtime,'Host',return_value=host),mock.patch.object(runtime,'Engine',return_value=engine),mock.patch.object(runtime.sys,'argv',['container-runtime.py','run']),mock.patch('os.chown'),contextlib.redirect_stderr(output):
+    with self.assertRaises(subprocess.CalledProcessError) as caught:runtime.main()
+   self.assertIs(caught.exception,first);self.assertNotIn('private-fixture-output',output.getvalue())
  def test_failed_readiness_retains_phase_and_success_can_explicitly_complete_it(self):
   with tempfile.TemporaryDirectory() as root:
    host=Host(root=root,owner=os.getuid(),runner=lambda *args,**kw:types.SimpleNamespace(stdout='active'))

@@ -8,7 +8,7 @@ from unittest import mock
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from container_deployment import Engine,compose,validate,LABEL,ROLE
+from container_deployment import Engine,compose,validate,LABEL,ROLE,docker_failure
 spec=importlib.util.spec_from_file_location('gateway_rules',ROOT/'deploy/containers/gateway.py')
 gateway=importlib.util.module_from_spec(spec);spec.loader.exec_module(gateway)
 
@@ -55,7 +55,8 @@ class DockerFixture(Engine):
             output=self.settings['images'][role] if self.tags[role] else ''
         elif args[:2]==['image','inspect']:
             role='app' if args[2]==self.settings['images']['app'] else 'gateway'
-            output=json.dumps([{'Id':self.settings['images'][role],'Config':{'Labels':{ROLE:role,'org.fieldnotes.runtime':'1'}}}])
+            if not self.tags[role]:raise __import__('subprocess').CalledProcessError(1,argv,stderr='No such image: '+args[2])
+            output=json.dumps([{'Id':self.settings['images'][role],'RepoTags':['field-notes-'+role+':0.3.0'],'Config':{'Labels':{ROLE:role,'org.fieldnotes.runtime':'1'}}}])
         elif args[:2]==['image','rm']:
             self.tags['gateway' if 'gateway' in args[2] else 'app']=False;output=''
         else:raise AssertionError(args)
@@ -63,6 +64,38 @@ class DockerFixture(Engine):
 
 
 class Containers(unittest.TestCase):
+    def test_missing_pinned_image_reports_role_and_operation_without_docker_secrets(self):
+        import subprocess
+        def fail(argv,**kwargs):raise subprocess.CalledProcessError(1,argv,stderr='No such image: secret-fixture-that-must-not-be-logged')
+        engine=Engine(runner=fail)
+        with self.assertRaises(subprocess.CalledProcessError) as error:engine.verify_images(settings())
+        message=docker_failure(error.exception)
+        self.assertIn('image inspect (app)',message);self.assertIn('pinned runtime image is missing',message)
+        self.assertNotIn('secret-fixture',message)
+
+    def test_timeout_and_unknown_docker_errors_do_not_echo_argv_or_output(self):
+        import subprocess
+        for failure in (subprocess.TimeoutExpired(['secret-command'],1,stderr='secret-output'),subprocess.CalledProcessError(2,['secret-command'],stderr='secret-output')):
+            text=docker_failure(failure)
+            self.assertNotIn('secret',text)
+
+    def test_moved_tags_never_authorize_deleting_another_image_and_dangling_pins_can_be_cleaned(self):
+        import subprocess,types
+        c=settings();calls=[];aliases=[]
+        def runner(argv,**kwargs):
+            args=argv[2:];calls.append(args)
+            if args[:2]==['image','inspect']:
+                return types.SimpleNamespace(stdout=json.dumps([{'Id':c['images']['app'],'RepoTags':aliases,'Config':{'Labels':{ROLE:'app','org.fieldnotes.runtime':'1'}}}]))
+            return types.SimpleNamespace(stdout='')
+        engine=Engine(runner=runner)
+        engine.remove_images(c,{'app':'field-notes-app:0.3.0'})
+        self.assertIn(['image','rm',c['images']['app']],calls)
+        calls.clear();aliases.append('another-owner:kept')
+        engine.remove_images(c,{'app':'field-notes-app:0.3.0'})
+        self.assertFalse(any(call[:2]==['image','rm'] for call in calls))
+        def missing(argv,**kwargs):raise subprocess.CalledProcessError(1,argv,stderr='No such image: old-pin')
+        self.assertEqual(Engine(runner=missing).image_inventory(c,{'app':'field-notes-app:0.3.0'}),{})
+
     def test_spec_has_only_two_ingress_ports_and_no_app_privileges_or_host_secrets(self):
         value=compose(settings());app=value['services']['app'];gateway_=value['services']['gateway']
         self.assertEqual(gateway_['ports'],['192.168.1.10:10443:10443/tcp','0.0.0.0:43127:43127/udp'])
