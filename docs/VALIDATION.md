@@ -58,6 +58,22 @@ Executed checks:
   full private APK transfer, normalized image/task writes, nonroot/read-only
   runtime, blocked app-UID outbound/Docker DNS, denied management/SSH/LAN/peer
   access, retained password/CA/master material and scoped resource removal.
+- Browser gallery and 29 Android gallery captures now show the current design.
+  Android's completed first-half captures were retained while the guarded
+  library/light continuation passed, then all 28 distinct app views and the
+  actual launcher icon were collected. Ambiguous name/preset and price/switch
+  selectors in the fixture were narrowed; no product behavior was relaxed.
+  The local-clock, reminder editor and actual dynamic month-widget captures
+  come from the separate passing device checks above.
+- Refreshed the actual Upcoming launcher widget, Android notification shade
+  and real open-keyboard enrollment examples. All three targeted checks pass.
+  Cold software-emulated Compose layout exceeded the runner's fixed 45-second
+  synchronous launch budget, including an input timeout in the older fixture.
+  The external-host checks now launch normal app tasks and wait for the actual
+  visible window before requesting interaction. Product timing/protection is
+  unchanged. The notification check exercises real cached alarms, audible/private
+  channels, receipt deduplication, the delayed profile-test alert and stopping
+  the foreground service despite a failed preference write.
 
 During this work the user's Debian manager failed because its pinned image ID
 was missing. Recovery with its newer saved bundle was initially blocked by the
@@ -69,9 +85,19 @@ again. That restored its older built UI; it did not deploy this redesign.
 See [runtime recovery](RUNTIME-RECOVERY.md), [calendar](CALENDAR.md),
 [reminders](REMINDERS.md) and [lists](LISTS.md).
 
-Public release verification is recorded after publication; a local artifact or
-an emulator result alone does not establish a published APK or a physical
-GrapheneOS result. The previous delivery records follow for comparison.
+The **v0.4.0** public release was built from clean tagged source
+`9afc5eba5c5fccb0b635bf8f833f976d2029e783`, ARM64 release variant/code 10,
+with the retained public signing certificate.
+[Publication run 41647411814](https://github.com/argentumseven/field-notes/actions/runs/41647411814)
+succeeded. All four public assets were downloaded and compared byte for byte
+with the locally verified package. The README's latest-download APK also
+matched; the downloaded APK passed signature, manifest/native and alignment
+inspection. SHA-256:
+`8f6c7c3cf71a48d1c95f6326eef8e2e499061dfbb491f2d734710621a7adae3a`.
+The final matching offline server bundle passed the complete real Docker,
+WireGuard and actual-Go TLS fixture again with these published APK bytes.
+These are published artifact checks, not physical GrapheneOS results. The
+previous delivery records follow for comparison.
 
 ## 0.3.6 tunnel enrollment, keyboard and disconnected work
 

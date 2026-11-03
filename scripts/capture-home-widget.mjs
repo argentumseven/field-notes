@@ -1,7 +1,8 @@
 // Actual launcher hosting and Android delivery, only on the disposable AVD.
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {writeFile,mkdir} from 'node:fs/promises';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 const run=promisify(execFile),root=process.env.FIELD_NOTES_TOOLS||'/workspace/.cache/field-notes';
 const adb=join(root,'android-sdk/platform-tools/adb'),serial=process.env.FIELD_NOTES_EMULATOR||'emulator-5554';
@@ -15,12 +16,20 @@ async function instrument(name,extra=[]){
  await writeFile('dist/android-test-results/'+name+'.txt',output);
  if(!/OK \(1 test\)/.test(output)||output.includes('FAILURES!!!'))throw Error(output);
 }
+async function installCurrent(path,pkg){
+ const wanted=createHash('sha256').update(await readFile(path)).digest('hex');
+ const installed=(await call(['shell','pm','path',pkg])).trim().match(/^package:(\/data\/app\/[A-Za-z0-9_~+=./-]+\/base\.apk)$/);
+ const actual=installed?(await call(['shell','sha256sum',installed[1]])).split(/\s+/)[0]:'';
+ // Reinstall only changed APK bytes. Replacing an identical APK invalidates
+ // expensive AOT compilation on the software-only documentation emulator.
+ if(actual!==wanted)await call(['install','-r',path]);
+}
 try{
  await call(['shell','settings','put','system','screen_off_timeout','2147483647']);
  await call(['shell','wm','size','540x1200']);await call(['shell','wm','density','210']);
  await call(['shell','input','keyevent','KEYCODE_WAKEUP']);await call(['shell','wm','dismiss-keyguard']);
- await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
- await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
+ await installCurrent('dist/android-emulator/FieldNotes-debug.apk','org.fieldnotes.app');
+ await installCurrent('dist/android-emulator/FieldNotes-debug-androidTest.apk','org.fieldnotes.app.test');
  await call(['shell','pm','clear','org.fieldnotes.app']);
  // Clear only this disposable AVD's launcher so repeated runs don't accumulate
  // old synthetic widgets on different pages.

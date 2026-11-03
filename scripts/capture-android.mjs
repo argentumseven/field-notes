@@ -15,6 +15,7 @@ const serial=process.env.FIELD_NOTES_EMULATOR||'emulator-5554';
 const launcherOnly=process.argv.includes('--launcher-only');
 const detailsOnly=process.argv.includes('--details-only');
 const widgetOnly=process.argv.includes('--widget-preview-only');
+const resumeLibrary=process.argv.includes('--resume-library');
 if(!serial.startsWith('emulator-'))throw Error('Only a disposable emulator is supported.');
 async function call(args,timeout=120000){return(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;}
 const avd=(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()||(await call(['shell','getprop','ro.kernel.qemu.avd_name'])).trim();
@@ -48,7 +49,11 @@ async function launcher(){
 if(launcherOnly){try{await launcher();}finally{await call(['shell','wm','size','reset']);await call(['shell','wm','density','reset']);await restoreTimeout();}process.exit(0);}
 await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
 await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
-await call(['shell','pm','clear','org.fieldnotes.app']);
+if(!resumeLibrary)await call(['shell','pm','clear','org.fieldnotes.app']);
+else {
+ const saved=(await call(['shell','run-as','org.fieldnotes.app','ls','files/gallery'])).trim().split(/\s+/);
+ if(!['01-enroll.png','02-phone-confirmation.png','03-focus.png','16-collections.png'].every(name=>saved.includes(name)))throw Error('Resume requires existing synthetic captures from this disposable fixture.');
+}
 for(const pkg of ['org.fieldnotes.app','org.fieldnotes.app.test']){
  const result=await call(['shell','cmd','package','compile','-m','speed',pkg],360000);if(!result.includes('Success'))throw Error('Emulator AOT preparation failed.');
 }
@@ -76,7 +81,7 @@ try{
   const child=spawn(adb,['-s',serial,'shell','-T',"run-as org.fieldnotes.app sh -c 'cat > files/gallery-fixture.json'"],{stdio:['pipe','ignore','pipe']});
   let error='';child.stderr.on('data',b=>error+=b);child.on('error',reject);child.on('close',code=>code===0?resolve():reject(Error('Writing the test fixture failed: '+error)));child.stdin.end(uiFixture);
  });
- for(const mode of (widgetOnly?['widget-preview']:detailsOnly?['details']:['dark','light'])){
+ for(const mode of (widgetOnly?['widget-preview']:detailsOnly?['details']:resumeLibrary?['library','light']:['dark','light'])){
   if(mode==='light')await call(['shell','cmd','uimode','night','no']);
   await call(['shell','input','keyevent','KEYCODE_WAKEUP']);
   await call(['shell','wm','dismiss-keyguard']);

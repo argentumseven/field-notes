@@ -4,7 +4,6 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityNodeInfo
-import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.*
 import kotlinx.datetime.*
@@ -53,8 +52,16 @@ class HomeWidgetDeviceTest {
         // The dedicated script captures and clears this synthetic fixture after
         // instrumentation exits. Do not replace the launcher's real host with
         // an in-activity RemoteViews preview.
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.onActivity { assertTrue("Launcher must support standard widget pinning",UpcomingWidget.pin(it)) }
+        // Use the launcher's normal task. ActivityScenario's synthetic task
+        // lifecycle can time out when handing focus to the external host.
+        app.startActivity(android.content.Intent(app,MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        // A cold software-emulated Compose frame can exceed the runner's fixed
+        // 45-second startActivitySync limit. Wait for the actual visible window.
+        waitFor { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()==app.packageName }
+        instrumentation.runOnMainSync {
+            val activity=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<MainActivity>().single()
+            assertTrue("Launcher must support standard widget pinning",UpcomingWidget.pin(activity))
+        }
             waitFor { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()=="com.android.launcher3" && nodes("Add").any { it.isClickable||it.parent?.isClickable==true } }
             val choices=nodes("Add")
             val button=choices.firstOrNull { it.className?.toString()?.contains("Button")==true }
@@ -64,6 +71,5 @@ class HomeWidgetDeviceTest {
             waitFor { manager.getAppWidgetIds(ComponentName(app,UpcomingWidget::class.java)).isNotEmpty() }
             UpcomingWidget.refresh(app)
             assertTrue(instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
-        }
     }
 }

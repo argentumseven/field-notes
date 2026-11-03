@@ -8,6 +8,8 @@ the AOSP home-screen launcher through Android's normal pin confirmation.
 Screenshots do not prove live enrollment, home firewall isolation, camera optics,
 GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
 capture protection enabled. Test invitations expire and their fixture is deleted.
+The focused ten-AM examples and browser use America/New_York; the overview
+emulator gallery uses UTC. Each view displays its device's local clock.
 
 The enrollment captures show the PC phone-key form, compact key-bound
 PNG invitation, Android public-key screen and real open keyboard. Rendered QR
@@ -59,6 +61,10 @@ Choose General, Groceries, Online shopping or Custom; customize visible fields
 without erasing hidden values. Clear checked items retains unchecked work and
 uses revision checks against remote edits. Previews use attached images only.
 See [list behavior and offline deletion](LISTS.md).
+
+| Android list fields | Rolling groceries | Add an item |
+| --- | --- | --- |
+| <img src="screenshots/android/34-list-fields.png" width="250" alt="Online shopping preset with optional price"> | <img src="screenshots/android/35-grocery-list.png" width="250" alt="Rolling groceries with item activity"> | <img src="screenshots/android/36-list-item.png" width="250" alt="One full item form using the list's selected fields"> |
 
 ## Tasks, assignments and handoffs
 
@@ -184,9 +190,9 @@ attempt. Reset and new-key generation are separate explicit choices.
 | --- | --- | --- |
 | <img src="screenshots/android/06-new-event.png" width="250" alt="Android event editor"> | <img src="screenshots/android/07-task-planning.png" width="250" alt="Task notes and optional planning fields"> | <img src="screenshots/android/08-comments-attachments.png" width="250" alt="Task attachments and comments"> |
 
-| Widget privacy settings | Actual RemoteViews renderer | Paper theme |
+| Widget privacy settings | Actual RemoteViews renderer | Light theme |
 | --- | --- | --- |
-| <img src="screenshots/android/09-settings-widgets.png" width="250" alt="Settings including widget title opt-in"> | <img src="screenshots/android/11-widget.png" width="250" alt="Private default and title-enabled widget rendering"> | <img src="screenshots/android/10-focus-paper.png" width="250" alt="Android paper theme"> |
+| <img src="screenshots/android/09-settings-widgets.png" width="250" alt="Settings including widget title opt-in"> | <img src="screenshots/android/11-widget.png" width="250" alt="Private default and title-enabled widget rendering"> | <img src="screenshots/android/10-focus-paper.png" width="250" alt="Android light theme"> |
 
 | Actual home-screen Upcoming widget | Android notification shade |
 | --- | --- |
@@ -251,6 +257,7 @@ bash scripts/build/android-emulator.sh
 # Only on the disposable field-notes-test AVD:
 node scripts/capture-android.mjs
 node scripts/capture-home-widget.mjs
+node scripts/capture-enrollment-keyboard.mjs
 node scripts/capture-calendar.mjs
 # Refresh only settings/help/renderer after a settings change:
 node scripts/capture-android.mjs --details-only

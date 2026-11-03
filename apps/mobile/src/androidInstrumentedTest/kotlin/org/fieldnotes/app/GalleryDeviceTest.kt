@@ -180,6 +180,30 @@ class GalleryDeviceTest {
                         shot(if(ready)"28-update-ready" else "27-update-available")
                     }
                 }
+                fun libraryWalkthrough() {
+                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-lists").performClick(); awaitText("Groceries"); shot("16-collections")
+                    // Names can equal preset labels. Select the clickable card;
+                    // the price checkbox is distinct from the rolling switch.
+                    compose.onNode(hasClickAction() and hasText("Groceries")).performClick()
+                    text("List settings").performClick()
+                    text("Online shopping").performScrollTo().performClick()
+                    field("List name").performScrollTo().performTextReplacement("Home purchases")
+                    compose.onNode(isToggleable() and hasAnySibling(hasText("Include a price field")) and SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role,androidx.compose.ui.semantics.Role.Checkbox)).performScrollTo().performClick()
+                    shot("34-list-fields"); text("Cancel").performClick(); shot("35-grocery-list")
+                    compose.onNodeWithContentDescription("Add").performClick(); awaitText("New item"); shot("36-list-item"); text("Close").performClick()
+                    compose.onNodeWithContentDescription("Browse workspace").performClick()
+                    if(compose.onAllNodesWithTag("drawer-assignments").fetchSemanticsNodes().isEmpty())compose.onNodeWithTag("group-task views").performClick()
+                    compose.onNodeWithTag("drawer-assignments").performClick(); awaitText("Find assigned work"); shot("18-assignments")
+                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performClick(); shot("19-my-tasks")
+                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
+                    compose.onNodeWithContentDescription("Add").performClick(); awaitText("New task"); shot("21-new-task"); text("Cancel").performClick()
+                    focus(); updatePreview(); widgetPreview()
+                }
+                if(args.getString("galleryMode")=="library") {
+                    transport.snapshot=seed
+                    runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }
+                    awaitText("Calendar"); libraryWalkthrough(); return
+                }
                 if (args.getString("galleryMode") == "widget-preview") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; widgetPreview(); return }
                 if (args.getString("galleryMode") == "details") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; awaitText("Calendar"); focus(); compose.onNodeWithTag("nav-calendar").assertExists(); widgetSettings(); widgetPreview(); return }
                 if (args.getString("galleryMode") == "light") { focus(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
@@ -207,23 +231,7 @@ class GalleryDeviceTest {
                 compose.onNodeWithTag("drawer-notes").performClick(); awaitText("Household reference"); shot("13-notes")
                 text("Household reference").performClick(); awaitText("Shared note"); shot("14-shared-note"); compose.onNodeWithContentDescription("Back").performClick()
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("group-task views").performClick();compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-lists").performClick(); awaitText("Groceries"); shot("16-collections")
-                // The collection name can equal its preset label. Select the
-                // clickable merged card, rather than either identical text.
-                compose.onNode(hasClickAction() and hasText("Groceries")).performClick()
-                text("List settings").performClick()
-                text("Online shopping").performScrollTo().performClick()
-                field("List name").performScrollTo().performTextReplacement("Home purchases")
-                compose.onNode(isToggleable() and hasAnySibling(hasText("Include a price field"))).performScrollTo().performClick()
-                shot("34-list-fields"); text("Cancel").performClick(); shot("35-grocery-list")
-                compose.onNodeWithContentDescription("Add").performClick(); awaitText("New item"); shot("36-list-item"); text("Close").performClick()
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-assignments").performClick(); awaitText("Find assigned work"); shot("18-assignments")
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performClick(); shot("19-my-tasks")
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
-                compose.onNodeWithContentDescription("Add").performClick(); awaitText("New task"); shot("21-new-task"); text("Cancel").performClick()
-                focus()
-                updatePreview()
-                widgetPreview()
+                libraryWalkthrough()
             } finally {
                 scenario.onActivity {
                     it.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

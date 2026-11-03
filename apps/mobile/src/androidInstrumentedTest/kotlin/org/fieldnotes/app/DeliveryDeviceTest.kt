@@ -5,7 +5,6 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.graphics.Bitmap
 import android.os.ParcelFileDescriptor
-import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.*
 import kotlinx.datetime.Clock
@@ -55,8 +54,14 @@ class DeliveryDeviceTest {
             error(message)
         }
         try {
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                scenario.onActivity { assertTrue(PrivateUpdatesService.start(it)) }
+                // Delivery is observed outside the app, in real launcher and
+                // System UI tasks rather than an ActivityScenario-owned task.
+                app.startActivity(android.content.Intent(app,MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                waitFor("Application window did not become visible") { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()==app.packageName }
+                instrumentation.runOnMainSync {
+                    val activity=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<MainActivity>().single()
+                    assertTrue(PrivateUpdatesService.start(activity))
+                }
                 waitFor("Foreground connection status was not posted") { manager.activeNotifications.any { it.id==90 } }
                 val ongoing=manager.activeNotifications.first { it.id==90 }.notification
                 assertTrue(ongoing.flags and Notification.FLAG_FOREGROUND_SERVICE != 0)
@@ -100,7 +105,6 @@ class DeliveryDeviceTest {
                 app.startService(android.content.Intent(app,PrivateUpdatesService::class.java).setAction("stop"))
                 waitFor("Stop failed to report the rejected preference write") { app.deliveryError.value?.contains("could not be saved")==true }
                 waitFor("Stop must remove the foreground service despite a disk failure") { manager.activeNotifications.none { it.id==90 } }
-            }
         } finally {
             PrivateUpdatesService.stop(app)
             runBlocking { LocalAlarms.clear(app);app.vault.clearEffects();app.vault.save(originalCache) }
