@@ -47,6 +47,18 @@ cancellation. Synthetic captures now wait for the compositor and reject a black
 protected frame; the real keyboard and phone-key figures were refreshed. Physical GrapheneOS
 camera optics, VPN coexistence and prolonged DDIL/profile behavior remain unrun.
 
+The `v0.3.6` release was built from clean source
+`7adfcf9c76223a03ae95803d30d3374374fd2970` (ARM64 release variant, code 9,
+retained public signing certificate). [Publication run 41553197199](https://github.com/argentumseven/field-notes/actions/runs/41553197199)
+succeeded. The four public release assets and latest-download APK matched the
+locally verified bytes; the downloaded APK passed signature and manifest/native
+inspection. SHA-256:
+`edf9a50e40ba63536a6688ec65484bcdda77bcd5a2ab45869264fdf47a168f29`.
+The final matching server bundle passed the complete Docker/WireGuard/real-Go-TLS
+fixture again, including private APK transfer and scoped resource removal.
+No signing key is present in the payload or release assets. Operators with a
+different original APK signer must preserve their paired server's build identity.
+
 ## 0.3.5 QR enrollment
 
 An actual ZXing decode of the old manager's displayed QR failed. The manager now
