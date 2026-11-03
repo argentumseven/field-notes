@@ -8,6 +8,7 @@ const adb=join(root,'android-sdk/platform-tools/adb'),serial=process.env.FIELD_N
 const deliveryOnly=process.argv.includes('--delivery-only');
 const call=async(args,timeout=180000)=>(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;
 if(!serial.startsWith('emulator-')||(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()!=='field-notes-test')throw Error('Only the disposable field-notes-test AVD may be cleared.');
+const screenTimeout=(await call(['shell','settings','get','system','screen_off_timeout'])).trim();
 await mkdir('dist/android-test-results',{recursive:true});await mkdir('docs/screenshots/android',{recursive:true});
 async function instrument(name,extra=[]){
  const output=await call(['shell','am','instrument','-w','-e','class','org.fieldnotes.app.'+name,...extra,'org.fieldnotes.app.test/androidx.test.runner.AndroidJUnitRunner'],600000);
@@ -15,6 +16,7 @@ async function instrument(name,extra=[]){
  if(!/OK \(1 test\)/.test(output)||output.includes('FAILURES!!!'))throw Error(output);
 }
 try{
+ await call(['shell','settings','put','system','screen_off_timeout','2147483647']);
  await call(['shell','wm','size','540x1200']);await call(['shell','wm','density','210']);
  await call(['shell','input','keyevent','KEYCODE_WAKEUP']);await call(['shell','wm','dismiss-keyguard']);
  await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
@@ -47,4 +49,5 @@ try{
 }finally{
  await call(['shell','pm','clear','org.fieldnotes.app']).catch(()=>{});
  await call(['shell','wm','size','reset']).catch(()=>{});await call(['shell','wm','density','reset']).catch(()=>{});
+ await call(['shell','settings',screenTimeout==='null'?'delete':'put','system','screen_off_timeout',...(screenTimeout==='null'?[]:[screenTimeout])]).catch(()=>{});
 }

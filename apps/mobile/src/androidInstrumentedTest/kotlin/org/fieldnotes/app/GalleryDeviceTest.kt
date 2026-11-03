@@ -208,7 +208,15 @@ class GalleryDeviceTest {
                 text("Household reference").performClick(); awaitText("Shared note"); shot("14-shared-note"); compose.onNodeWithContentDescription("Back").performClick()
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("group-task views").performClick();compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-lists").performClick(); awaitText("Groceries"); shot("16-collections")
-                text("Groceries").performClick(); text("List settings").performClick(); text("Online shopping").performClick(); field("List name").performTextReplacement("Home purchases"); compose.onNode(isToggleable() and hasAnySibling(hasText("Include a price field"))).performClick(); shot("34-list-fields"); text("Cancel").performClick(); shot("35-grocery-list"); compose.onNodeWithContentDescription("Add").performClick(); awaitText("New item"); shot("36-list-item"); text("Close").performClick()
+                // The collection name can equal its preset label. Select the
+                // clickable merged card, rather than either identical text.
+                compose.onNode(hasClickAction() and hasText("Groceries")).performClick()
+                text("List settings").performClick()
+                text("Online shopping").performScrollTo().performClick()
+                field("List name").performScrollTo().performTextReplacement("Home purchases")
+                compose.onNode(isToggleable() and hasAnySibling(hasText("Include a price field"))).performScrollTo().performClick()
+                shot("34-list-fields"); text("Cancel").performClick(); shot("35-grocery-list")
+                compose.onNodeWithContentDescription("Add").performClick(); awaitText("New item"); shot("36-list-item"); text("Close").performClick()
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-assignments").performClick(); awaitText("Find assigned work"); shot("18-assignments")
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performClick(); shot("19-my-tasks")
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
