@@ -40,7 +40,11 @@ checks. Early AOSP runs were obstructed by System UI ANRs/screen sleep; the fixt
 wakes the dedicated AVD, enables its soft keyboard, and closes only allowlisted
 System UI/Quickstep dialogs, never an app ANR. A deep-link check's assertions
 completed but ActivityScenario lost its launch-intent lifecycle marker; its test
-cleanup now restores that marker and its rerun is pending. Physical GrapheneOS
+cleanup now restores that marker; its rerun passed. All five new enrollment
+checks passed across targeted runs, including the real IME, phone-key start
+screen, trust reset on replacement, invalid-code rejection and private camera
+cancellation. Synthetic captures now wait for the compositor and reject a black
+protected frame; the real keyboard and phone-key figures were refreshed. Physical GrapheneOS
 camera optics, VPN coexistence and prolonged DDIL/profile behavior remain unrun.
 
 ## 0.3.5 QR enrollment
@@ -167,7 +171,7 @@ real host service stop/restart remains covered through simulated host commands,
 not a privileged Debian installation. Password recovery writes a host journal
 event rather than adding an encrypted in-app audit entry.
 
-Field Notes **0.3.4**, protocol 1, database schema 2, Android version code 7.
+Field Notes **0.3.6**, protocol 1, database schema 2, Android version code 9.
 This is a development implementation without an independent security audit.
 Server-readable encryption is intentional. Android/Kotlin Multiplatform is the
 active native target; iOS and native desktop packages are deferred.
@@ -176,9 +180,9 @@ active native target; iOS and native desktop packages are deferred.
 
 | Check | Result and practical scope |
 | --- | --- |
-| Kotlin shared-domain tests | 43 passed: durable outbox/drafts, ambiguous commit/restart, causal revisions, reset fences, roles, reminders, endpoint changes; strict invitation parser, lost enrollment/activation replies and restart, failed claim persistence, re-enrollment cannot erase pending work, widget opt-in and known rejected-session redaction across restart/storage failure; assignment drafts, directory caching and old-server fallback; typed workspace views and standalone note drafts across restart; ranking goldens, stable ordering and calendar/DST; upcoming agenda, cached alarm policy, offline initialization/reconnection, cheap head polling and pending-work-safe self-revocation; saved pause, late-reply fencing, same-nonce restart, terminal failures, write failure veto, key-preserving/explicit-key reset, missing-identity preservation failed-exchange reconfiguration and cancellation before/lost claim replies without re-claiming; bounded update-offer parsing, software route/pause/revocation fences and pending-edit preservation |
+| Kotlin shared-domain tests | 48 passed: key-bound private enrollment/retry/activation, wrong-phone rejection and expired-attempt key retention; disconnected changed-list merge and retained same-record conflicts; durable outbox/drafts, ambiguous commit/restart, causal revisions, reset fences, roles, reminders, endpoint changes; strict invitation parser, lost enrollment/activation replies and restart, failed claim persistence, re-enrollment cannot erase pending work, widget opt-in and known rejected-session redaction across restart/storage failure; assignment drafts, directory caching and old-server fallback; typed workspace views and standalone note drafts across restart; ranking goldens, stable ordering and calendar/DST; upcoming agenda, cached alarm policy, offline initialization/reconnection, cheap head polling and pending-work-safe self-revocation; saved pause, late-reply fencing, same-nonce restart, terminal failures, write failure veto, key-preserving/explicit-key reset, missing-identity preservation failed-exchange reconfiguration and cancellation before/lost claim replies without re-claiming; bounded update-offer parsing, software route/pause/revocation fences and pending-edit preservation |
 | Shared ranking contract | 19 golden cases independently checked in Kotlin and JavaScript, including priorities without dates, blocked/other-claimed/future work, waiting cap and continuing own work, own/other assignments and retaining an own active claim |
-| Rust tests | 7 passed: container-only listener validation rejects missing Docker context, public/source/overlay/port mismatches; authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation; source-bound session renewal, expiry refusal, per-installation self-revocation and unaffected other devices; APK tampering rejection and streaming permits retained until response-body drop |
+| Rust tests | 11 passed: key-bound issuance, actual-source gates, retry/rollback, fresh-ack expiry/replacement and protection of activated bindings; container-only listener validation rejects missing Docker context, public/source/overlay/port mismatches; authenticated-encryption/AAD tampering; enrollment approval/acknowledgement/source-bound activation/revocation; expiry, changed permissions, address reuse delayed until host acknowledgement and cancellation; source-bound session renewal, expiry refusal, per-installation self-revocation and unaffected other devices; APK tampering rejection and streaming permits retained until response-body drop |
 | Node real-process API/planning/enrollment/organization/assignment | 31 passed against both debug and optimized server: roles/CSRF, simultaneous claim winner, persistence/replay/restart, stale timestamps/revisions, normalized images, injected rollback, clear/restore, optional planning fields, calendar intervals and two-client calendar visibility/update/deletion with author enforcement; typed Inbox/List/Project/Note moves, revisions and deletion fences; minimal authenticated directory, competing assignments, recipient validation, safe handoff, completion identity and disabled-person history; LAN enrollment with mocked root acknowledgement; seven password/hash/role/session/CSRF/rollback/rate/race checks, three inactive-pairing cleanup/uncertain cancellation checks with stale root acknowledgements/key reuse/authorization, and three LAN/private APK/fallback/digest/chunk/route-boundary checks |
 | Chromium workflow | 5 passed: actual login/project/list/Inbox task/shared note/comment/claim, task moves/assignment/recipient views, aligned sidebar baselines, priority with cleared date, calendar event, board, management, responsive layout and mobile Task view filters, no third-party page requests; real account/password forms, confirmation, role controls, no secret fields after success/cancel/session loss, in-flight dismissal veto, invitation expiry/replacement and QR removal on session loss |
 | Linux installer/helper/TLS/uninstall/container policy | 98 passed: no-argument source installer, complete interactive network wizard, explicit manual ports with retries/no derived defaults, no-write cancellation before root/build work, missing build prerequisites, routed administrator CIDRs, namespace TLS/source-policy readiness and routed upgrade rollback; constrained peer-helper validation and PSK file descriptor, permissions/symlinks, no successful ack on failure, revocation ordering; real direct TLS, CA renewal/no unnecessary reissuance, source ACL rejects spoofed headers, TLS 1.2 rejected; APK metadata/checksum/signer/file-set validation, draft release resumption/source mismatch/dirty preview checks and scoped download-directory removal/refusal; eight server upgrade/backup/rollback/signer/identity/history tests in temporary trees |
@@ -270,7 +274,7 @@ emulated network was unstable; its warm retry passed. A delivery run also lost
 the instrumentation process during emulator instability; its isolated retry
 passed. TLS and endpoint restrictions stay enabled.
 
-The gallery has **32 browser captures and 28 Android captures (60 total)**.
+The gallery has **33 browser captures and 29 Android captures (62 total)**.
 Android captures include the actual
 installed launcher icon, real home-screen Upcoming widget and system notification
 shade, as well as the Compose planner and settings screens. The dark/paper Compose capture runs and

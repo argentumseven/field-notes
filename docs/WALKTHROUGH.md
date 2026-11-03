@@ -9,9 +9,11 @@ Screenshots do not prove live enrollment, home firewall isolation, camera optics
 GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
 capture protection enabled. Test invitations expire and their fixture is deleted.
 
-The November 2 QR capture shows the 0.3.5 manager's larger PNG invitation and
-copy/paste fallback. Its rendered QR is also decoded with offline ZXing in browser
-tests at desktop and narrow viewport widths; camera optics remain a phone check.
+The November 2 enrollment captures show the 0.3.6 PC phone-key form, key-bound
+PNG invitation, Android public-key screen and real open keyboard. Rendered QR
+codes are decoded with offline ZXing at desktop and narrow widths. The IME test
+checks the name, trust and request controls above its visible boundary; physical
+GrapheneOS optics and VPN policy remain separate phone checks.
 
 ## Workspace, lists and shared notes
 
@@ -87,7 +89,8 @@ See [ENROLLMENT.md](ENROLLMENT.md) for retries, expiry, recovery and revocation.
 ![Change a role and revoke its sessions](screenshots/web/18-change-role.png)
 ![Change your password with current-password proof](screenshots/web/29-change-password.png)
 ![Reset another user's password and revoke their sessions](screenshots/web/30-reset-password.png)
-![Single-use invitation for an existing account](screenshots/web/11-enrollment-invitation.png)
+![PC administrator binds the phone public key before issuing its QR](screenshots/web/33-create-tunnel-invitation.png)
+![Single-use key-bound invitation for an existing account](screenshots/web/11-enrollment-invitation.png)
 ![Pending phone](screenshots/web/12-device-pending.png)
 ![Enter the code displayed on the actual phone](screenshots/web/13-device-confirmation.png)
 ![Waiting for root peer acknowledgement](screenshots/web/14-provisioning.png)
@@ -126,9 +129,11 @@ priority chips, planning fields, notes/comments/images and a private home widget
 The first screen supports QR scanning and paste; no public key copying or manual
 peer JSON editing is needed in the normal enrollment flow.
 
-| Enroll on home Wi-Fi | Confirm the phone code |
+| Copy the phone key to your PC, then scan its invitation | Confirm the phone code |
 | --- | --- |
 | <img src="screenshots/android/01-enroll.png" width="280" alt="Android enrollment with scan and paste"> | <img src="screenshots/android/02-phone-confirmation.png" width="280" alt="Phone verification code awaiting administrator approval"> |
+
+<img src="screenshots/android/29-enrollment-keyboard.png" width="280" alt="Actual Android keyboard leaves phone name, trust checkbox and request button visible above it">
 
 <img src="screenshots/android/26-pairing-paused.png" width="280" alt="Paused pairing keeps the same phone key and saved attempt for explicit retry">
 
