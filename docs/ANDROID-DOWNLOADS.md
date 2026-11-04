@@ -2,9 +2,19 @@
 
 [**Download the latest public APK**](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk) · [Release/checksums](https://github.com/argentumseven/field-notes/releases/latest)
 
-Existing phones should use their paired server's APK updates when it uses a
-different signing key. A public APK cannot replace another signer in place;
-keep the original signer and queued work.
+Standard server installs, server downloads and the GitHub release use the
+**same APK and the same stable public signing certificate**. Source installation
+downloads the exact release matching `release.json`, verifies the actual APK
+signature/package/code/ABI against the pinned certificate, and preserves all
+four published files byte for byte. It never creates a local Android signing key.
+The signing private key stays on the protected release builder, outside server
+bundles. If the release is unavailable or verification fails, the build stops;
+there is no fallback to a different signer or to an arbitrary latest version.
+
+Older custom/development installations can have a different signing key. Their
+upgrades preserve that original signer. Android cannot install the public APK
+over another signer without the original private key and a supported signing
+lineage. Do not uninstall, clear storage or reset pairing to work around this.
 
 The Linux server bundle includes its matching signed ARM64 Android APK. On your
 PC, open the trusted management URL. **Download APK**
@@ -16,7 +26,7 @@ browser CA installation. No SDK, developer mode,
 Google account, store or public service is required on the installed server or phone.
 
 The public APK uses the release variant and the pinned public certificate. A
-local development build is also available at
+local development build, when explicitly requested, is written to
 `dist/android/field-notes-0.5.0-android-arm64-debug.apk`, with `.sha256` and
 `.signer.txt` alongside. This is a signed **development** build. Keep the same
 signing key for in-place updates; changing signers normally requires uninstall
@@ -47,7 +57,9 @@ These are software downloads on the source-restricted **LAN listener**. They do
 not require a household session and expose no household data. The public `/downloads` paths are absent from the private API. Authenticated,
 source-bound in-app updates use separate metadata/chunk routes on the same
 private notes endpoint. Downloads remain local;
-the server does not fetch APKs, contact GitHub, or acquire an outbound exception.
+the running server containers do not fetch APKs, contact GitHub, or acquire an
+outbound exception. The host installer/builder fetches the public release before
+bundling; the isolated runtime serves only the verified local files.
 Trust the management CA through the fingerprint procedure in [RUNNING.md](RUNNING.md).
 Download on the trusted administrator computer and copy the APK/checksum to the
 phone. Keep the PC-only management source restriction.
@@ -74,7 +86,9 @@ apksigner verify --print-certs field-notes.apk
 Compare the signer SHA-256 to your previously trusted installation or operator
 record. A checksum downloaded from the same server detects transfer errors but
 does not independently establish publisher identity. `android.json` records the
-packaging checkout and whether it was dirty; that field alone is not source
+APK packaging checkout and whether it was dirty. Rebundling a public APK retains
+its original metadata rather than claiming it was built from the server's newer
+checkout; that field alone is not source
 attestation. No private signing key or password enters the download directory.
 
 ## Builder and permanent releases
@@ -83,17 +97,24 @@ The release workflow can publish APK/checksum/signer files as GitHub Release
 assets. A permanent public download is available only after a release has
 actually been published; the paired server always provides its own matching APK.
 
-Build Android before the server. A release build can replace the default development APK in a bundle:
+For the standard public APK, build the server after preparing verification tools:
 
 ```sh
-bash scripts/build/android.sh debug
+bash scripts/setup/cloud.sh --server
 bash scripts/build/server.sh
-# After a separately configured stable-key release build:
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.4.0-android-arm64-release.apk \
+# Explicit custom build, with the original local signer retained:
+bash scripts/build/android.sh debug
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.5.0-android-arm64-debug.apk \
   bash scripts/build/server.sh
 ```
 
-The builder needs Android build-tools 35.0.0. It is not needed on the target host.
+The builder needs Android build-tools 35.0.0 and Java for independent APK signature
+and manifest verification. `--server` prepares these without an NDK, Gradle build
+or signing key. A prebuilt bundle needs neither on its target host. For offline
+rebuilding, set `FIELD_NOTES_ANDROID_DOWNLOADS` to a directory containing the four
+previously obtained files; they are signature-verified again and copied without
+changing their metadata. Custom APK/directory overrides are explicit and mutually
+exclusive. A custom signer is never published as the public release certificate.
 The server tarball includes both offline images, APK/checksum/signer/metadata,
 installer, uninstaller and documentation.
 

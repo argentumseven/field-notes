@@ -3,6 +3,11 @@
 import argparse,json,os,pathlib,subprocess,tempfile
 from android_artifact import FILES,verify
 
+def public_identity(info,root):
+    release=json.loads((root/'release.json').read_text())
+    if info['signer_sha256']!=release.get('public_android_signer_sha256') or info['version']!=release['version'] or info['version_code']!=release['android_version_code'] or info['signing']!='release':
+        raise ValueError('Public APK signer/version differs from the pinned release; no alternate signing identity may be published')
+
 def queue(folder,tag,apply=False,runner=subprocess.run):
     """Push a dedicated CI payload branch; keep binaries off main and keys local."""
     folder=pathlib.Path(folder).resolve();info=verify(folder)
@@ -11,9 +16,7 @@ def queue(folder,tag,apply=False,runner=subprocess.run):
     if not apply:return result
     if info['source_dirty'] or not info['source_commit']:raise ValueError('Queue only a clean tagged build')
     root=pathlib.Path(__file__).resolve().parents[1]
-    release=json.loads((root/'release.json').read_text())
-    if info['signer_sha256']!=release.get('public_android_signer_sha256') or info['version']!=release['version'] or info['version_code']!=release['android_version_code']:
-        raise ValueError('Public APK signer/version differs from this release')
+    public_identity(info,root)
     def run(args,**kw):return runner(args,cwd=root,check=True,capture_output=True,text=True,**kw)
     for ref in ('HEAD',tag+'^{}'):
         if run(['git','rev-parse',ref]).stdout.strip()!=info['source_commit']:raise ValueError('Tag and APK source differ')
@@ -39,6 +42,7 @@ def publish(folder,tag,apply=False,runner=subprocess.run,latest=False):
     if not apply:return result
     if info['source_dirty'] or not info['source_commit']:raise ValueError('Publish only an APK built from a clean tagged source checkout')
     root=pathlib.Path(__file__).resolve().parents[1]
+    public_identity(info,root)
     def run(args,**kw):return runner(args,check=True,capture_output=True,text=True,**kw)
     if run(['git','rev-parse','HEAD'],cwd=root).stdout.strip()!=info['source_commit'] or run(['git','rev-parse',tag+'^{}'],cwd=root).stdout.strip()!=info['source_commit']:
         raise ValueError('APK source and checked-out tag must be identical')

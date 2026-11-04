@@ -2,7 +2,8 @@
 
 [**Download latest Android APK (ARM64)**](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk) · [Release notes and checksums](https://github.com/argentumseven/field-notes/releases/latest)
 
-For updates to an existing phone, use its paired server's APK when it has a different signing certificate.
+Standard server installs and GitHub downloads use the same public signing certificate
+and the exact same APK. Existing custom-signed phones retain their original signer.
 
 A self-hosted household planner: Inbox, lists, projects, standalone notes, comments,
 images, optional dates, priorities and a private calendar. Calendar first, with
@@ -82,16 +83,15 @@ management PC from **Download APK** on Sign in or in Management, then transfer
 it to the phone. The phone does not need management access. Paired phones fetch
 updates through the private notes tunnel. [Download and release details](docs/ANDROID-DOWNLOADS.md).
 
-The signed arm64 development APK, checksum and signer report are also under
-`dist/android/field-notes-0.5.0-android-arm64-debug.apk`. Copy it to your phone,
-verify hash/signer, and open it to sideload. Preserve the development signer for
-in-place updates. Operator release builds require your separately protected key.
+Server builds download the APK from the matching versioned GitHub release,
+verify its actual signature against the pinned public certificate, and preserve
+its published checksum and source metadata. They do not generate signing keys.
+Custom Android builds are an explicit developer/operator choice; keep their
+original signing key for in-place updates.
 
 ```sh
-bash scripts/setup/cloud.sh --android
+bash scripts/setup/cloud.sh --server
 source scripts/dev-env.sh
-bash scripts/check.sh
-bash scripts/build/android.sh debug
 bash scripts/build/server.sh
 ```
 
@@ -103,8 +103,8 @@ bash scripts/install-server.sh
 
 The guided installer asks for LAN details, optional remote endpoint and private
 overlay, and both ports (no suggested values). Review the plan and type
-`INSTALL`. It then prepares the pinned toolchains, builds the matching
-signed development Android APK and server/offline Docker images, and installs
+`INSTALL`. It then prepares the pinned toolchains, verifies the matching
+public GitHub APK, builds the server/offline Docker images, and installs
 the stack. Docker Engine/Compose must already work on the host. Missing Debian/Ubuntu
 build packages are installed automatically after plan confirmation. A no-write preview uses
 `bash scripts/install-server.sh --plan`; for a prebuilt verified server

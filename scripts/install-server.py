@@ -14,7 +14,7 @@ def arguments():
     action.add_argument('--apply', action='store_true')
     action.add_argument('--plan', action='store_true')
     p.add_argument('--build-from-source', action='store_true',
-                   help='After confirmation, prepare toolchains and build the matching app, gateway and APK from this checkout')
+                   help='After confirmation, build the server/gateway and bundle the verified matching public GitHub APK')
     p.add_argument('--lan-ip', help='Server LAN IPv4 address (prompted in terminal)')
     p.add_argument('--lan-prefix', help='Trusted LAN subnet in CIDR notation (prompted in terminal)')
     p.add_argument('--web-port', type=int, help='Chosen LAN management HTTPS port (no default)')
@@ -121,7 +121,7 @@ def ensure_build_prerequisites():
         raise ValueError('Build tools still unavailable after package installation: ' + ', '.join(remaining))
 
 def build_from_source(root):
-    """Prepare build dependencies and build app/APK/images after plan confirmation."""
+    """Build server/images and use the public APK after plan confirmation."""
     if os.uname().sysname != 'Linux' or os.uname().machine != 'x86_64':
         raise ValueError('The guided source build currently requires Linux x86_64.')
     if not (root/'scripts/setup/cloud.sh').is_file() or not (root/'scripts/build/server.sh').is_file():
@@ -135,8 +135,8 @@ def build_from_source(root):
     ensure_build_prerequisites()
     env = os.environ.copy()
     env.setdefault('FIELD_NOTES_TOOLS', str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
-    print('Preparing the Field Notes Android and Linux build toolchains...', flush=True)
-    checked(['bash', 'scripts/setup/cloud.sh', '--android'], cwd=root, env=env)
+    print('Preparing Linux build tools and the public APK signature verifier...', flush=True)
+    checked(['bash', 'scripts/setup/cloud.sh', '--server'], cwd=root, env=env)
     print('Building the verified server bundle and offline Docker images...', flush=True)
     checked(['bash', 'scripts/build/server.sh'], cwd=root, env=env)
 

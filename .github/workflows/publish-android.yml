@@ -63,6 +63,13 @@ jobs:
           source scripts/dev-env.sh
           version=$(python3 -c 'import json;print(json.load(open("release.json"))["version"])')
           python3 -B scripts/android_artifact.py --apk "dist/android/field-notes-$version-android-arm64-release.apk" --output dist/android-release
+          python3 -B - <<'PY'
+          import json
+          release=json.load(open('release.json'))
+          artifact=json.load(open('dist/android-release/android.json'))
+          assert artifact['signer_sha256']==release['public_android_signer_sha256'], 'Public release signing certificate changed'
+          assert artifact['signing']=='release' and artifact['version']==release['version'] and artifact['version_code']==release['android_version_code']
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: field-notes-android

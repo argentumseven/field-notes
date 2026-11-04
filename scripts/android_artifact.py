@@ -1,7 +1,18 @@
 """Build/verify fixed public APK downloads. Signing keys never enter the bundle."""
-import argparse,hashlib,json,os,pathlib,re,shutil,subprocess
+import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,tempfile,urllib.error,urllib.parse,urllib.request
 
 FILES={'field-notes.apk','field-notes.apk.sha256','field-notes.apk.signer.txt','android.json'}
+
+def inspect(apk,release):
+    """Verify the APK itself; a checksum or downloaded signer report is not trust."""
+    sdk=pathlib.Path(os.environ['ANDROID_HOME'])/'build-tools/35.0.0'
+    report=subprocess.check_output([str(sdk/'apksigner'),'verify','--print-certs',str(apk)],text=True)
+    badging=subprocess.check_output([str(sdk/'aapt'),'dump','badging',str(apk)],text=True)
+    expected=f"package: name='org.fieldnotes.app' versionCode='{release['android_version_code']}' versionName='{release['version']}'"
+    if not badging.startswith(expected) or re.findall(r"^native-code: (.+)$",badging,re.M)!=["'arm64-v8a'"]:raise ValueError('Provide the matching signed arm64 Field Notes APK')
+    signers=re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})$',report,re.M)
+    if len(signers)!=1:raise ValueError('Expected one verified APK signer')
+    return report,signers[0].lower(),'development' if 'application-debuggable' in badging else 'release'
 
 def verify(folder,version=None):
     folder=pathlib.Path(folder)
@@ -22,25 +33,74 @@ def verify(folder,version=None):
     if re.findall(r'^Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]{64})$',(folder/'field-notes.apk.signer.txt').read_text(),re.M)!=[info['signer_sha256']]:raise ValueError('Signer report mismatch')
     return info
 
+def verify_signed(folder,release,public=False):
+    info=verify(folder,release['version'])
+    if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
+    _,signer,signing=inspect(pathlib.Path(folder)/'field-notes.apk',release)
+    if signer!=info['signer_sha256'] or signing!=info['signing']:raise ValueError('Actual APK signature differs from artifact metadata')
+    if public:
+        pin=release.get('public_android_signer_sha256','')
+        if not re.fullmatch('[a-f0-9]{64}',pin) or signer!=pin:raise ValueError('APK does not use the pinned public signing certificate')
+        if signing!='release' or info['source_dirty'] or not info['source_commit']:raise ValueError('Public APK must be a clean tagged release build')
+    return info
+
+def copy_verified(folder,output,release):
+    info=verify_signed(folder,release)
+    shutil.copytree(folder,output)
+    for path in pathlib.Path(output).iterdir():path.chmod(0o644)
+    return info
+
+class ReleaseRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,request,fp,code,msg,headers,newurl):
+        url=urllib.parse.urlsplit(newurl)
+        if url.scheme!='https' or url.hostname not in ('github.com','release-assets.githubusercontent.com') or url.username or url.password:
+            raise ValueError('Unexpected public APK release redirect')
+        return super().redirect_request(request,fp,code,msg,headers,newurl)
+
+def fetch_public(root,output,opener=None):
+    """Fetch the version-pinned public APK, never a new local signing identity."""
+    release=json.loads((pathlib.Path(root)/'release.json').read_text())
+    if not re.fullmatch(r'\d+\.\d+\.\d+',release['version']):raise ValueError('Invalid release version')
+    if not re.fullmatch('[a-f0-9]{64}',release.get('public_android_signer_sha256','')):raise ValueError('Missing pinned public signing certificate')
+    output=pathlib.Path(output)
+    if output.exists() or output.is_symlink():raise ValueError('APK output already exists; refusing replacement')
+    output.parent.mkdir(parents=True,exist_ok=True)
+    opener=opener or urllib.request.build_opener(ReleaseRedirect())
+    with tempfile.TemporaryDirectory(prefix='.android-release-',dir=output.parent) as tmp:
+        stage=pathlib.Path(tmp)/'downloads';stage.mkdir()
+        for name in sorted(FILES):
+            limit=150*1024*1024 if name=='field-notes.apk' else 64*1024
+            request=urllib.request.Request(f"https://github.com/argentumseven/field-notes/releases/download/v{release['version']}/{name}",headers={'User-Agent':'Field-Notes-installer'})
+            try:
+                with opener.open(request,timeout=60) as response, (stage/name).open('xb') as target:
+                    remaining=limit
+                    while True:
+                        chunk=response.read(min(1024*1024,remaining+1))
+                        if not chunk:break
+                        remaining-=len(chunk)
+                        if remaining<0:raise ValueError('Public APK release asset exceeds its size limit')
+                        target.write(chunk)
+            except (OSError,urllib.error.URLError) as error:
+                raise ValueError(f"Could not download the published v{release['version']} Android release. No replacement signing key was created; retry after checking connectivity and release availability.") from error
+        info=verify_signed(stage,release,public=True)
+        for path in stage.iterdir():path.chmod(0o644)
+        stage.chmod(0o755);stage.rename(output)
+        return info
+
 def package(apk,output,root):
     apk=pathlib.Path(apk).resolve();output=pathlib.Path(output);release=json.loads((root/'release.json').read_text())
-    sdk=pathlib.Path(os.environ['ANDROID_HOME'])/'build-tools/35.0.0'
-    report=subprocess.check_output([str(sdk/'apksigner'),'verify','--print-certs',str(apk)],text=True)
-    badging=subprocess.check_output([str(sdk/'aapt'),'dump','badging',str(apk)],text=True)
-    expected=f"package: name='org.fieldnotes.app' versionCode='{release['android_version_code']}' versionName='{release['version']}'"
-    if not badging.startswith(expected) or re.findall(r"^native-code: (.+)$",badging,re.M)!=["'arm64-v8a'"]:raise ValueError('Provide the matching signed arm64 Field Notes APK')
-    signer=re.findall(r'^Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]{64})$',report,re.M)
-    if len(signer)!=1:raise ValueError('Expected one verified APK signer')
+    report,signer,signing=inspect(apk,release)
     source=subprocess.run(['git','rev-parse','HEAD'],cwd=root,capture_output=True,text=True)
     dirty=subprocess.run(['git','status','--porcelain'],cwd=root,capture_output=True,text=True)
     output.mkdir(mode=0o755,parents=True,exist_ok=False);shutil.copyfile(apk,output/'field-notes.apk')
     with apk.open('rb') as file:digest=hashlib.file_digest(file,'sha256').hexdigest()
-    info=dict(version=release['version'],version_code=release['android_version_code'],architecture='arm64-v8a',signing='development' if 'application-debuggable' in badging else 'release',sha256=digest,signer_sha256=signer[0].lower(),source_commit=source.stdout.strip() if source.returncode==0 else None,source_dirty=bool(dirty.stdout.strip()) or dirty.returncode!=0)
+    info=dict(version=release['version'],version_code=release['android_version_code'],architecture='arm64-v8a',signing=signing,sha256=digest,signer_sha256=signer,source_commit=source.stdout.strip() if source.returncode==0 else None,source_dirty=bool(dirty.stdout.strip()) or dirty.returncode!=0)
     (output/'android.json').write_text(json.dumps(info,indent=2)+'\n');(output/'field-notes.apk.sha256').write_text(digest+'  field-notes.apk\n');(output/'field-notes.apk.signer.txt').write_text(report)
     for path in output.iterdir():path.chmod(0o644)
     verify(output,release['version']);return info
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--apk',required=True);parser.add_argument('--output',required=True);args=parser.parse_args()
-    try:print(json.dumps(package(args.apk,args.output,pathlib.Path(__file__).resolve().parents[1]),indent=2))
+    parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--apk');source.add_argument('--downloads',help='Preserve the source metadata of an already packaged APK');source.add_argument('--public',action='store_true',help='Download the matching GitHub release and verify its pinned public certificate');parser.add_argument('--output',required=True);args=parser.parse_args()
+    root=pathlib.Path(__file__).resolve().parents[1]
+    try:print(json.dumps(fetch_public(root,args.output) if args.public else copy_verified(args.downloads,args.output,json.loads((root/'release.json').read_text())) if args.downloads else package(args.apk,args.output,root),indent=2))
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:raise SystemExit('APK packaging stopped: '+str(error))

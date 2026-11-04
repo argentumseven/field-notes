@@ -12,9 +12,13 @@ npm ci --cache "$FIELD_NOTES_TOOLS/npm" --ignore-scripts --no-audit --no-fund
 cargo build --locked -j 4
 bash scripts/setup/go.sh
 (cd native && go mod download && go test ./...)
-# Pass --android for the Kotlin/Android toolchain; --native is an alias.
+# --android builds Android (--native is an alias); --server verifies the public APK.
 if [[ ${1:-} == --android || ${1:-} == --native ]]; then
   bash scripts/setup/jdk.sh
   bash scripts/setup/android.sh
   bash scripts/build/android.sh debug
+elif [[ ${1:-} == --server ]]; then
+  # Verify the published APK without Gradle, an NDK, or a local signing key.
+  bash scripts/setup/jdk.sh
+  bash scripts/setup/android.sh --verify-only
 fi

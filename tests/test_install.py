@@ -1,5 +1,5 @@
-import json,pathlib,subprocess,unittest
-ROOT=pathlib.Path(__file__).resolve().parents[1]
+import json,pathlib,subprocess,sys,unittest
+ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 WEB='10443'
 UDP='43127'
 class Plan(unittest.TestCase):
@@ -28,6 +28,13 @@ class Plan(unittest.TestCase):
   script=(ROOT/'scripts/install-server.sh').read_text()
   self.assertIn('--apply --build-from-source --interactive',script)
   self.assertIn('if (( $# == 0 ))',script)
+ def test_guided_source_build_prepares_public_apk_verification_without_signing_android(self):
+  import importlib.util
+  from unittest import mock
+  spec=importlib.util.spec_from_file_location('installer_public_apk',ROOT/'scripts/install-server.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  with mock.patch.object(module,'ensure_build_prerequisites'),mock.patch.object(module.shutil,'which',return_value='/usr/bin/docker'),mock.patch.object(module,'checked') as run,mock.patch('container_deployment.Engine.call'):
+   module.build_from_source(ROOT)
+  self.assertEqual([call.args[0] for call in run.call_args_list],[['bash','scripts/setup/cloud.sh','--server'],['bash','scripts/build/server.sh']])
  def test_source_build_is_not_attempted_before_confirmation(self):
   answer='192.168.1.10\n192.168.1.0/24\n\n\n'+WEB+'\n'+UDP+'\nNO\n'
   r=subprocess.run(['python3','scripts/install-server.py','--apply','--build-from-source','--interactive'],cwd=ROOT,text=True,capture_output=True,input=answer)

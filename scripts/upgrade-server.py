@@ -14,15 +14,21 @@ HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py
 def build_from_source(host,record,root=HERE.parent,runner=subprocess.run,recover=False):
  if record is None or record['phase'] not in (('installed','installing') if recover else ('installed',)) or record['runtime']!='containers':raise ValueError('Complete the retained installation check before upgrading')
  installed=verify_android(host.path(record['prefix']+'/downloads'))
- if installed['signing']!='development':raise ValueError('Operator-signed installations need a matching --bundle built with the original signing key')
+ release=json.loads((root/'release.json').read_text())
  env=os.environ.copy();env.setdefault('FIELD_NOTES_TOOLS',str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
- signing=pathlib.Path(env['FIELD_NOTES_TOOLS'])/'android-user/debug.keystore'
- if signing.is_symlink() or not signing.is_file():raise ValueError('Original Android signing key is missing. Restore it; no replacement key or new pairing will be created')
- if signing.stat().st_uid!=os.geteuid():raise ValueError('Original Android signing key must belong to the build user')
- signing.parent.chmod(0o700);signing.chmod(0o600)
- version=json.loads((root/'release.json').read_text())['version']
- env['FIELD_NOTES_ANDROID_APK']=str(root/f'dist/android/field-notes-{version}-android-arm64-debug.apk')
- runner(['bash','scripts/build/android.sh','debug'],cwd=root,env=env,check=True)
+ env.pop('FIELD_NOTES_ANDROID_APK',None);env.pop('FIELD_NOTES_ANDROID_DOWNLOADS',None)
+ if installed['signer_sha256']==release.get('public_android_signer_sha256'):
+  print('Using the matching public GitHub APK; no Android signing key is needed on this server.',flush=True)
+  runner(['bash','scripts/setup/cloud.sh','--server'],cwd=root,env=env,check=True)
+ else:
+  if installed['signing']!='development':raise ValueError('Custom-signed installations need a matching --bundle built with the original signing key; the public APK cannot replace another signer')
+  signing=pathlib.Path(env['FIELD_NOTES_TOOLS'])/'android-user/debug.keystore'
+  if signing.is_symlink() or not signing.is_file():raise ValueError('Original Android signing key is missing. Restore it; no replacement key or new pairing will be created')
+  if signing.stat().st_uid!=os.geteuid():raise ValueError('Original Android signing key must belong to the build user')
+  signing.parent.chmod(0o700);signing.chmod(0o600)
+  print('Preserving the existing custom development APK signer; it differs from the GitHub public certificate.',flush=True)
+  env['FIELD_NOTES_ANDROID_APK']=str(root/f"dist/android/field-notes-{release['version']}-android-arm64-debug.apk")
+  runner(['bash','scripts/build/android.sh','debug'],cwd=root,env=env,check=True)
  runner(['bash','scripts/build/server.sh'],cwd=root,env=env,check=True)
  folder=root/('dist/server/linux-'+os.uname().machine)
  if recover:preview(record,folder,host,recover=True)
@@ -38,7 +44,7 @@ def bundle_info(folder,current,recover=False):
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -178,7 +184,7 @@ def apply(host,record,folder,engine=None,health=readiness,recover=False):
   if stage.exists():shutil.rmtree(stage)
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next bundle using the existing development APK signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Recover a stopped runtime using a verified compatible bundle and retained data; never initializes a new workspace');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next server bundle using the public APK or the retained custom development signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Recover a stopped runtime using a verified compatible bundle and retained data; never initializes a new workspace');args=parser.parse_args()
  host=Host();record=load(host,args.config)
  if args.build_from_source:
   if not args.apply or os.geteuid()!=0:raise ValueError('--build-from-source requires --apply as root; it never creates a fresh installation')

@@ -1,5 +1,45 @@
 # Implementation and validation record
 
+## Shared public APK signing identity — 2026-11-04
+
+Standard source installation and server packaging now download the version-pinned
+public GitHub APK instead of generating a local Android signing identity. AOSP
+`apksigner` verifies the actual APK, `aapt` checks package/version/code/ARM64, and
+the public certificate must match `release.json`. All four published download
+files, including the original source metadata, are preserved byte for byte.
+`--server` setup prepares Java/build-tools verification without building Android
+or requiring an NDK/signing key. Public-signed source upgrades use that path;
+custom development upgrades retain their original key and still reject signer
+changes before stopping services. Custom release builds continue to use explicit
+matching bundles. Public publication also checks the pinned identity, and the
+ephemeral one-off release workflow has been removed.
+
+Executed here: **116 Python checks passed**, including interrupted/oversized/
+corrupt downloads, forged signer metadata, preserved custom keys, a public source
+upgrade with no local key, metadata-preserving rebundling, and refusal to publish
+another signer. The real v0.5.0 release downloaded successfully and independently
+passed signature, package and pin verification. Its APK SHA-256 remains
+`f6730915bbc5195fcb450947cdd76b8007d17eb6cc3507c15e2890092ad18962`.
+A tampered APK with a recomputed checksum failed actual signature verification;
+a valid APK re-signed with a disposable test key failed the public certificate
+pin. The test key was removed. Verifier-only SDK setup and the complete default
+Linux x86_64 offline container/server bundle build passed. The resulting bundle
+directory and tarball contain the exact published assets with the original
+`23b0b4cba30360e36bfd5772d52c7d676d0849bb` source metadata and no private
+signing key. Both inventoried Docker images exist, and the compatible bundle
+upgrade validation passed. Shell syntax and release-version checks passed.
+
+Logs: `dist/signing-distribution-python-tests.txt`,
+`dist/signing-distribution-real-apk-tests.txt`,
+`dist/signing-distribution-verifier-setup.txt`,
+`dist/signing-distribution-server-build.txt`, and
+`dist/signing-distribution-bundle-tests.txt`.
+These are packaging/signing changes using the existing 0.5.0/code-11 APK.
+Deployment to the home server and a physical phone upgrade were not run here.
+An already installed APK with a different certificate still requires its
+original signing key; no pairing reset, uninstall or storage clearing is used
+to conceal that mismatch.
+
 ## 0.5.0 personal reminders, loud alarms and week widgets
 
 The active implementation is **0.5.0 / Android code 11**, protocol 1 and schema 2.

@@ -33,10 +33,12 @@ unrelated target during routine server development.
 
 ## Android installation experience
 
-The current server build requires the matching APK first, and SDK build-tools
-on the **builder** to verify signature, package/version and ARM64 ABI. Set
-`FIELD_NOTES_ANDROID_APK` to select an operator-signed release instead of the
-default development artifact. The installed host requires neither SDK nor signing
+The standard server build fetches the matching versioned public GitHub APK and
+uses SDK build-tools on the **builder** to verify its actual signature against
+the pinned public certificate, package/version and ARM64 ABI. Its bytes and source
+metadata are preserved. Set `FIELD_NOTES_ANDROID_APK` for an explicit custom build
+or `FIELD_NOTES_ANDROID_DOWNLOADS` for an already packaged artifact directory;
+both are signature-verified. The installed host requires neither SDK nor signing
 keys. See [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for local delivery and the
 draft-first GitHub Releases workflow, which requires stable operator secrets.
 

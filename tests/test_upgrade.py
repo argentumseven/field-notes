@@ -95,6 +95,16 @@ class Upgrade(unittest.TestCase):
   self.assertEqual([row[0][0] for row in calls],[['bash','scripts/build/android.sh','debug'],['bash','scripts/build/server.sh']])
   self.assertEqual(key.read_bytes(),b'private disposable signing fixture');self.assertEqual(key.stat().st_mode&0o777,0o600)
   preview.assert_called_once_with(self.host.record,folder,self.host);self.assertFalse(self.engine.calls)
+ def test_public_source_upgrade_uses_exact_published_apk_without_a_local_key(self):
+  installed=self.host.path(self.host.record['prefix']+'/downloads');installed.mkdir();info=artifacts.AndroidArtifact().bundle(installed)
+  release=json.loads((self.folder/'release.json').read_text());release['public_android_signer_sha256']=info['signer_sha256'];(self.folder/'release.json').write_text(json.dumps(release))
+  tools=pathlib.Path(self.tmp.name)/'empty-tools';calls=[]
+  with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(tools),'FIELD_NOTES_ANDROID_APK':'stale-other-signer.apk','FIELD_NOTES_ANDROID_DOWNLOADS':'stale-downloads'}),mock.patch.object(upgrade,'preview',return_value={}) as preview:
+   folder=upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:calls.append((a,k)))
+  self.assertEqual([row[0][0] for row in calls],[['bash','scripts/setup/cloud.sh','--server'],['bash','scripts/build/server.sh']])
+  self.assertFalse((tools/'android-user/debug.keystore').exists())
+  for _,kwargs in calls:self.assertNotIn('FIELD_NOTES_ANDROID_APK',kwargs['env']);self.assertNotIn('FIELD_NOTES_ANDROID_DOWNLOADS',kwargs['env'])
+  preview.assert_called_once_with(self.host.record,folder,self.host);self.assertFalse(self.engine.calls)
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.host=UpgradeHost(self.tmp.name);self.engine=FakeEngine()
   r=self.host.record;r.update(runtime='containers',legacy=False)

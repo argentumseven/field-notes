@@ -91,14 +91,16 @@ household users, and download the APK from Sign in or Management. Phones receive
 the public CA through their enrollment QR and need no system-wide CA trust.
 Never export the private CA key, TLS leaf private key or server master key.
 
-The prebuilt APK retains the previously supplied development signer. Keep using
-that original signer for updates. A source build on a new machine creates a new
-development signing identity unless its original keystore is restored; do not
-uninstall a paired phone or erase its queue to work around a signing mismatch.
+Standard prebuilt and source server installs use the exact public GitHub APK
+with the same pinned signing certificate. A new server does not create a new
+Android signing identity. Existing custom-signed installations retain their
+original key for upgrades; do not uninstall a paired phone or erase its queue
+to work around a signing mismatch.
 See [UPDATES.md](UPDATES.md) for compatible server upgrades.
 
 For a complete source checkout instead, current `main` supports the guided
-`bash scripts/install-server.sh` entry point as root. It builds the toolchains,
-APK and images after confirmation. Keep its persistent signing-key cache and
+`bash scripts/install-server.sh` entry point as root. It prepares verification
+tools, downloads the matching verified public APK and builds the server/images
+after confirmation. No APK private signing key is needed on this host. Still
 allow substantially more memory/disk than the runtime-only container footprint.
 The two fix branches are already squash-merged; use current `main`.

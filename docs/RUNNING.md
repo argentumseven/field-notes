@@ -24,8 +24,10 @@ bash scripts/install-server.sh
 
 This one-command installer prompts for configuration, prints a reviewable
 no-write plan and requires typing `INSTALL` before preparing toolchains
-and building the matching Android APK, app/gateway Docker images, and
-server bundle. It then installs and starts the stack. Rootful Docker
+and building the app/gateway Docker images and server bundle. The bundle uses
+the exact APK from the matching public GitHub release, verified against its
+pinned signing certificate; the server does not create or need an APK signing
+key. It then installs and starts the stack. Rootful Docker
 Engine/Compose must already work. After confirmation, the guided installer
 installs any missing Debian/Ubuntu build tools (Node/npm, compilers, Make,
 packaging tools) with apt before building. It does not change shared Docker
@@ -105,7 +107,8 @@ module, then loads the bundled app/gateway images by immutable ID. It leaves the
 shared Docker daemon configuration alone. It creates:
 
 - `/opt/field-notes`: server, constrained host helpers and the read-only `downloads/`
-  APK/checksum/signer/metadata bundle. No SDK or signing key is installed on the server.
+  APK/checksum/signer/metadata bundle. The runtime needs no SDK or APK signing key;
+  source builds keep verifier tools in the separate builder cache.
 - `/var/lib/field-notes`: app-owned encrypted database, event log and private
   desired-peer manifest; `/etc/field-notes/master.key`: server recovery key.
 - `/etc/field-notes/tls`: public CA, root-only `private/ca.key` and separate
@@ -212,19 +215,19 @@ five minutes, including across server restarts.
 
 ## Install the Android APK
 
-On your phone, open the trusted LAN management URL and choose **Download APK**
-on Sign in or in Management. Trust the LAN CA in that browser first, comparing
-its fingerprint, or download on your trusted administrator computer and copy the
-APK to the phone. App enrollment itself needs no system-wide CA. No account
-login is needed to fetch the software;
-household content still requires authentication. SHA-256 and signing-certificate
-links are alongside it. The installed server serves its bundled version locally,
-without a GitHub or Internet connection. The private notes endpoint does not
-serve downloads. See [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for verification,
-stable signing and the permanent-release workflow.
+Download the [public APK](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk),
+or choose **Download APK** on Sign in or in Management on your trusted
+administrator PC and copy it to the phone. Standard builds use the same signer
+and exact APK from the matching GitHub release. The phone needs no management
+access. App enrollment itself needs no system-wide CA. Software downloads need
+no household login; content requires authentication. SHA-256 and certificate
+links accompany the server download. The installed server serves its bundled
+version without Internet access. Paired phones receive updates through
+authenticated chunks on the private notes endpoint. See
+[ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for verification and custom signers.
 
-Build output:
-`dist/android/field-notes-0.3.3-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
+Explicit local development build output:
+`dist/android/field-notes-0.5.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
 Copy the APK to the phone, verify its hash/signing-certificate fingerprint, and
 open it with your file manager. Temporarily allow installation from that source.
 The debug APK is signed with the development key in the external tool cache;
@@ -238,14 +241,18 @@ still governs its outer UDP sockets. Test home and mobile-data connectivity on
 each phone before relying on background catch-up.
 
 After enrollment, allow notifications and review the default-on background mode.
-For widgets, tap **Add Upcoming home-screen widget** in **Settings & widgets**,
-or use the launcher's widget picker. Both Upcoming and Focus are real Android
-home-screen providers; title previews are opt-in. Follow
+For widgets, use **Settings & widgets** or the launcher's widget picker. Week,
+Calendar, Upcoming and Focus are actual home-screen providers. Unlocked details
+default on for new installs; existing choices and separate lock-screen controls
+are retained. Follow
 [Android delivery and GrapheneOS profiles](ANDROID-DELIVERY.md) for battery,
 alarm/sound permissions, full-user-profile forwarding, the delayed test, and
 clean revocation/uninstall. The app cannot override a stopped profile or DND.
 
 ## Build from source
+
+For a server using the published APK, follow the `--server` setup above. For an
+explicit custom Android development build and a server bundling that signer:
 
 ```sh
 bash scripts/setup/cloud.sh --android
@@ -253,7 +260,8 @@ source scripts/dev-env.sh
 bash scripts/check.sh
 bash scripts/android.sh hostTest lintDebug
 bash scripts/build/android.sh debug
-bash scripts/build/server.sh
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.5.0-android-arm64-debug.apk \
+  bash scripts/build/server.sh
 ```
 
 Pinned Kotlin 2.1.21/Compose 1.8.2/AGP 8.10.1/Gradle 8.11.1, JDK 21, Android SDK

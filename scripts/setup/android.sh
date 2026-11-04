@@ -41,4 +41,6 @@ if [[ -n "${FIELD_NOTES_JAVA_TRUSTSTORE:-}" ]]; then
   [[ -r "$FIELD_NOTES_JAVA_TRUSTSTORE" ]] || { echo "Unreadable Java trust store: $FIELD_NOTES_JAVA_TRUSTSTORE" >&2; exit 1; }
   SDKMANAGER_OPTS+=" -Djavax.net.ssl.trustStore=$FIELD_NOTES_JAVA_TRUSTSTORE"
 fi
-"$ANDROID_HOME/cmdline-tools/19.0/bin/sdkmanager" "${args[@]}" 'platforms;android-36' 'build-tools;35.0.0' 'platform-tools' 'ndk;28.2.13676358' < <(printf 'y\n%.0s' {1..30})
+packages=('build-tools;35.0.0')
+if [[ ${1:-} != --verify-only ]]; then packages+=('platforms;android-36' 'platform-tools' 'ndk;28.2.13676358'); fi
+"$ANDROID_HOME/cmdline-tools/19.0/bin/sdkmanager" "${args[@]}" "${packages[@]}" < <(printf 'y\n%.0s' {1..30})

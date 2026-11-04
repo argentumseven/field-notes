@@ -78,6 +78,15 @@ upgrades and theme changes retain the encrypted cache, phone keys and queued wor
 must be rebuilt with the installation's original Android signing key. Field Notes
 blocks that APK before installation and says to keep the existing app and data.
 
+Standard source installs and prebuilt bundles now use the exact public GitHub
+APK, verified against `public_android_signer_sha256` in `release.json`. Their
+phone updates use the same stable certificate regardless of which server builds
+or hosts the bundle. The host downloads the matching versioned release and does
+not need the publisher's private key. The runtime containers remain offline.
+There is no silent fallback to a freshly signed development APK when a release
+cannot be downloaded or verified. Public publishing paths also enforce the
+pinned certificate; the old one-off development publication workflow is retired.
+
 Back up the stable operator keystore securely outside Git and server bundles.
 Do not generate a fresh key for every builder or CI run. The existing development
 signer is retained for current APKs; its private key is in the protected external
@@ -105,11 +114,13 @@ with whatever happens to be newest on GitHub. This avoids jumping ahead of that
 server's API version. Metadata records the packaging commit and dirty-source
 status; that field alone is not a cryptographic source attestation.
 
-Build the server and APK from the same checked-out `main` revision, retaining
-the signing key. Increment the Android version code and release version for a
-new rollout. The server bundle carries that verified APK, checksum, certificate
-report and public metadata. The isolated app/gateway containers do not contact
-GitHub or gain an outbound exception. The host operator supplies the bundle.
+The publisher builds and signs a clean version tag, retaining the signing key
+and increasing the Android version code for a new rollout. Normal server builds
+reuse that version's published APK, checksum, certificate report and original
+source metadata rather than compiling or signing another Android app. A newer
+server packaging commit does not rewrite the APK's recorded source commit. The
+isolated app/gateway containers do not contact GitHub or gain an outbound exception.
+The host operator supplies the bundle.
 The public APK path requires a clean source tag reachable from `origin/main`
 and verifies uploaded assets through a draft before publication. A successfully
 published public release is available through the README download link. Public
@@ -121,14 +132,14 @@ prebuilt publication path does not upload a private key.
 ```sh
 git switch main
 git pull --ff-only origin main
-# On the builder, with the original stable signing key configured:
-bash scripts/build/android.sh release
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.4.0-android-arm64-release.apk \
-  bash scripts/build/server.sh
+# Build the server and verify the matching published APK; no signing key:
+bash scripts/setup/cloud.sh --server
+bash scripts/build/server.sh
 ```
 
-For continued development updates, use `debug` with the retained original
-builder key instead. Never silently replace that signer. See
+For a custom development installation, explicitly set `FIELD_NOTES_ANDROID_APK`
+to an APK built with its retained original builder key. Never silently replace
+that signer. See
 [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for initial sideloading and releases.
 
 ## Upgrade the Linux server while keeping identities
@@ -191,8 +202,9 @@ update route depend on a new content protocol it cannot yet speak.
 
 For the standard Debian/Ubuntu installation, run as root from the existing
 checkout. This completes an earlier retained readiness record if needed, builds
-the next release with the original cached development APK key, verifies its
-signer, then backs up and upgrades the existing installation:
+the next release using the public APK for public-signed installations (or the
+original cached development key for custom installations), verifies its signer,
+then backs up and upgrades the existing installation:
 
 ```bash
 cd /usr/local/src/field-notes &&
@@ -201,8 +213,13 @@ python3 scripts/container-runtime.py check --complete-installation &&
 python3 scripts/upgrade-server.py --apply --build-from-source
 ```
 
-No fresh-install wizard or new password is needed. Source upgrades require the
-original `FIELD_NOTES_TOOLS/android-user/debug.keystore`; the default build-cache
-root is the build user's `.cache/field-notes`. A missing key stops before building
-or stopping services. The final preview also refuses a changed signer. Operator
-release keys use the existing `--bundle` workflow instead.
+No fresh-install wizard or new password is needed. A public-signed installation
+uses the matching GitHub release and requires no local Android signing key.
+Existing custom development installations still require their original
+`FIELD_NOTES_TOOLS/android-user/debug.keystore`; the default build-cache root is
+the build user's `.cache/field-notes`. A missing custom key stops before building
+or stopping services. The final preview refuses a changed signer in either path.
+Custom release keys use the existing `--bundle` workflow instead. These rules
+preserve existing phones; they cannot retroactively change an installed APK's
+certificate. Keep local unsynchronized work and pairing intact if a mismatch
+needs investigation.
