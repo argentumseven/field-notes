@@ -27,8 +27,7 @@ Executed automated checks: **11 Rust**, clippy, **40 real-process API**, **10
 Chromium**, **66 shared Kotlin**, **106 Python**, and Go vet/race. These include
 recipient projection/replay/legacy-editor fences, invalid recipients/playback,
 older APK bundles, protocol bounds, additive metadata, retained offline edits
-and independent visibility. Android/artifact verification is recorded below
-after completing the dedicated AVD and final release builds.
+and independent visibility. Android and final artifact verification follow.
 
 Nine Android feature checks passed on the guarded disposable AVD: actual local
 MediaPlayer start/Stop, temporary-volume restoration/manual precedence, Android
@@ -54,6 +53,24 @@ The capture stops the synthetic minute-by-minute schedule after verifying
 delivery/refill/receipts and expands one delivered card; it does not draw a
 notification imitation. Slow System UI and collapsed automatic grouping had
 otherwise produced a launcher/summary capture. All walkthrough image links resolve.
+
+The ARM64 release variant passed lint, shared host checks, signature/package,
+manifest/native and 16 KiB alignment inspection. The matching offline Linux
+x86_64 bundle built successfully. The real Docker/WireGuard/pinned-TLS fixture
+passed the complete APK transfer, enrollment/approval, actual Go C bridge,
+task/image writes, source restrictions, denied management/SSH/peer/LAN access,
+app-UID outbound/Docker-DNS drop counters, preserved password/pairing/master/CA
+material, root recovery through a private ancestor and owned resource removal.
+
+The public **v0.5.0 / code 11** release was built from clean source
+`23b0b4cba30360e36bfd5772d52c7d676d0849bb` with the retained public certificate.
+[Publication run 41771551083](https://github.com/argentumseven/field-notes/actions/runs/41771551083)
+succeeded. All four public assets were downloaded and matched the locally
+verified package byte for byte. The README's latest-APK link matched as well;
+the downloaded APK passed signature, manifest/native and alignment checks.
+APK SHA-256: `f6730915bbc5195fcb450947cdd76b8007d17eb6cc3507c15e2890092ad18962`.
+The matching server bundle SHA-256 is
+`b4ec1c768c590e8ab8c870069ab4fb77eae6fd8afaaddd15994c5ac04d780f4b`.
 
 Physical GrapheneOS cross-user acoustics, Doze/battery delivery and Android
 installer consent remain hardware checks. The AOSP fixture clamps an unmuted

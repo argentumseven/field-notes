@@ -65,10 +65,12 @@ Android permits posting. The system cannot report a new error while force-stoppe
 
 ## Planner version 0.5
 
-Upgrade the paired server before using the new reminder/list/start-only event
-features. The phone's in-app updater follows that matching server bundle. New
-preferences and reminder receipts have compatible defaults; neither an upgrade
-nor a theme change resets the encrypted cache, phone keys or pending work.
+Upgrade the paired server for recipient controls and longer alarm settings.
+The phone's updater follows that server's signed APK bundle. The Week widget,
+optional app lock and independent visibility choices use the local cache.
+Existing explicit visibility choices remain intact, with an option to reveal
+unlocked reminder/widget details. New preferences have compatible defaults;
+upgrades and theme changes retain the encrypted cache, phone keys and queued work.
 
 ## Keep the same signing key
 
