@@ -24,6 +24,8 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
     var networkFailure = false
     var rejection: Int? = null
     var expired = false
+    var compatibility:JsonObject?=null
+    var additiveFields=false
     var sent = mutableListOf<Command>()
     var results = mutableMapOf<String, JsonObject>()
     var loseReply = false
@@ -39,8 +41,8 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
         if (path == "/api/device/revoke-self") return Reply(200,"""{"authorization_revoked":true}""")
         if (path == "/api/people" && !directoryAvailable) return Reply(404, """{"error":"Not available"}""")
         if (path == "/api/people") return Reply(200,obj("people" to WireJson.encodeToJsonElement(listOf(HouseholdPerson(actor.user_id,actor.name,true)))).toString())
-        if (path == "/api/head") return Reply(200,obj("epoch" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"sequence" to snapshot.sequence.j()).toString())
-        if (path == "/api/snapshot") return Reply(200, WireJson.encodeToString(snapshot))
+        if (path == "/api/head") return Reply(200,JsonObject(obj("epoch" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"sequence" to snapshot.sequence.j())+(compatibility?.let { mapOf("compatibility" to it) } ?: emptyMap())).toString())
+        if (path == "/api/snapshot") return Reply(200, JsonObject(WireJson.encodeToJsonElement(snapshot).jsonObject+(if(additiveFields)mapOf("future_metadata" to obj("enabled" to JsonPrimitive(true))) else emptyMap())).toString())
         val c = WireJson.decodeFromJsonElement<Command>(body!!)
         sent += c
         results[c.operation_id]?.let { return Reply(200, it.toString()) }
@@ -60,6 +62,22 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun compatibleDriftAcceptsAdditiveDataAndIncompatibleServerRetainsTheOutbox()=runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        t.additiveFields=true
+        t.compatibility=obj("server_version" to "0.9.0".j(),"protocol_min" to 1.j(),"protocol_max" to 1.j(),"minimum_client_code" to 5.j(),"recommended_client_code" to (CURRENT_CLIENT_CODE+1).j(),"features" to JsonArray(listOf(REMINDER_OPTIONS_FEATURE.j())))
+        m.sync();assertTrue(m.state.value.online);assertTrue(v.value.supportsRemindersV2());assertContains(v.value.compatibility!!.message,"recommended")
+        m.enqueue("task.update",task.id,obj("notes" to "Retained through drift".j()),1)
+        val pending=v.value.outbox;val keys=v.value.keys
+        m.observeCompatibility(obj("compatibility" to JsonObject(t.compatibility!!+mapOf("minimum_client_code" to (CURRENT_CLIENT_CODE+2).j(),"recommended_client_code" to (CURRENT_CLIENT_CODE+2).j()))))
+        m.sync();assertTrue(t.sent.isEmpty());assertEquals(pending,v.value.outbox);assertEquals(keys,v.value.keys);assertNotNull(m.state.value.problem)
+        val restored=model(v,t,backgroundScope);restored.initialize();assertEquals(pending,restored.state.value.cache.outbox);assertNotNull(restored.state.value.problem)
+    }
+    @Test fun newReminderEditsOnAnOlderServerAreRetainedWithAnExplanation()=runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        m.enqueue("task.update",task.id,obj("reminder_options" to reminderOptionsData(ReminderOptions())),1)
+        m.sync();assertTrue(m.state.value.online);assertTrue(t.sent.isEmpty());assertTrue(v.value.outbox.isEmpty());assertEquals(1,v.value.conflicts.size);assertContains(v.value.conflicts.single().reason,"newer server")
+    }
     @Test fun clearingCheckedIsDurableAtomicAndDependsOnTheOfflineCompletion()=runTest {
         val list=Record("groceries","list",1,obj("title" to "Groceries".j()))
         val item=task.copy(data=JsonObject(task.data+mapOf("project_id" to list.id.j())))

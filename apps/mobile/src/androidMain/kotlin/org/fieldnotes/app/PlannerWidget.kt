@@ -42,11 +42,13 @@ class PlannerWidget : AppWidgetProvider() {
                 val tasks = focusTasks(cache, today, now.epochSeconds).take(4)
                 view.setTextViewText(R.id.widget_title, "Focus · ${tasks.size} next")
                 view.setTextViewText(R.id.widget_tasks, tasks.joinToString("\n\n") { "${priorityName(it.first.record.data.number("priority", 3).toInt())} · ${it.first.record.data.text("title").take(120)}" }.ifBlank { "No available tasks" })
-                view.setTextViewText(R.id.widget_footer, "Cached locally · tap to open and sync")
+                view.setTextViewText(R.id.widget_footer, if(widgetProblem(context))"Needs attention · open settings" else "Cached locally · tap to open and sync")
+                if(widgetProblem(context))view.setOnClickPendingIntent(R.id.widget_footer,widgetSettings(context))
             } else {
-                view.setTextViewText(R.id.widget_title, "Open your private planner")
-                view.setTextViewText(R.id.widget_tasks, "")
-                view.setTextViewText(R.id.widget_footer, "Tap to unlock · titles hidden")
+                view.setTextViewText(R.id.widget_title, "Focus")
+                view.setTextViewText(R.id.widget_tasks, widgetHiddenLabel(cache,unlocked,authenticated))
+                view.setTextViewText(R.id.widget_footer, "Schedule visibility settings")
+                view.setOnClickPendingIntent(R.id.widget_footer,widgetSettings(context))
             }
             return view
         }

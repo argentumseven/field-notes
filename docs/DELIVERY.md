@@ -170,3 +170,9 @@ update flow and compatible Linux upgrade/checkpoint/rollback. Main is source;
 only a matching verified signed APK bundled with the paired server is offered.
 No runtime GitHub fetch or private-key regeneration is part of an upgrade.
 Android installation remains an explicit user-confirmed OS action.
+
+Runtime compatibility is negotiated independently of the release string. Normal
+new bundles still ship the matching verified APK. During rollout a compatible
+older/newer client can keep core sync; feature/minimum bounds and bundle errors
+are visible. Background preparation resumes complete chunks after interruption,
+then repeats whole-APK verification before the user opens Android's installer.

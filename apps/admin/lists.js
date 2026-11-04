@@ -440,8 +440,9 @@ async function editListItem(list, record) {
         max: 3,
       });
   }
-  let reminders = d.reminders || { alerts: [], repeat: null },
+  let reminders = FieldReminders.rulesFor(record) || { alerts: d.due?[{id:record.id,minutes_before:0,...FieldReminders.profile}]:[], repeat: null },
     reminderDirty = false;
+  let reminderOptions=FieldReminders.optionsFor(record,"task");
   await formDialog(
     record ? (mayWrite() ? "Edit item" : "View item") : "New item",
     list.data.title,
@@ -455,6 +456,7 @@ async function editListItem(list, record) {
         FieldReminders.validate(reminders);
         data.reminders = reminders;
       }
+      FieldReminders.validateOptions(reminderOptions);data.reminder_options=reminderOptions;
       await mutate(
         record ? "task.update" : "task.create",
         record?.id || uuid(),
@@ -474,6 +476,7 @@ async function editListItem(list, record) {
             reminders = v;
             reminderDirty = true;
           },
+          {value:reminderOptions,kind:"task",changed:v=>{reminderOptions=v;}},
         );
       if (safeShoppingLink(d.link_url))
         body.append(

@@ -17,6 +17,7 @@
 * {
   box-sizing: border-box;
 }
+a[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 html[data-theme="light"] {
   color-scheme: light;
   --bg: #f4f4ed;
@@ -576,6 +577,7 @@ dialog {
 dialog::backdrop {
   background: #0009;
 }
+dialog:has(.reminder-editor) { width: min(680px, 94vw); }
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -1247,6 +1249,23 @@ main {
 .sound-options .dialog-choice,
 .sound-options > button {
   grid-column: 1/-1;
+}
+.alarm-options {
+  grid-column: 1/-1;
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr);
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.alarm-options[hidden] { display: none; }
+.alarm-options > p { grid-column: 1/-1; }
+.reminder-recipients {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--inset);
+  border-radius: 10px;
 }
 .weekday-choices {
   display: flex;

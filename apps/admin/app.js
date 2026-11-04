@@ -260,12 +260,12 @@ async function appendAndroidDownload(parent, cls = "") {
     if (!reply.ok) throw Error("Download details unavailable");
     const result = await reply.json();
     if (!result.available) {
-      status.textContent =
-        "The server's APK is missing or failed verification. Ask the administrator to restore the matching app bundle.";
+      status.textContent = result.error || "The server's APK is missing or failed verification. Ask the administrator to restore a verified client bundle; core notes remain available.";
+      link.removeAttribute("href");link.setAttribute("role","link");link.setAttribute("aria-disabled","true");
       return;
     }
     const data = result.artifact;
-    status.textContent = `Version ${data.version} · ARM64 · ${data.signing} signing`;
+    status.textContent = `Version ${data.version} · ARM64 · ${data.signing} signing`+(result.matching_server_release===false?" · Different server/client versions: core compatibility is negotiated. Install the matching client bundle for all new features.":"");
     for (const [label, file] of [
       ["SHA-256 checksum", "field-notes.apk.sha256"],
       ["Signing certificate", "field-notes.apk.signer.txt"],

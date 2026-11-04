@@ -17,7 +17,7 @@ Google account, store or public service is required on the installed server or p
 
 The public APK uses the release variant and the pinned public certificate. A
 local development build is also available at
-`dist/android/field-notes-0.4.0-android-arm64-debug.apk`, with `.sha256` and
+`dist/android/field-notes-0.5.0-android-arm64-debug.apk`, with `.sha256` and
 `.signer.txt` alongside. This is a signed **development** build. Keep the same
 signing key for in-place updates; changing signers normally requires uninstall
 and loses phone-local keys and unsynchronized edits. Never uninstall over retained

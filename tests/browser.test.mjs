@@ -77,10 +77,12 @@ test("APK action stays visible on sign-in when metadata fails or the bundle is a
     await page.reload();
     await page
       .getByText(
-        "The server's APK is missing or failed verification. Ask the administrator to restore the matching app bundle.",
+        "No Android APK bundle is installed. Core notes remain available.",
       )
       .waitFor();
     assert(await link.isVisible());
+    assert.equal(await link.getAttribute("aria-disabled"),"true");
+    assert.equal(await link.getAttribute("href"),null);
   } finally {
     await browser?.close();
     await f.close();

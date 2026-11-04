@@ -99,6 +99,17 @@ impl Store {
             }
             r
         };
+        if c.data.get("reminder_options").is_none() {
+            if let Some(incoming) = c.data.get("reminders") {
+                let changed = record.data.get("reminders") != Some(incoming);
+                let advanced = record.data["reminder_options"]["playback"]
+                    .as_object()
+                    .is_some_and(|p| !p.is_empty());
+                if changed && (!Self::reminder_recipient(&record, &actor.user_id) || advanced) {
+                    return fail(409,"This reminder uses recipient or alarm controls your editor has not supplied. Update the app or use the current website; your saved edit has not overwritten the existing reminders");
+                }
+            }
+        }
         match c.action.as_str() {
             "project.create" | "project.update" | "list.create" | "list.update" | "note.create"
             | "note.update" => {
@@ -127,6 +138,7 @@ impl Store {
                         "price",
                         "currency",
                         "reminders",
+                        "reminder_options",
                     ],
                 )?;
                 let pid = self.container_ref(c.data.get("project_id").unwrap_or(&json!("")))?;
@@ -149,6 +161,7 @@ impl Store {
                 Self::planning(&c.data, &mut record)?;
                 Self::list_item_fields(&c.data, &mut record)?;
                 Self::reminders(&c.data, &mut record)?;
+                self.reminder_options(&c.data, &mut record, &actor)?;
                 self.assignment(&c.data, &mut record)?;
             }
             "task.update" => {
@@ -172,6 +185,7 @@ impl Store {
                         "price",
                         "currency",
                         "reminders",
+                        "reminder_options",
                     ],
                 )?;
                 if let Some(value) = c.data.get("project_id") {
@@ -185,6 +199,7 @@ impl Store {
                 Self::planning(&c.data, &mut record)?;
                 Self::list_item_fields(&c.data, &mut record)?;
                 Self::reminders(&c.data, &mut record)?;
+                self.reminder_options(&c.data, &mut record, &actor)?;
                 self.assignment(&c.data, &mut record)?;
                 if c.data.get("title").is_some() {
                     record.data["title"] = json!(text(&c.data, "title", 240)?);
@@ -342,7 +357,7 @@ impl Store {
                 if record.kind != "event" {
                     return fail(400, "Expected a calendar event");
                 }
-                Self::calendar_event(&c.data, &mut record, &actor)?;
+                self.calendar_event(&c.data, &mut record, &actor)?;
             }
             "project.delete" | "list.delete" | "note.delete" | "task.delete" | "comment.delete"
             | "image.delete" | "event.delete" => {

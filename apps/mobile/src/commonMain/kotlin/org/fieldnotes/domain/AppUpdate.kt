@@ -1,9 +1,10 @@
 package org.fieldnotes.domain
 
 import kotlinx.serialization.json.*
+import kotlinx.serialization.Serializable
 
 /** The paired server selects the APK; repository head alone grants no install authority. */
-data class UpdateOffer(val version:String,val code:Long,val sha256:String,val signer:String,val size:Long,val chunkSize:Int,val architecture:String,val source:String?) {
+@Serializable data class UpdateOffer(val version:String,val code:Long,val sha256:String,val signer:String,val size:Long,val chunkSize:Int,val architecture:String,val source:String?) {
     val chunks:Int get()=((size+chunkSize-1)/chunkSize).toInt()
     companion object {
         fun read(reply:JsonObject):UpdateOffer? {
@@ -21,4 +22,4 @@ data class UpdateOffer(val version:String,val code:Long,val sha256:String,val si
         }
     }
 }
-data class AppUpdateUi(val installed:String="",val offered:String?=null,val available:Boolean=false,val busy:Boolean=false,val progress:Float?=null,val ready:Boolean=false,val message:String="Enroll and sign in to check your paired server.")
+data class AppUpdateUi(val installed:String="",val offered:String?=null,val available:Boolean=false,val busy:Boolean=false,val progress:Float?=null,val ready:Boolean=false,val message:String="Enroll and sign in to check your paired server.",val problem:Boolean=false,val lastCheck:Long=0)

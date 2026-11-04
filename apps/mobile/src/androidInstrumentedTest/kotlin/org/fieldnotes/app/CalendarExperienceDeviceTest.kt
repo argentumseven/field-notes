@@ -18,6 +18,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.*
+import kotlinx.serialization.json.decodeFromJsonElement
 import org.fieldnotes.domain.*
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -43,8 +44,10 @@ class CalendarExperienceDeviceTest {
         val event=Record("11111111-1111-4111-8111-111111111112","event",1,obj("title" to "Household check-in".j(),"author_id" to "owner".j(),"created_by_name" to "Owner".j(),"updated_by_name" to "Owner".j(),"created_at" to (Clock.System.now().epochSeconds-86400).j(),"updated_at" to Clock.System.now().epochSeconds.j(),"all_day" to kotlinx.serialization.json.JsonPrimitive(false),"starts_at" to start.j(),"ends_at" to (start+3600).j()))
         val snapshot=Snapshot(1,"calendar-fixture",1,1,listOf(event),Actor("owner","Owner","owner","session"))
         val cache=Cache(keys=app.model.state.value.cache.keys,config=obj("server_key" to "synthetic-calendar".j()),token="synthetic-session",snapshot=snapshot,
-            preferences=Preferences(connectionPaused=true,backgroundSync=false,reminders=false,liveUpdates=false,widgetTitles=true))
+            preferences=Preferences(connectionPaused=true,backgroundSync=false,reminders=false,liveUpdates=false,widgetTitles=true),
+            people=listOf(HouseholdPerson("owner","Morgan",true),HouseholdPerson("sam","Sam",true)),compatibility=ServerCompatibility("0.5.0",features=setOf(REMINDER_OPTIONS_FEATURE),checkedAt=Clock.System.now().epochSeconds))
         runBlocking { app.vault.save(cache);app.model.initialize() }
+        app.deliveryError.value=null
         fun waitFor(condition:()->Boolean) { val until=System.currentTimeMillis()+90_000;while(System.currentTimeMillis()<until){if(condition())return;Thread.sleep(250)};error("Calendar fixture did not reach expected state; active="+instrumentation.uiAutomation.rootInActiveWindow?.packageName+"; windows="+instrumentation.uiAutomation.windows.map { it.root?.packageName }) }
         fun nodes(text:String)=instrumentation.uiAutomation.windows.flatMap { it.root?.findAccessibilityNodeInfosByText(text).orEmpty() }
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -78,6 +81,7 @@ class CalendarExperienceDeviceTest {
             compose.onNodeWithText("10:00 AM").assertIsDisplayed()
             shot("31-local-event")
             compose.onNode(hasText("Reminders ·",substring=true)).performScrollTo().performClick()
+            compose.onNodeWithText("Only me").performScrollTo().performClick()
             compose.onNode(isToggleable() and hasAnySibling(hasText("Repeat during a time window"))).performScrollTo().performClick()
             compose.onNodeWithText("Every week").performScrollTo().performClick()
             compose.onNodeWithText("Every day").performScrollTo().performClick()
@@ -85,6 +89,11 @@ class CalendarExperienceDeviceTest {
             compose.onNodeWithText("Sound",useUnmergedTree=true).performScrollTo().performClick()
             compose.onNodeWithText("Urgent").performClick();compose.onNodeWithText("Bell",useUnmergedTree=true).performClick();compose.onNodeWithText("100%").performClick()
             shot("41-reminder-sound")
+            compose.onNodeWithText("Sunrise",useUnmergedTree=true).performScrollTo().performClick()
+            compose.onNodeWithContentDescription("Play as an alarm").performScrollTo().performClick()
+            compose.onNodeWithText("30 s").performScrollTo().performClick()
+            compose.onNodeWithText("Temporarily raise alarm volume").performScrollTo()
+            shot("44-long-alarm-controls")
             compose.onNodeWithText("Done").performClick()
             compose.onAllNodesWithText("Choose time").onFirst().performScrollTo().performClick()
             shot("33-time-picker")
@@ -96,14 +105,22 @@ class CalendarExperienceDeviceTest {
             compose.waitUntil(30_000) { app.model.state.value.cache.outbox.isNotEmpty() }
             assertEquals(start,app.model.state.value.cache.outbox.last().command.data.number("starts_at"))
             assertEquals("Household check-in",app.model.state.value.cache.outbox.last().command.data.text("title"))
+            val saved=app.model.state.value.cache.outbox.last().command.data.getValue("reminder_options")
+            val options=SyncJson.decodeFromJsonElement<ReminderOptions>(saved)
+            assertEquals(listOf("owner"),options.audience.people);assertTrue(options.playback.values.any{it.tone=="sunrise"&&it.duration_seconds==30&&it.alarm&&it.unmute})
             // Real provider rendering must redact both titles and schedule markers.
             val privateView=CalendarWidget.views(app,cache,false).apply(app,android.widget.FrameLayout(app))
             assertFalse(privateView.findViewById<android.widget.TextView>(R.id.calendar_agenda).text.contains("Household check-in"))
-            assertEquals("Open Field Notes",privateView.findViewById<android.widget.TextView>(R.id.calendar_refresh).text.toString())
+            assertEquals("Unlock phone to show schedule",privateView.findViewById<android.widget.TextView>(R.id.calendar_refresh).text.toString())
             val markerCount=(privateView.findViewById<android.widget.LinearLayout>(R.id.calendar_weeks)).let { weeks ->
                 (0 until weeks.childCount).sumOf { w -> val row=weeks.getChildAt(w) as android.widget.LinearLayout;(0 until row.childCount).count { d -> row.getChildAt(d).findViewById<android.widget.TextView>(R.id.calendar_marker).text.isNotBlank() } }
             }
             assertEquals(0,markerCount)
+            compose.onNodeWithContentDescription("Workspace menu").performClick()
+            compose.onNodeWithText("Settings & widgets").performClick()
+            compose.onNodeWithText("Detailed reminder notifications").performScrollTo()
+            shot("45-independent-visibility")
+            compose.onNodeWithText("Require a credential to open the app").assertExists()
             scenario.onActivity { it.intent=originalIntent } // Preserve ActivityScenario lifecycle ownership.
         }
     }

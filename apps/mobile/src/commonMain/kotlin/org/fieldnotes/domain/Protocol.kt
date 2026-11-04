@@ -4,6 +4,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 val WireJson = Json { ignoreUnknownKeys = false; encodeDefaults = true }
+// Additive server metadata must not break an older app's core sync. Enrollment
+// and command serialization keep the strict parser above.
+val SyncJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 fun obj(vararg pairs: Pair<String, JsonElement>) = JsonObject(mapOf(*pairs))
 fun String.j() = JsonPrimitive(this)
 fun Int.j() = JsonPrimitive(this)
@@ -21,14 +24,17 @@ val Snapshot.basis get() = Basis(epoch, generation)
 @Serializable data class Pending(val command: Command, val dependsOn: String? = null, val attempted: Boolean = false)
 @Serializable data class Conflict(val command: Command, val reason: String)
 @Serializable data class Draft(val target: String, val epoch: String, val generation: Long, val revision: Long, val data: JsonObject, val dependsOn: String? = null, val action: String = "task.update")
-@Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = false, val liveUpdates: Boolean = true, val connectionPaused: Boolean = false, val autoRefresh:Boolean=true, val theme:String="system", val notificationTitles:Boolean=false)
+@Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = true, val liveUpdates: Boolean = true, val connectionPaused: Boolean = false, val autoRefresh:Boolean=true, val theme:String="system", val notificationTitles:Boolean=true,
+    val appLock:Boolean=false,val lockMinutes:Int=5,val notificationOnLockScreen:Boolean=false,val widgetOnLockScreen:Boolean=false,val widgetHousehold:Boolean=false,val allowAlarmVolumeOverride:Boolean=false,val autoDownloadUpdates:Boolean=true,val visibilityChoiceSeen:Boolean=false)
 @Serializable data class Cache(
     val keys: JsonObject? = null, val config: JsonObject? = null, val token: String? = null,
     val snapshot: Snapshot? = null, val people: List<HouseholdPerson> = emptyList(), val directoryRevision:Long = 0, val lastSyncedAt:Long = 0, val outbox: List<Pending> = emptyList(),
     val conflicts: List<Conflict> = emptyList(), val drafts: Map<String, Draft> = emptyMap(),
     val enrollment: Enrollment? = null, val preferences: Preferences = Preferences(), val reminded: Set<String> = emptySet(),
+    val compatibility:ServerCompatibility?=null,
+    val lastContactAt:Long=0,val lastSyncProblem:String="",
 )
-data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false)
+data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0)
 data class Reply(val status: Int, val body: String = "", val binary: String? = null)
 interface Transport {
     suspend fun keys(): JsonObject

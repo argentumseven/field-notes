@@ -19,11 +19,20 @@ impl Downloads {
             &std::fs::read(root.join("android.json")).map_err(|_| "Missing APK metadata")?,
         )
         .map_err(|_| "Invalid APK metadata")?;
-        if info["version"] != env!("CARGO_PKG_VERSION")
+        let version = info["version"].as_str().unwrap_or("");
+        let parts: Vec<_> = version.split('.').collect();
+        if version.len() > 32
+            || parts.len() != 3
+            || parts
+                .iter()
+                .any(|p| p.is_empty() || p.parse::<u32>().is_err())
+            || info
+                .get("wire_protocol")
+                .is_some_and(|p| p.as_u64() != Some(1))
             || info["architecture"] != "arm64-v8a"
             || !matches!(info["signing"].as_str(), Some("development" | "release"))
         {
-            return Err("APK metadata must match the server release".into());
+            return Err("APK metadata has an unsupported version, protocol or architecture".into());
         }
         let mut file =
             std::fs::File::open(root.join("field-notes.apk")).map_err(|_| "Missing bundled APK")?;
@@ -100,7 +109,7 @@ impl Downloads {
         Ok(response)
     }
     pub fn metadata(&self) -> Value {
-        json!({"available":true,"artifact":self.info})
+        json!({"available":true,"artifact":self.info,"matching_server_release":self.info["version"]==env!("CARGO_PKG_VERSION")})
     }
     pub fn update_metadata(&self) -> Value {
         json!({"available":true,"artifact":self.info,"package":"org.fieldnotes.app","size":self.size,"chunk_size":CHUNK_SIZE,"protocol":1})

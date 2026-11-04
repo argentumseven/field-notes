@@ -121,6 +121,8 @@ import org.fieldnotes.domain.*
     var remindersJson by rememberSaveable(record?.id) { mutableStateOf(reminderData(reminderSet(Record(record?.id ?: "", "event",record?.revision ?: 0,data)) ?: ReminderSet(listOf(ReminderAlert(record?.id ?: model.newId())))).toString()) }
     var remindersDirty by rememberSaveable(record?.id) { mutableStateOf(record==null || data.containsKey("reminders")) }
     val reminders=WireJson.decodeFromString<ReminderSet>(remindersJson)
+    var optionsJson by rememberSaveable(record?.id){mutableStateOf(reminderOptionsData(reminderOptions(Record(record?.id ?: "","event",record?.revision ?: 0,data)) ?: ReminderOptions(if(record==null)ReminderAudience("people",listOf(state.cache.snapshot!!.actor.user_id)) else ReminderAudience())).toString())}
+    val reminderOptions=SyncJson.decodeFromString<ReminderOptions>(optionsJson)
     var allDay by rememberSaveable(record?.id) { mutableStateOf(data["all_day"] == JsonPrimitive(true)) }
     var startDate by rememberSaveable(record?.id) { mutableStateOf(data.text("start_date").ifBlank { initialStart.date.toString() }) }
     var endDate by rememberSaveable(record?.id) { mutableStateOf(if(data.text("end_date").isNotBlank()) LocalDate.parse(data.text("end_date")).minus(1, DateTimeUnit.DAY).toString() else initialEnd.date.toString()) }
@@ -137,7 +139,11 @@ import org.fieldnotes.domain.*
         require(title.isNotBlank()) { "Enter a title." }
         validateReminders(reminders)
         val fields=obj("title" to title.j(), "notes" to notes.j(), "all_day" to JsonPrimitive(allDay), "start_date" to (if (allDay) startDate else "").j(), "end_date" to (if (allDay) LocalDate.parse(endDate).plus(1, DateTimeUnit.DAY).toString() else "").j(), "starts_at" to start.j(), "ends_at" to end.j())
-        return if(remindersDirty)JsonObject(fields+("reminders" to reminderData(reminders))) else fields
+        val result=if(remindersDirty)JsonObject(fields+("reminders" to reminderData(reminders))) else fields
+        return if(state.cache.supportsRemindersV2()) {
+            val extra=prunedReminderOptions(reminderOptions,reminders);validateReminderOptions(extra)
+            JsonObject(result+("reminder_options" to reminderOptionsData(extra)))
+        } else result
     }
     AlertDialog(onDismissRequest = close, title = { Text(if(record == null) "New calendar event" else "Calendar event") }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title, { title = it.take(240) }, label = { Text("Title") }, enabled = writable)
@@ -163,7 +169,7 @@ import org.fieldnotes.domain.*
             else Text("Start only · shown as a calendar marker, without reserving a block of time.",style=MaterialTheme.typography.bodySmall)
             Text("Times are local · ${zone.id.replace('_',' ')}", style = MaterialTheme.typography.bodySmall)
         }
-        if(writable)ReminderEditor(reminders,LocalDate.parse(startDate),model::newId,use24Hour,preview) { remindersJson=reminderData(it).toString();remindersDirty=true }
+        if(writable)ReminderEditor(reminders,LocalDate.parse(startDate),model::newId,use24Hour,preview,reminderEditorSettings(model,state,reminderOptions){optionsJson=reminderOptionsData(it).toString()}) { remindersJson=reminderData(it).toString();remindersDirty=true }
         if(record!=null)Text(recordHistory(state.cache,record,zone),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if (record != null && revision != record.revision) { Text("Changed on another device. Your edits are kept. Close and reopen to load the latest event, or keep your edits for a new save.", color = MaterialTheme.colorScheme.error); SecondaryButton(onClick = { revision = record.revision }) { Text("Keep my edits") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

@@ -13,7 +13,7 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | `apps/server/src/http.rs` | Separate management/device routes, actual-source ACL, CSRF, bounded requests |
 | `apps/server/src/store/` | Auth/roles, transactional commands, typed organization/planning/assignment, device enrollment, administration, backup |
 | `apps/server/src/downloads.rs` | Fixed LAN-only APK routes, startup digest validation, bounded streaming from a read-only program mount |
-| `apps/mobile/src/androidMain/.../ApkUpdates.kt` | Server-selected private APK chunks, independent cryptographic/signing/identity checks, scoped cache, Android installer handoff |
+| `apps/mobile/src/androidMain/.../ApkUpdates.kt`, `UpdateTransfer.kt`, `ApkUpdateVerifier.kt` | Server-selected updates, resumable bounded chunks, independent cryptographic/signing/identity checks, Android installer handoff |
 | `scripts/upgrade-server.py` | Compatible Linux upgrades, identity preservation, encrypted backup, staged programs/images, readiness and rollback |
 | `scripts/android_artifact.py`, `publish-android.py`, `.github/workflows/` | Matching signed APK packaging and draft-first tagged release delivery |
 | `apps/server/src/crypto.rs` | AES-GCM storage encryption, Argon2id passwords, random capabilities |
@@ -21,7 +21,10 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | `apps/mobile/src/commonMain/.../domain/` | Protocol, encrypted-cache model, durable outbox/drafts, enrollment state, typed organization/household directory, ranking/calendar/widget policy |
 | `apps/mobile/src/commonMain/.../ui/` | Compose planner/task editor; separate organization, calendar/date/event and theme components |
 | `apps/mobile/src/commonMain/.../domain/Scheduling.kt` | Local wall-clock validation, DST round trips and calendar display labels |
+| `apps/mobile/src/commonMain/.../domain/ReminderOptions.kt`, `ReminderNotice.kt`, `Compatibility.kt` | Recipient/playback extensions, detailed notice composition and feature/protocol bounds |
 | `apps/mobile/src/androidMain/.../CalendarWidget.kt` | Launcher month grid, private previews, coalesced background rendering, date navigation and owned midnight refresh |
+| `apps/mobile/src/androidMain/.../WeekCalendarWidget.kt` | Real seven-day launcher agenda and occupied-time bars, sharing the calendar lifecycle |
+| `apps/mobile/src/androidMain/.../AlarmPlaybackService.kt`, `AlarmAudio.kt` | Bounded local playback, visible Stop, durable temporary-volume restoration and recovery |
 | `apps/mobile/src/androidMain/` | Keystore vault, credential lock, offline camera scanner, widget, scheduler, manifests/resources |
 | `apps/mobile/src/jvmMain/` | JNI adapter shared by Android and actual JVM integration checks |
 | `native/transport/`, `native/bridge/`, `native/android/` | Userspace WireGuard/HTTPS, key-bound tunnel enrollment, C ABI, JNI byte bridge |
@@ -132,13 +135,34 @@ occurrences; simultaneous due reminders produce one digest. Device sessions
 renew only after valid, active, source-bound authorization. The private-only
 self-revocation route kills that installation's sessions before peer removal.
 
-Separate Focus and Upcoming AppWidgetProviders read the encrypted local cache.
-Upcoming orders dated/planned tasks and events; Focus uses the shared score.
-Titles are hidden by default. Opt-in shares title copies with the launcher;
+Focus, Upcoming, month Calendar and seven-day Week AppWidgetProviders read the
+encrypted local cache. Upcoming orders dated/planned tasks and events; Focus
+uses the shared score. Month/Week show occupied time and date links. Titles
+default on while unlocked, retaining existing explicit preferences. Separate
+lock-screen switches and optional app credential locking are independent;
 cached copies cannot be guaranteed erased on lock. No notes/images/credentials
 enter RemoteViews. A standard requestPinAppWidget flow offers installation.
 See [Android delivery](ANDROID-DELIVERY.md) for profile forwarding, alarms,
 battery behavior and the uninstall boundary.
+
+Recipient/playback extensions live in record `reminder_options` beside the
+strict v1 `reminders` object. Server responses project empty alert rules for
+nonrecipients while exposing the original as read-only `reminder_rules` to
+current editors. Stored rules remain canonical. Commands and replays use the
+same projection, and old editors cannot blindly overwrite advanced schedules.
+Cached scheduling and household-change notifications filter by the recipient
+policy. This is an alert subscription, not a content ACL.
+
+Long alarm audio runs in a bounded media-playback foreground service. An
+encrypted volume lease is durable before any explicit per-phone/per-rule
+override, and restoration respects a changed manual volume. Recovery is local
+and does not wait for networking. DND is never changed.
+
+Head/update metadata advertises protocol/client bounds and feature support.
+Additive snapshot fields are tolerated; command/enrollment schemas stay strict.
+Incompatible sync retains edits and surfaces a persistent problem. Verified APK
+chunks checkpoint independently of the planner vault and resume after restart;
+whole-file hash, installed signer and Android consent remain required.
 
 Future iOS work can share Kotlin domain/UI, but needs a native transport bridge,
 Keychain, background policy and widget implementation. An in-process VPN does

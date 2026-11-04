@@ -17,7 +17,9 @@ import java.io.File
 
 /** Uses the real system AppWidgetHost, independently of Compose's test clock. */
 class CalendarWidgetHostDeviceTest {
-    @Test fun monthIsHostedRepaintsOfflineAndOpensTheChosenDate() {
+    @Test fun monthIsHostedRepaintsOfflineAndOpensTheChosenDate()=host(false)
+    @Test fun weekIsHostedRepaintsOfflineAndOpensTheChosenDate()=host(true)
+    private fun host(weekly:Boolean) {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
         val info=instrumentation.uiAutomation.serviceInfo
@@ -31,6 +33,7 @@ class CalendarWidgetHostDeviceTest {
         val cache=Cache(keys=app.model.state.value.cache.keys,config=obj("server_key" to "synthetic-calendar".j()),token="synthetic-session",snapshot=Snapshot(1,"calendar-fixture",1,1,listOf(event),Actor("owner","Owner","owner","session")),
             preferences=Preferences(connectionPaused=true,backgroundSync=false,reminders=false,liveUpdates=false,widgetTitles=true))
         runBlocking { app.vault.save(cache);app.model.initialize() }
+        app.deliveryError.value=null
         fun nodes(text:String):List<AccessibilityNodeInfo> {
             val found=mutableListOf<AccessibilityNodeInfo>()
             fun visit(node:AccessibilityNodeInfo) {
@@ -64,16 +67,23 @@ class CalendarWidgetHostDeviceTest {
         }
         // A launcher PendingIntent uses a real app task. ActivityScenario owns a
         // special launch Intent and cannot follow that task's lifecycle reliably.
-        val activity=instrumentation.startActivitySync(android.content.Intent(app,MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
+        // MonitoringInstrumentation's fixed 45-second idle budget is too short
+        // for a cold software-rendered emulator. Observe the real resumed task.
+        app.startActivity(android.content.Intent(app,MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        var activity:MainActivity?=null
+        waitFor("resumed app") {
+            instrumentation.runOnMainSync { activity=ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().singleOrNull() }
+            activity!=null
+        }
         try {
-            instrumentation.runOnMainSync { assertTrue(CalendarWidget.pin(activity)) }
+            instrumentation.runOnMainSync { assertTrue(if(weekly)WeekCalendarWidget.pin(activity!!) else CalendarWidget.pin(activity!!)) }
             waitFor("pin confirmation") { launcher("Add").any { it.isClickable||it.parent?.isClickable==true } }
             picture("pin-confirmation")
             val choices=launcher("Add")
             val add=choices.firstOrNull { it.className?.toString()?.contains("Button")==true } ?: choices.first { it.isClickable||it.parent?.isClickable==true }
             assertTrue((if(add.isClickable)add else add.parent).performAction(AccessibilityNodeInfo.ACTION_CLICK))
             val manager=app.getSystemService(AppWidgetManager::class.java)
-            waitFor("binding") { manager.getAppWidgetIds(ComponentName(app,CalendarWidget::class.java)).isNotEmpty() }
+            waitFor("binding") { manager.getAppWidgetIds(ComponentName(app,if(weekly)WeekCalendarWidget::class.java else CalendarWidget::class.java)).isNotEmpty() }
             instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
             var page=0;var nextSwipe=System.currentTimeMillis()+8000
             waitFor("visible month") {
@@ -85,8 +95,10 @@ class CalendarWidgetHostDeviceTest {
             val tomorrow=today.plus(1,DateTimeUnit.DAY)
             runBlocking { app.model.enqueue("event.create",app.model.newId(),obj("title" to "Tomorrow’s reminder".j(),"starts_at" to scheduledInstant(tomorrow.toString(),"10:00",zone).j()),null) }
             waitFor("automatic offline repaint") { described(friendlyDate(tomorrow)).any { it.contentDescription?.contains("1 scheduled")==true } }
-            assertTrue(described("Monday").isNotEmpty());assertTrue(described("Next month").isNotEmpty())
-            picture("32-home-calendar")
+            if(!weekly)assertTrue(described("Monday").isNotEmpty())
+            assertTrue(described(if(weekly)"Next week" else "Next month").isNotEmpty())
+            if(weekly)assertTrue(nodes("Updated check-in").isNotEmpty())
+            picture(if(weekly)"42-home-week" else "32-home-calendar")
             assertTrue(described(friendlyDate(tomorrow)).first { it.isClickable }.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             waitFor("calendar date link") { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()=="org.fieldnotes.app"&&nodes("Tomorrow’s reminder").any { it.packageName?.toString()=="org.fieldnotes.app" } }
             instrumentation.runOnMainSync {

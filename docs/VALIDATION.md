@@ -1,8 +1,70 @@
 # Implementation and validation record
 
+## 0.5.0 personal reminders, loud alarms and week widgets
+
+The active implementation is **0.5.0 / Android code 11**, protocol 1 and schema 2.
+App credential locking is optional, independent of notification and widget
+details. New installations show details while unlocked; existing explicit off
+choices are preserved with a visible migration choice. Lock-screen disclosure
+has separate default-off controls. Server authentication and vault encryption
+are unchanged.
+
+Reminder extensions add person/everyone/assignment recipients, eight original
+tones, longer local alarm playback, and per-phone/per-rule temporary alarm-volume
+override. An encrypted restoration lease precedes volume changes, supports
+process recovery and respects a later manual choice. Stop/completion/deletion/
+recipient or authorization changes cancel active playback. DND stays with
+Android. A real seven-day launcher widget adds agenda rows and occupied-time
+bars; all widget visibility settings are independent of app locking.
+
+Head/update metadata advertises protocol/client bounds and features. Compatible
+drift keeps core sync; unsupported options retain edits with an explanation.
+APK preparation runs in foreground/background, checkpoints complete chunks and
+rechecks whole-file/package/hash/signer before Android consent. Missing bundles
+do not stop core notes; transfer and compatibility failures remain visible.
+
+Executed automated checks: **11 Rust**, clippy, **40 real-process API**, **10
+Chromium**, **66 shared Kotlin**, **106 Python**, and Go vet/race. These include
+recipient projection/replay/legacy-editor fences, invalid recipients/playback,
+older APK bundles, protocol bounds, additive metadata, retained offline edits
+and independent visibility. Android/artifact verification is recorded below
+after completing the dedicated AVD and final release builds.
+
+Nine Android feature checks passed on the guarded disposable AVD: actual local
+MediaPlayer start/Stop, temporary-volume restoration/manual precedence, Android
+refusing a restoration with the recovery record retained, full notification
+extras and lock-screen redaction, all bundled sounds, encrypted alarm receipts
+and schedule refill, signed APK rejection cases, interrupted download/controller
+restart resumption, and widget visibility independent of app locking. A real
+same-signer **0.3.2/code 5 → 0.5.0/code 11** installation retained the actual
+Keystore-backed phone keys, server/CA/PSK binding and queued task command without
+clear, uninstall or re-enrollment between its seed and verification phases.
+
+The actual seven-day launcher widget passed offline automatic repaint and date
+navigation. The native local-clock/reminder/visibility editor check passed and
+captured the focused controls. The software emulator exceeded the runner's fixed
+45-second synchronous activity-launch budget; the host fixture now observes the
+actual resumed task instead. The sound-picker fixture was selecting two sibling
+switches; explicit accessible labels now identify the alarm controls. Product
+timing, authentication and scheduling behavior were not relaxed for those checks.
+The actual System UI notification-shade check also passed with its card expanded:
+person, full local schedule, notes and trusted creator/editor timestamps are
+visible. The compact summary puts the person and time ahead of a long date.
+The capture stops the synthetic minute-by-minute schedule after verifying
+delivery/refill/receipts and expands one delivered card; it does not draw a
+notification imitation. Slow System UI and collapsed automatic grouping had
+otherwise produced a launcher/summary capture. All walkthrough image links resolve.
+
+Physical GrapheneOS cross-user acoustics, Doze/battery delivery and Android
+installer consent remain hardware checks. The AOSP fixture clamps an unmuted
+alarm stream to a minimum of 1 and refuses alarm-stream muting; its checks
+validate restoration of the lowest state it actually accepts. A genuinely
+zero/muted alarm stream therefore remains a physical-device check. No cloud check deploys the user's
+home Debian instance. Prior release records follow for comparison.
+
 ## 0.4.0 calendar, reminders, rolling lists and recovery
 
-The active implementation is version **0.4.0**, Android code **10**, protocol 1
+The previous implementation is version **0.4.0**, Android code **10**, protocol 1
 and database schema 2. Calendar opens first. Local date/clock controls replace
 ISO/offset entry; start-only events have no invented duration. Desktop day/week
 and native day timelines arrange overlaps. The real Android Calendar launcher

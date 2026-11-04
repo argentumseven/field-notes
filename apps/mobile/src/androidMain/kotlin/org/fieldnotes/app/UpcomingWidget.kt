@@ -47,7 +47,8 @@ class UpcomingWidget : AppWidgetProvider() {
             val all=upcomingAgenda(cache,now,zone)
             val agenda=all.take(rows)
             view.setTextViewText(R.id.widget_title,"Upcoming · ${today.monthNumber}/${today.dayOfMonth}")
-            if(widgetMayShowTitles(cache,unlocked,authenticated)){
+            val show=widgetMayShowTitles(cache,unlocked,authenticated)
+            if(show){
                 val content=agenda.joinToString("\n\n") { item->
                     val time=Instant.fromEpochSeconds(item.at).toLocalDateTime(zone)
                     val day=if(time.date==today)"Today" else "${time.monthNumber}/${time.dayOfMonth}"
@@ -58,8 +59,9 @@ class UpcomingWidget : AppWidgetProvider() {
                 }
                 view.setTextViewText(R.id.widget_tasks,content)
                 view.setInt(R.id.widget_tasks,"setMaxLines",rows*3)
-            } else view.setTextViewText(R.id.widget_tasks,"${all.size} upcoming items\nOpen Field Notes to unlock or enable home-screen titles.")
-            view.setTextViewText(R.id.widget_footer,"Cached locally · tap here to refresh")
+            } else view.setTextViewText(R.id.widget_tasks,widgetHiddenLabel(cache,unlocked,authenticated)+"\nWidget visibility is independent of the optional app lock.")
+            view.setTextViewText(R.id.widget_footer,when{!show->"Schedule visibility settings";widgetProblem(context)->"Needs attention · open settings";else->"Cached locally · tap here to refresh"})
+            if(!show||widgetProblem(context))view.setOnClickPendingIntent(R.id.widget_footer,widgetSettings(context))
             return view
         }
         fun pin(context:Context):Boolean {

@@ -17,6 +17,31 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Personal alerts, long alarms and the week at a glance
+
+These 0.5.0 captures show the actual Android notification shade and launcher
+Week widget, plus the native and browser settings. The optional app credential
+lock is separate from notification, home-screen and lock-screen disclosure.
+Existing off choices stay off; Show schedule leads to visibility settings.
+The new native fixtures use UTC; the browser fixture uses America/New_York.
+
+Choose people or Everyone for an item's reminders. The shared calendar can
+remain visible without ringing every person's phones. Longer alarms offer
+eight sounds, a duration and temporary alarm-volume control, enabled on each
+phone separately. The previous level/mute state is restored unless changed
+manually. DND and GrapheneOS's forwarded-notification channel still apply.
+
+![Actual launcher week widget, automatically repainted after an offline edit](screenshots/android/42-home-week.png)
+![Detailed Android reminders with schedule and notes](screenshots/android/43-detailed-notifications.png)
+![Native long-alarm sound, duration and volume controls](screenshots/android/44-long-alarm-controls.png)
+![Independent app lock and notification visibility controls](screenshots/android/45-independent-visibility.png)
+![Browser alarm controls](screenshots/web/42-personal-alarm-controls.png)
+![Browser recipient selection](screenshots/web/43-reminder-recipients.png)
+
+The broader 0.4.0 workspace tour below remains useful for lists, tasks, notes,
+enrollment and management. Those older settings images predate the new
+visibility switches. The 0.5.0 examples above show the current controls.
+
 ## Calendar first, local time, and an actual month widget
 
 The 0.4.0 calendar is the landing view. Scheduling uses local date and clock

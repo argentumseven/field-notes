@@ -471,7 +471,7 @@ async function eventEditor(record, selectedTime) {
       ? new Date(d.ends_at * 1000)
       : new Date(initialStart.getTime() + 3600000);
   let reminderSettings = structuredClone(
-      d.reminders || {
+      FieldReminders.rulesFor(record) || {
         alerts: [
           {
             id: record?.id || uuid(),
@@ -483,6 +483,7 @@ async function eventEditor(record, selectedTime) {
       },
     ),
     remindersDirty = !record || !!d.reminders;
+  let reminderOptions=FieldReminders.optionsFor(record,"event");
   await formDialog(
     record ? "Edit event" : "New event",
     "Times are local · " +
@@ -579,6 +580,7 @@ async function eventEditor(record, selectedTime) {
           "Choose an end time after the start. For an overnight event, change the end date too.",
         );
       FieldReminders.validate(reminderSettings);
+      FieldReminders.validateOptions(reminderOptions);
       await mutate(
         record ? "event.update" : "event.create",
         record?.id || uuid(),
@@ -591,6 +593,7 @@ async function eventEditor(record, selectedTime) {
           starts_at: start,
           ends_at: end,
           ...(remindersDirty ? { reminders: reminderSettings } : {}),
+          reminder_options:reminderOptions,
         },
         record?.revision ?? null,
       );
@@ -665,6 +668,7 @@ async function eventEditor(record, selectedTime) {
           reminderSettings = v;
           remindersDirty = true;
         },
+        {value:reminderOptions,kind:"event",changed:v=>{reminderOptions=v;}},
       );
       let oldDate = nodes.start_date.value;
       nodes.start_date.onchange = () => {

@@ -25,7 +25,7 @@ test('LAN serves fixed APK/checksum/signer downloads without exposing household 
   for(const path of ['/downloads/master.key','/downloads/%2e%2e/master.key','/downloads/android.json'])assert.equal((await f.request(path)).status,404);
   await f.close();f=null;await writeFile(join(root,'field-notes.apk'),'tampered binary');
   f=await fixture({downloads:root});
-  assert.deepEqual((await f.request('/downloads/android')).data,{available:false});
+  const broken=(await f.request('/downloads/android')).data;assert.equal(broken.available,false);assert.match(broken.error,/APK|checksum|artifact/i);
   assert.equal((await f.request('/downloads/field-notes.apk')).status,404);
   const owner=await f.login();assert.equal((await f.request('/api/snapshot',{token:owner})).status,200,'invalid APK disables only downloads, not household access');
  }finally{await f?.close();await rm(root,{recursive:true,force:true})}
@@ -33,9 +33,25 @@ test('LAN serves fixed APK/checksum/signer downloads without exposing household 
 
 test('development servers without a packaged APK advertise its absence',async()=>{
  const f=await fixture({downloads:null});try{
-  assert.deepEqual((await f.request('/downloads/android')).data,{available:false});
+  const absent=(await f.request('/downloads/android')).data;assert.equal(absent.available,false);assert.match(absent.error,/APK|bundle|download/i);
   assert.equal((await f.request('/downloads/field-notes.apk')).status,404);
  }finally{await f.close()}
+});
+
+test('a compatible older APK bundle stays available across server version drift',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'field-notes-drift-'));let f;
+ try{
+  const apk=Buffer.from('synthetic compatible older APK bundle'),sha256=createHash('sha256').update(apk).digest('hex');
+  const info={version:'0.4.0',version_code:10,architecture:'arm64-v8a',signing:'release',sha256,signer_sha256:'a'.repeat(64),wire_protocol:1};
+  await writeFile(join(root,'field-notes.apk'),apk);await writeFile(join(root,'android.json'),JSON.stringify(info));
+  f=await fixture({downloads:root});
+  const meta=(await f.request('/downloads/android')).data;assert.equal(meta.available,true);assert.equal(meta.matching_server_release,false);
+  const token=await f.login();assert.equal((await f.request('/api/snapshot',{token})).status,200);
+  assert.equal((await f.request('/api/device/update',{token,base:f.device})).data.artifact.version,'0.4.0');
+  await f.close();f=null;await writeFile(join(root,'android.json'),JSON.stringify({...info,wire_protocol:2}));f=await fixture({downloads:root});
+  const rejected=(await f.request('/downloads/android')).data;assert.equal(rejected.available,false);assert.match(rejected.error,/protocol/);
+  assert.equal((await f.request('/api/snapshot',{token:await f.login()})).status,200);
+ }finally{await f?.close();await rm(root,{recursive:true,force:true})}
 });
 
 test('private APK chunks require authentication, bind the digest and reassemble exact bounded bytes',async()=>{

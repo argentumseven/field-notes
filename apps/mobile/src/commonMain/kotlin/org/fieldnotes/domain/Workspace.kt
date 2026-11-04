@@ -33,7 +33,7 @@ class Workspace(
     suspend fun initialize() = connection.withLock {
         try {
             val loaded = vault.load()
-            _state.update { it.copy(cache = loaded,connectionPaused=loaded.preferences.connectionPaused) }
+            _state.update { it.copy(cache = loaded,connectionPaused=loaded.preferences.connectionPaused,problem=loaded.lastSyncProblem.takeIf{it.isNotBlank()},contactAt=loaded.lastContactAt) }
             if (loaded.keys == null) {
                 check(loaded.config==null && loaded.enrollment==null && loaded.snapshot==null && loaded.outbox.isEmpty() && loaded.drafts.isEmpty() && loaded.conflicts.isEmpty()) { "Saved phone identity is missing. Original records are preserved; recover the identity or use Android app settings." }
                 val keys = transport.keys(); update { it.copy(keys = keys) }
@@ -292,19 +292,40 @@ class Workspace(
         }
     }
     suspend fun discardDraft(target: String) { update { it.copy(drafts = it.drafts - target) } }
-    private fun report(e: Exception) { if (e is CancellationException) throw e; _state.update { it.copy(error = e.message ?: "Operation failed.") } }
+    private fun report(e: Exception) { if (e is CancellationException) throw e; _state.update { it.copy(error = e.message ?: "Operation failed.",problem=e.message ?: "Operation failed.") } }
     fun clearError() { _state.update { it.copy(error = null) } }
     fun launch(block: suspend () -> Unit) = scope.launch { try { block() } catch (e: Exception) { report(e) } }
+
+    private suspend fun rememberCompatibility(head:JsonObject) {
+        val next=ServerCompatibility.read(head,Clock.System.now().epochSeconds)
+        val old=cache.compatibility
+        // Head polling must not rewrite the encrypted outbox every 15 seconds.
+        if(old==null || old.copy(checkedAt=next.checkedAt)!=next || next.checkedAt-old.checkedAt>=3600)update { it.copy(compatibility=next) }
+    }
+    private suspend fun inspectCompatibility() {
+        val head=try { request("/api/head") }catch(e:ApiError) {
+            if(e.status!=404)throw e
+            rememberCompatibility(obj());return
+        }
+        try { rememberCompatibility(head) }
+        catch(e:IllegalArgumentException) {
+            val old=cache.compatibility
+            update { it.copy(compatibility=(old ?: ServerCompatibility()).copy(checkedAt=Clock.System.now().epochSeconds,warning="Server version report needs review. Core sync still verifies its data protocol; new options stay disabled." ,features=emptySet())) }
+        }
+    }
+    suspend fun observeCompatibility(reply:JsonObject)=rememberCompatibility(reply)
 
     suspend fun sync() {
         if (!connection.tryLock()) return
         if (cache.config == null || cache.token == null || !_state.value.ready) { connection.unlock(); return }
         _state.update { it.copy(syncing = true) }
         try {
-            val fresh = WireJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
+            if(cache.compatibility==null || Clock.System.now().epochSeconds-cache.compatibility!!.checkedAt>3600)inspectCompatibility()
+            check(cache.compatibility?.blocked!=true) { cache.compatibility!!.message }
+            val fresh = SyncJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
             check(fresh.protocol == 1) { "Update this client before using the server's new protocol." }
             val directoryReply = try { request("/api/people") } catch(e:ApiError) { if(e.status==404)obj("people" to JsonArray(emptyList())) else throw e }
-            val directory=WireJson.decodeFromJsonElement<List<HouseholdPerson>>(directoryReply.getValue("people"))
+            val directory=SyncJson.decodeFromJsonElement<List<HouseholdPerson>>(directoryReply.getValue("people"))
             update { c ->
                 val ids = fresh.records.map { it.id }.toSet()
                 val orphaned = c.drafts.values.filter { d ->
@@ -320,6 +341,7 @@ class Workspace(
                 val c = item.command
                 val fence = when {
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
+                    c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
                     item.dependsOn != null -> "An earlier queued edit was rejected. Review this dependent draft."
                     else -> null
                 }
@@ -327,7 +349,7 @@ class Workspace(
                 try {
                     update { it.copy(outbox = it.outbox.map { p -> if (p.command.operation_id == c.operation_id) p.copy(attempted = true) else p }) }
                     val result = request("/api/commands", WireJson.encodeToJsonElement(c).jsonObject)
-                    val record = WireJson.decodeFromJsonElement<Record>(result.getValue("record"))
+                    val record = SyncJson.decodeFromJsonElement<Record>(result.getValue("record"))
                     update { state ->
                         val snap = state.snapshot!!
                         val deleted = record.data["deleted"] == JsonPrimitive(true)
@@ -341,11 +363,11 @@ class Workspace(
                     reject(c.operation_id, e.message)
                 }
             }
-            val final = WireJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
-            update { it.copy(snapshot = final,lastSyncedAt=Clock.System.now().epochSeconds) }
-            _state.update { it.copy(online = true, error = null) }
+            val final = SyncJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
+            update { it.copy(snapshot = final,lastSyncedAt=Clock.System.now().epochSeconds,lastContactAt=Clock.System.now().epochSeconds,lastSyncProblem="") }
+            _state.update { it.copy(online = true, error = null,problem=null,contactAt=Clock.System.now().epochSeconds) }
         } catch (e: Exception) {
-            report(e); _state.update { it.copy(online = false) }
+            report(e); _state.update { it.copy(online = false) };runCatching{update { it.copy(lastSyncProblem=(e.message ?: "Sync failed").take(600)) }}
         } finally { _state.update { it.copy(syncing = false) }; connection.unlock() }
     }
     /** Cheap background checks keep the private connection alive without
@@ -357,10 +379,14 @@ class Workspace(
         try {
             if(cache.token==null||cache.config==null||!state.value.ready)return false
             val head=request("/api/head")
+            rememberCompatibility(head)
+            check(cache.compatibility?.blocked!=true) { cache.compatibility!!.message }
             changed=cache.snapshot?.let { it.epoch!=head.text("epoch")||it.generation!=head.number("generation")||it.sequence!=head.number("sequence")||cache.directoryRevision!=head.number("directory_revision") }?:true
             if(cache.outbox.isNotEmpty())changed=true
-            _state.update { it.copy(online=true,error=null) }
-        }catch(e:Exception){report(e);_state.update { it.copy(online=false) }}
+            val now=Clock.System.now().epochSeconds
+            if(now-cache.lastContactAt>=300||cache.lastSyncProblem.isNotBlank())update { it.copy(lastContactAt=now,lastSyncProblem="") }
+            _state.update { it.copy(online=true,error=null,problem=null,contactAt=now) }
+        }catch(e:Exception){report(e);_state.update { it.copy(online=false) };runCatching{update { it.copy(lastSyncProblem=(e.message ?: "Connection failed").take(600)) }}}
         finally{connection.unlock()}
         if(changed)sync()
         return changed&&state.value.online

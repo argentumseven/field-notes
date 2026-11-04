@@ -4,14 +4,14 @@ import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-@Serializable data class AlertProfile(val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true)
+@Serializable data class AlertProfile(val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true,val duration:Int=0,val alarm:Boolean=false,val unmute:Boolean=false,val alarmVolume:Int=100)
 @Serializable data class ReminderAlert(val id:String,val minutes_before:Int=10,val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true) {
     val profile get()=AlertProfile(importance,sound,volume,vibrate)
 }
 @Serializable data class ReminderWindow(val id:String,val weekdays:List<Int> = emptyList(),val starts_on:String,val ends_on:String="",val from:String="09:00",val until:String="18:00",val every_minutes:Int=60,val zone:String,
     val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true) { val profile get()=AlertProfile(importance,sound,volume,vibrate) }
 @Serializable data class ReminderSet(val alerts:List<ReminderAlert> = emptyList(),val repeat:ReminderWindow?=null)
-fun reminderSet(record:Record):ReminderSet? = record.data["reminders"]?.let { runCatching { WireJson.decodeFromJsonElement<ReminderSet>(it) }.getOrNull() }
+fun reminderSet(record:Record):ReminderSet? = (if(record.data.containsKey("reminder_rules"))record.data["reminder_rules"] else record.data["reminders"])?.takeUnless { it==JsonNull }?.let { runCatching { WireJson.decodeFromJsonElement<ReminderSet>(it) }.getOrNull() }
 fun reminderData(value:ReminderSet)=WireJson.encodeToJsonElement(value).jsonObject
 fun validateReminders(value:ReminderSet) {
     require(value.alerts.size<=8) { "Use up to eight reminders." }
@@ -37,7 +37,7 @@ fun customAlerts(record:Record, now:Instant, deviceZone:TimeZone):List<LocalAler
         else runCatching { LocalDate.parse(if(record.kind=="event")d.text("start_date") else d.text("due").ifBlank { d.text("planned_for") }) }.getOrNull()?.let { LocalDateTime(it,LocalTime(9,0)).toInstant(deviceZone).epochSeconds }
     val horizon=today.plus(8,DateTimeUnit.DAY).atStartOfDayIn(deviceZone).epochSeconds
     val result=rules.alerts.mapNotNull { r -> anchor?.minus(r.minutes_before*60L)?.takeIf { it>=now.epochSeconds-600 && it<horizon }?.let {
-        LocalAlert("rule:${record.id}:${r.id}:$it",it,record.id,if(record.kind=="event")"calendar" else "task",r.profile,"${record.id}:${r.id}")
+        LocalAlert("rule:${record.id}:${r.id}:$it",it,record.id,if(record.kind=="event")"calendar" else "task",effectiveAlertProfile(record,r.id,r.profile),"${record.id}:${r.id}")
     }}.toMutableList()
     rules.repeat?.let { r ->
         val zone=TimeZone.of(r.zone);val localToday=now.toLocalDateTime(zone).date;val first=LocalDate.parse(r.starts_on);val last=r.ends_on.takeIf { it.isNotBlank() }?.let(LocalDate::parse)
@@ -51,7 +51,7 @@ fun customAlerts(record:Record, now:Instant, deviceZone:TimeZone):List<LocalAler
                 val minutes=from+delta;val date=day.plus(minutes/1440,DateTimeUnit.DAY);val time=LocalTime.fromSecondOfDay(minutes%1440*60)
                 val at=runCatching { scheduledInstant(date.toString(),time.toString().take(5),zone) }.getOrNull() ?: continue
                 if(at>=horizon)continue
-                val item=LocalAlert("window:${record.id}:${r.id}:$at",at,record.id,"repeat",r.profile,"${record.id}:${r.id}")
+                val item=LocalAlert("window:${record.id}:${r.id}:$at",at,record.id,"repeat",effectiveAlertProfile(record,r.id,r.profile),"${record.id}:${r.id}")
                 if(at<=now.epochSeconds&&at>=now.epochSeconds-600&&(missed==null||at>missed!!.at))missed=item
                 else if(at>now.epochSeconds&&future.size<2){future+=item;if(future.size==2)break@days}
             }

@@ -50,6 +50,11 @@ Distinguish compiled/tested behavior from physical GrapheneOS verification.
 - Separate admin operations from content mutation. Reject stale writes after
   deletion, revocation, restore, or workspace reset, including uploads in flight.
 - Do not describe server-readable storage encryption as end-to-end encryption.
+- App credential locking is optional and independent of notification/widget
+  visibility. Keep stored off preferences; expose separate lock-screen choices.
+  Alarm-volume override requires per-phone opt-in and a per-reminder alarm
+  setting. Restore durably without replacing a later manual volume choice;
+  never alter DND or notification-stream volume automatically.
 - Do not reuse upstream code/assets without recording their licenses and
   satisfying their terms. Visual inspiration does not require copying code.
 

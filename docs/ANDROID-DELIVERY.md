@@ -21,11 +21,17 @@ as foreground sync. The LAN management website is never exposed through it.
    events alert ten minutes before start; all-day events and due tasks alert at
    09:00 device-local time. A single daily overdue digest avoids one alarm per
    missed day. Simultaneous alerts are combined. Undated priorities remain in
-   Focus; arbitrary per-task reminder times and snooze are future work.
+   Focus. Per-item Reminders supports multiple alerts and repeat windows;
+   snooze remains future work. Choose Only me, household people, an assigned
+   task's person or Everyone so another person's appointment need not alert you.
 4. Use **Play a sound test now**. Check the **Upcoming tasks and calendar**
    channel has sound, notification volume is audible and DND permits it.
    **Household updates** is a separate audible channel; Android lets you adjust
    it independently. Existing user channel choices are never overwritten.
+   For longer/louder playback, choose Play as an alarm on the item's reminder
+   and enable Allow temporary alarm-volume control on this phone. Test a loud
+   alarm verifies the visible Stop action and volume restoration. DND exceptions
+   still belong to Android. See [Reminders](REMINDERS.md).
 5. Keep **Live background updates** enabled for changes from the other person while
    the UI is closed. The ongoing connection status is silent and excluded from
    profile forwarding. Its Stop action switches live mode off. WorkManager
@@ -71,9 +77,9 @@ Official references, inspected 2026-10-30:
 
 ## Actual launcher widgets
 
-In Field Notes settings, tap **Add Calendar to home screen** or **Add Upcoming to home screen** and accept the
+In Field Notes settings, tap **Add Week to home screen**, **Add Calendar to home screen** or **Add Upcoming to home screen** and accept the
 launcher's standard Add confirmation. Alternatively long-press the home screen,
-open Widgets and choose **Field Notes · Calendar**, **Field Notes · Upcoming** or **Field Notes · Focus**.
+open Widgets and choose **Field Notes · Week**, **Field Notes · Calendar**, **Field Notes · Upcoming** or **Field Notes · Focus**.
 No special widget-binding permission is required.
 
 [Calendar](CALENDAR.md) shows a navigable month grid, scheduled days and today’s agenda. Its rendering runs off the app’s UI thread and coalesces repeated refreshes. Upcoming shows upcoming tasks/planned days and internal calendar events, with
@@ -82,8 +88,11 @@ Tap the agenda to open Calendar; tap its footer to request refresh. Both read
 the encrypted cache and refresh on changes, unlock/lock broadcasts and Android's
 periodic widget update. Offline cached items are deliberately labeled cached.
 
-Titles are hidden by default. Enable **Titles in home-screen widgets** only if
-you accept copies in the launcher, which may retain old RemoteViews. Widgets
+New installs show schedules while unlocked; existing explicit off choices stay
+off. **Show schedules in home-screen widgets** controls title copies in the
+launcher. **Widget details while the device is locked** separately allows
+locked-device disclosure and defaults off. Optional app credential locking does
+not govern either setting. The launcher may retain old RemoteViews. Widgets
 never include task notes, images or credentials. Screen lock/known invalid
 sessions request redaction; immediate erasure of launcher-held copies cannot be
 guaranteed. Widgets are local to the profile hosting them. Notification
@@ -107,6 +116,13 @@ Android uninstall removes this profile's package-private data, Keystore keys,
 permissions, jobs, alarms and widget provider. Field Notes writes no task data
 to shared storage and installs no OS VPN, routes, CA, device-admin policy or
 external helper to clean up on the phone.
+
+In-app removal also stops a ringing alarm and restores its temporary system
+volume change before clearing the recovery record. Before directly force-stopping
+or uninstalling during an alarm, use **Stop alarm and restore volume**. Android
+cannot run cleanup after force-stop or restore a global sound setting after the
+app has been removed. If force-stopped during playback, reopening recovers the
+saved volume lease. This is a limit of explicitly changing the system stream.
 
 Direct uninstall also removes local app state, but Android cannot let an already
 removed app phone home to revoke a server identity. If offline or already
@@ -134,6 +150,7 @@ Run the guarded development checks only on the disposable `field-notes-test` AVD
 bash scripts/build/android-emulator.sh
 node scripts/test-android-emulator.mjs
 node scripts/capture-home-widget.mjs
+node scripts/test-android-reminders.mjs
 node scripts/test-android-uninstall.mjs
 ```
 

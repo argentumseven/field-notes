@@ -9,7 +9,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.4.0.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.5.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -35,7 +35,9 @@ services. iOS/native desktop packages are deferred.
   tasks stay out of Focus. Each task explains its score. No artificial due dates.
 - Calendar opens first, with day/week time blocks, a month view and local clock
   controls. End times are optional; start-only markers do not occupy time.
-  Multiple reminders support separate importance, sound and relative volume.
+  Multiple reminders support separate importance, eight sounds and relative volume.
+  Choose recipients per person or everyone, and optionally ring a longer alarm
+  with temporary alarm-volume raising and restoration on each consenting phone.
   Repeat reminders within a chosen daily/weekly window, even without a due date.
 - Lists have grocery, online shopping, general and custom presets. Select fields
   such as quantity, link, optional price, images and dates. Rolling lists let you
@@ -57,11 +59,14 @@ services. iOS/native desktop packages are deferred.
   full signature/package/hash checks and Android install confirmation. Upgrades
   keep phone keys and queued edits. Linux upgrades retain the hub/CA/peers and
   include scoped backup, readiness and rollback. [Update guide](docs/UPDATES.md).
-- Actual Android Calendar, Upcoming and Focus home-screen widgets, redacted by default.
+- Actual Android Week, Calendar, Upcoming and Focus home-screen widgets. Week
+  shows seven days with agenda rows and occupied-time bars. Schedule titles and
+  detailed notifications default on while unlocked; lock-screen disclosure has
+  separate switches. Existing visibility preferences are preserved.
   Default-on private background connection and cached task/calendar alerts without
   Google services. [GrapheneOS profile/sound setup](docs/ANDROID-DELIVERY.md),
   delayed profile test and revoke/uninstall flow; Android scheduling limits apply.
-- Keystore/AES-GCM local vault, device credential UI lock, screenshot protection,
+- Keystore/AES-GCM local vault, optional device credential UI lock, screenshot protection,
   scoped image picker, offline QR scanner, no analytics/runtime CDN/FCM/Play services.
 
 The server can decrypt content, as requested. Protect its master key, disk and
@@ -78,7 +83,7 @@ it to the phone. The phone does not need management access. Paired phones fetch
 updates through the private notes tunnel. [Download and release details](docs/ANDROID-DOWNLOADS.md).
 
 The signed arm64 development APK, checksum and signer report are also under
-`dist/android/field-notes-0.4.0-android-arm64-debug.apk`. Copy it to your phone,
+`dist/android/field-notes-0.5.0-android-arm64-debug.apk`. Copy it to your phone,
 verify hash/signer, and open it to sideload. Preserve the development signer for
 in-place updates. Operator release builds require your separately protected key.
 

@@ -6,13 +6,41 @@ start. A repeat window works independently of a deadline, including undated
 tasks. Saving an explicit empty reminder set disables that item's reminders.
 Older items without a reminder setting retain the previous default policy.
 
-Each alert can have a different importance: Quiet, Normal or Urgent. Android
-offers original Chime, Bell and Pulse tones, vibration, and 25/50/75/100% relative
-sound levels. Preview the tone before saving. These levels scale the tone itself;
-the phone's notification volume, channel settings and DND remain authoritative.
-Urgent uses a high-importance Android channel; it cannot guarantee a heads-up
-display or bypass a silent phone. Field Notes does not change system volume.
-The web form configures the same rules; audio playback happens on Android.
+Choose **Who should receive these reminders?**: Only me, Everyone, an assigned
+task's person, or selected household people. New events start with Only me;
+new tasks follow their assignee, falling back to their creator. This controls
+alerts, not shared calendar visibility. A recipient's own enrolled instances
+can each alert; the app does not elect one of that person's phones. Existing
+events keep their previous household policy until changed.
+
+Each alert has Quiet, Normal or Urgent importance, vibration and 25/50/75/100%
+relative sound levels. Eight original tones are available: Chime, Bell, Pulse,
+Beacon, Marimba, Orbit, Sunrise and Siren. Preview uses the current volume and
+does not raise it. Regular notifications use the notification stream/channel.
+
+Enable **Play as an alarm** for 5, 10, 15, 30 or 60 seconds of local playback.
+Enable **Temporarily raise alarm volume** and choose the level. On each phone,
+also enable **Allow temporary alarm-volume control** in Settings, then try
+**Test a loud alarm (10 s)**. This explicitly permits raising a zero/muted alarm
+stream; the notification stream and DND policy are unchanged. A visible Stop
+action ends playback. The previous alarm volume/mute state is restored afterward,
+unless you changed it manually. The recovery record is encrypted and survives
+process restart; Android cannot execute recovery while force-stopped. Reopening
+the app restores an orphaned change. Use **Stop alarm and restore volume** before
+directly force-stopping or uninstalling during playback. In-app removal does
+that automatically. Android's DND/audio restrictions remain authoritative.
+If Android refuses the original volume or mute state, the app retains recovery
+and displays an error directing you to Android sound settings. It does not report
+successful restoration. A later manual change takes priority over recovery.
+Concurrent alarms play sequentially within a bounded queue; their detailed
+notification cards remain available even if audio cannot start.
+
+The website configures these same rules; alarm playback happens on Android.
+Update the paired server and all phones to use the new controls. Version 0.4
+clients retain basic supported reminders during rollout, with personal alerts
+suppressed for nonrecipients; they do not implement longer alarm playback.
+Earlier clients should be updated before relying on recipient filtering.
+An old editor that could erase advanced rules is rejected with an explanation.
 
 For situational reminders, enable **Repeat during a time window**. Choose its
 first day, Once or weekdays, optional last day, From/Until times and an interval
@@ -24,7 +52,7 @@ clock-change occurrences are skipped; repeated autumn times fire once.
 
 These windows repeat notifications, not task copies. Completing a task stops
 its reminders; reopening allows future ones. There is no completion-based
-recurring task generator, snooze history, per-person reminder subscription or
+recurring task generator, snooze history or
 per-occurrence calendar-series editing yet. A future scope must preserve those
 differences rather than silently create duplicate tasks.
 
@@ -38,9 +66,14 @@ profiles remain separate notifications. Very frequent reminders can be delayed
 or coalesced by Android, especially under Doze. Exact-alarm permission improves
 timing but does not override operating-system limits.
 
-Titles remain private by default. **Notification titles** opts into unlocked
-notification details; lock-screen public content remains generic. Tapping an
-alert opens its task or event when a single record is represented.
+**Detailed reminder notifications** shows the title, local schedule, intended
+people, notes, list/project and creator/activity times. New installs show these
+in the unlocked shade. Existing off choices are retained, with a one-tap option
+to reveal details. **Notification details on the lock screen** is a separate,
+default-off choice, also subject to Android's settings. Tapping opens the single
+task/event. App credential locking is optional and does not govern these choices.
+Delivery failures remain in the app's status, notification and widget footer
+until corrected/rechecked; blocked notifications cannot display their own warning.
 
 ## GrapheneOS full user profiles
 

@@ -57,7 +57,8 @@ class MainActivity : ComponentActivity() {
     private var invitationScanError by mutableStateOf<String?>(null)
     private var unlocked by mutableStateOf(false)
     private var prompting = false
-    private var lastUnlock = 0L
+    private var lastUnlock by mutableStateOf(0L)
+    private var deliveryWarning by mutableStateOf<String?>(null)
     private var deliveryStatus by mutableStateOf("")
     private val invitationImage = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if(uri!=null) lifecycleScope.launch {
@@ -116,15 +117,21 @@ class MainActivity : ComponentActivity() {
     private fun unlock() {
         if (prompting) return
         val keyguard = getSystemService(KeyguardManager::class.java)
-        if (!keyguard.isDeviceSecure) { unlocked = true; return }
+        if (!keyguard.isDeviceSecure) { lastUnlock=SystemClock.elapsedRealtime();unlocked = true; return }
         @Suppress("DEPRECATION") val intent = keyguard.createConfirmDeviceCredentialIntent("Unlock Field Notes", "Confirm your device credential to open your household workspace.")
         if (intent != null) { prompting = true; confirm.launch(intent) }
     }
     override fun onResume() {
         super.onResume()
-        deliveryStatus=DeliverySettings.summary(this)
+        app.updates.installerReturned()
+        lifecycleScope.launch { val status=withContext(Dispatchers.IO){DeliverySettings.summary(this@MainActivity) to DeliverySettings.problem(this@MainActivity)};deliveryStatus=status.first;deliveryWarning=status.second }
         app.scope.launch { try{LocalAlarms.reconcile(this@MainActivity,true)}catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention."} }
-        if (lastUnlock == 0L || SystemClock.elapsedRealtime() - lastUnlock > 5 * 60_000) { unlocked = false; unlock() }
+        lifecycleScope.launch {
+            app.initialized.await()
+            val prefs=app.model.state.value.cache.preferences
+            if(!prefs.appLock)unlocked=true
+            else if(lastUnlock==0L||SystemClock.elapsedRealtime()-lastUnlock>prefs.lockMinutes.coerceIn(1,30)*60_000L){unlocked=false;unlock()}
+        }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,7 +149,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            if (!unlocked) FieldNotesTheme { Surface(Modifier.fillMaxSize()) { Column(Modifier.padding(30.dp), verticalArrangement = Arrangement.Center) {
+            val workspace by app.model.state.collectAsState()
+            LaunchedEffect(workspace.ready,workspace.cache.preferences.appLock) {
+                if(workspace.ready&&workspace.cache.preferences.appLock&&lastUnlock==0L){unlocked=false;unlock()}
+                else if(!workspace.cache.preferences.appLock)unlocked=true
+            }
+            if (workspace.ready&&workspace.cache.preferences.appLock&&(!unlocked||lastUnlock==0L)) FieldNotesTheme { Surface(Modifier.fillMaxSize()) { Column(Modifier.padding(30.dp), verticalArrangement = Arrangement.Center) {
                 Text("Your workspace is locked", style = MaterialTheme.typography.headlineSmall)
                 Button(onClick = { unlock() }, modifier = Modifier.padding(top = 20.dp)) { Text("Unlock with device credential") }
             } } }
@@ -166,12 +178,13 @@ class MainActivity : ComponentActivity() {
                     if (uri != null && target != null && epoch != null && generation != null) app.model.launch { attach(target, uri, Basis(epoch, generation)) }
                 }
                 BackHandler(enabled = back != null) { back?.invoke() }
-                val workspace by app.model.state.collectAsState()
                 val lifecycleState by lifecycle.currentStateFlow.collectAsState()
                 val updateState by app.updates.state.collectAsState()
+                val deliveryIssue by app.deliveryError.collectAsState()
+                val deliveryStorageIssue by app.deliveryPersistenceError.collectAsState()
                 LaunchedEffect(workspace.cache.token,workspace.cache.config,workspace.connectionPaused,workspace.needsLogin,lifecycleState){
                     if(lifecycleState.isAtLeast(Lifecycle.State.RESUMED)&&workspace.ready&&!workspace.needsLogin&&!workspace.connectionPaused&&workspace.cache.token!=null){
-                        while(true){app.updates.checkForUpdate(automatic=true);kotlinx.coroutines.delay(6*60*60*1000L)}
+                        while(true){app.updates.checkForUpdate(automatic=true);kotlinx.coroutines.delay(15*60*1000L)}
                     }
                 }
                 LaunchedEffect(workspace.cache.token,workspace.needsLogin,workspace.cache.preferences.liveUpdates,workspace.connectionPaused,lifecycleState){
@@ -186,7 +199,9 @@ class MainActivity : ComponentActivity() {
                     deviceActions=DeviceActions(previewSound={profile->app.scope.launch { try { withContext(Dispatchers.IO){ReminderSounds.preview(this@MainActivity,profile)} }catch(_:Exception){Toast.makeText(this@MainActivity,"Sound preview unavailable. Check Android notification settings.",Toast.LENGTH_LONG).show()} }},openLink={url->
                         val uri=Uri.parse(url)
                         if(uri.scheme in setOf("http","https")&&!uri.host.isNullOrBlank())try{startActivity(Intent(Intent.ACTION_VIEW,uri).addCategory(Intent.CATEGORY_BROWSABLE))}catch(_:Exception){Toast.makeText(this,"No browser is available to open this link.",Toast.LENGTH_LONG).show()}
-                    },androidDelivery=true,status=deliveryStatus,use24Hour=android.text.format.DateFormat.is24HourFormat(this),addCalendarWidget={if(!CalendarWidget.pin(this))Toast.makeText(this,"Add Field Notes · Calendar from your launcher’s widget picker.",Toast.LENGTH_LONG).show()},
+                    },androidDelivery=true,status=deliveryStatus,warning=listOfNotNull(deliveryWarning,deliveryIssue,deliveryStorageIssue).distinct().joinToString("\n"),use24Hour=android.text.format.DateFormat.is24HourFormat(this),addCalendarWidget={if(!CalendarWidget.pin(this))Toast.makeText(this,"Add Field Notes · Calendar from your launcher’s widget picker.",Toast.LENGTH_LONG).show()},
+                        addWeekWidget={if(!WeekCalendarWidget.pin(this))Toast.makeText(this,"Add Field Notes · Week from your launcher's widget picker.",Toast.LENGTH_LONG).show()},
+                        testLoudAlarm={AlarmPlaybackService.test(this)},stopAlarm={app.scope.launch{try{AlarmPlaybackService.stop(this@MainActivity);AlarmAudio.restoreAfterStop(this@MainActivity)}catch(e:Exception){if(e is CancellationException)throw e;app.deliveryError.value=e.message ?: "Alarm volume could not be restored. Open Android sound settings."}}},soundSettings={DeliverySettings.open(this,"sound")},dndSettings={DeliverySettings.open(this,"dnd")},recheckDelivery={app.scope.launch{DeliverySettings.recheck(this@MainActivity);deliveryWarning=DeliverySettings.problem(this@MainActivity);deliveryStatus=DeliverySettings.summary(this@MainActivity)}},
                         update=updateState,checkUpdate={app.updates.checkForUpdate()},downloadUpdate={app.updates.download()},cancelUpdate={app.updates.cancel()},installUpdate={app.updates.install(this)},
                         addUpcomingWidget={DeliverySettings.pin(this)},profileTest={val ok=Alerts.scheduleProfileTest(this);Toast.makeText(this,if(ok)"Test scheduled for 30 seconds. Switch profiles now." else "Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},testAlert={if(!Alerts.test(this))Toast.makeText(this,"Allow notifications in Android settings first.",Toast.LENGTH_LONG).show()},
                         notificationSettings={DeliverySettings.open(this,"notifications")},alarmSettings={DeliverySettings.open(this,"alarms")},

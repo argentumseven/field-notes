@@ -114,16 +114,21 @@ import org.fieldnotes.domain.*
     if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Clear ${checked.size} checked items?")},text={Text("Only these checked items and their attachments will be removed. If an item changed elsewhere, its revision conflict will keep it for review.")},confirmButton={Button(onClick={model.launch { model.clearChecked(list.id);confirm=false;model.sync() }}){Text("Clear checked")}},dismissButton={TextButton(onClick={confirm=false}){Text("Keep items")}})
 }
 
-private val itemKeys=setOf("title","notes","quantity","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders")
+private val itemKeys=setOf("title","notes","quantity","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
+private fun itemEditingData(data:JsonObject):JsonObject {
+    val fields=data.filterKeys { it in itemKeys }
+    return if(data.containsKey("reminder_rules"))JsonObject((fields-"reminders")+listOfNotNull(data["reminder_rules"]?.takeUnless { it==JsonNull }?.let { "reminders" to it }).toMap()) else JsonObject(fields)
+}
+private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let { WireJson.decodeFromJsonElement<ReminderSet>(it) } ?: ReminderSet(if(data.text("due").isNotBlank())listOf(ReminderAlert(id,0)) else emptyList())
 @Composable internal fun ListItemDialog(model:Workspace,state:WorkspaceState,list:Record,visible:VisibleRecord?,device:DeviceActions,attach:(String)->Unit={},image:@Composable (VisibleRecord)->Unit={},close:()->Unit) {
     val record=visible?.record;val draft=record?.let { state.cache.drafts[it.id] };val basis=remember(record?.id){draft?.let { Basis(it.epoch,it.generation) } ?: state.cache.snapshot!!.basis}
     val id=rememberSaveable(record?.id){record?.id ?: model.newId()}
-    var dataJson by rememberSaveable(id){mutableStateOf(JsonObject((draft?.data ?: record?.data ?: obj("title" to "".j(),"currency" to "USD".j())).filterKeys { it in itemKeys }).toString())}
+    var dataJson by rememberSaveable(id){mutableStateOf(itemEditingData(draft?.data ?: record?.data ?: obj("title" to "".j(),"currency" to "USD".j())).toString())}
     var revision by rememberSaveable(id){mutableStateOf(draft?.revision ?: record?.revision ?: 0)}
     var dirty by rememberSaveable(id){mutableStateOf(draft!=null)};var busy by remember { mutableStateOf(false) };var error by remember { mutableStateOf<String?>(null) };var comment by rememberSaveable(id){mutableStateOf("")}
     val data=WireJson.parseToJsonElement(dataJson).jsonObject;val fields=listFields(list);val scope=rememberCoroutineScope();val writable=state.cache.snapshot!!.actor.role!="viewer"&&basis==state.cache.snapshot.basis
     fun set(field:String,value:JsonElement) { val next=JsonObject(WireJson.parseToJsonElement(dataJson).jsonObject+(field to value));dataJson=next.toString();dirty=true;if(record!=null)model.launch { model.saveDraft(id,revision,next,basis) } }
-    LaunchedEffect(record?.revision,visible?.pending){if(record!=null&&!dirty){dataJson=JsonObject(record.data.filterKeys { it in itemKeys }).toString();revision=record.revision}}
+    LaunchedEffect(record?.revision,visible?.pending){if(record!=null&&!dirty){dataJson=itemEditingData(record.data).toString();revision=record.revision}}
     AlertDialog(onDismissRequest=close,title={Text(if(record==null)"New item" else "List item")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text(list.data.text("title"),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
         OutlinedTextField(data.text("title"),{set("title",it.take(240).j())},label={Text("Item name")},enabled=writable,modifier=Modifier.fillMaxWidth())
@@ -148,19 +153,24 @@ private val itemKeys=setOf("title","notes","quantity","link_url","price","curren
             if(record==null)Text("Create this item to attach an image. Link previews use only your attached images.",style=MaterialTheme.typography.bodySmall)
             else { projectRecords(state.cache).filter { it.record.kind=="image"&&it.record.data.text("task_id")==id }.forEach { image(it) };if(writable)SecondaryButton(onClick={attach(id)}){Text("Attach image")}}
         }
-        val rules=runCatching { WireJson.decodeFromJsonElement<ReminderSet>(data.getValue("reminders")) }.getOrDefault(ReminderSet())
-        if(writable)ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound){set("reminders",reminderData(it))}
+        val rules=itemReminderRules(data,id)
+        if(writable)ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,
+            reminderEditorSettings(model,state,reminderOptions(Record(id,"task",revision,data)) ?: ReminderOptions(ReminderAudience("assigned")),true){set("reminder_options",reminderOptionsData(it))}){set("reminders",reminderData(it))}
         if(record!=null) {
             Text(recordHistory(state.cache,record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(writable){OutlinedTextField(comment,{comment=it.take(8192)},label={Text("Add a comment")},minLines=2);TextButton(onClick={model.enqueueAsync("comment.create",model.newId(),obj("task_id" to id.j(),"body" to comment.j()),null,basis);comment=""},enabled=comment.isNotBlank()){Text("Post comment")}}
             projectRecords(state.cache).filter { it.record.kind=="comment"&&it.record.data.text("task_id")==id }.sortedBy { it.record.data.number("created_at") }.forEach { Text("${it.record.data.text("author")} · ${it.record.data.text("body")}",style=MaterialTheme.typography.bodySmall) }
-            if(revision!=record.revision&&visible?.pending!=true) { Text("Changed elsewhere. Your draft is kept.",color=MaterialTheme.colorScheme.error);TextButton(onClick={revision=record.revision}){Text("Keep my edits for a new save")};TextButton(onClick={dataJson=JsonObject(record.data.filterKeys { it in itemKeys }).toString();revision=record.revision;dirty=false;model.launch{model.discardDraft(id)}}){Text("Use latest version")} }
+            if(revision!=record.revision&&visible?.pending!=true) { Text("Changed elsewhere. Your draft is kept.",color=MaterialTheme.colorScheme.error);TextButton(onClick={revision=record.revision}){Text("Keep my edits for a new save")};TextButton(onClick={dataJson=itemEditingData(record.data).toString();revision=record.revision;dirty=false;model.launch{model.discardDraft(id)}}){Text("Use latest version")} }
         }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }},confirmButton={if(writable)Button(enabled=data.text("title").isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
         data["reminders"]?.let { validateReminders(WireJson.decodeFromJsonElement(it)) }
-        if(record==null)model.enqueue("task.create",id,JsonObject(data+("project_id" to list.id.j())),null,basis)
-        else { model.saveDraft(id,revision,data,basis);model.submitDraft(id) }
+        val payload=if(state.cache.supportsRemindersV2())data["reminder_options"]?.let {
+            val options=prunedReminderOptions(SyncJson.decodeFromJsonElement<ReminderOptions>(it),itemReminderRules(data,id));validateReminderOptions(options)
+            JsonObject(data+("reminder_options" to reminderOptionsData(options)))
+        } ?: data else JsonObject(data-"reminder_options")
+        if(record==null)model.enqueue("task.create",id,JsonObject(payload+("project_id" to list.id.j())),null,basis)
+        else { model.saveDraft(id,revision,payload,basis);model.submitDraft(id) }
         close();model.sync()
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Add item" else "Save item")}},dismissButton={TextButton(onClick=close){Text("Close")}})
 }

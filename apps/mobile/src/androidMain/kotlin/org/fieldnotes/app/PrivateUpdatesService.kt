@@ -54,13 +54,22 @@ class PrivateUpdatesService:Service(){
                 if(changed&&after.online&&!after.needsLogin){
                     val old=before.cache.snapshot?.records.orEmpty().associateBy { it.id }
                     val actor=after.cache.snapshot?.actor?.user_id
-                    val relevant=after.cache.snapshot?.records.orEmpty().any { r->
+                    val rows=after.cache.snapshot?.records.orEmpty().associateBy{it.id}
+                    val relevant=rows.values.filter { r->
+                        val parent=if(r.kind in setOf("comment","image"))rows[r.data.text("task_id")] ?: r else r
                         r.revision!=(old[r.id]?.revision?:0L)&&r.data.text("updated_by").let { it.isNotBlank()&&it!=actor }&&
-                            (r.kind!="task"||r.data.text("assignee").let { it.isBlank()||it==actor })
+                            (parent.kind !in setOf("task","event")||reminderRecipient(parent,actor.orEmpty()))
+                    }.map {r->if(r.kind in setOf("comment","image"))r.data.text("task_id") else r.id}.distinct()
+                    if(relevant.isNotEmpty()&&!app.uiVisible){
+                        val snap=after.cache.snapshot!!
+                        val notice=reminderNotice(after.cache,relevant.map {LocalAlert("change:$it",kotlinx.datetime.Clock.System.now().epochSeconds,it,"change")},kotlinx.datetime.TimeZone.currentSystemDefault())
+                        Alerts.post(this@PrivateUpdatesService,Alerts.UPDATES,"changes:${snap.epoch}:${snap.generation}:${snap.sequence}",notice.title,notice.summary,notice.target,notice.details)
                     }
-                    if(relevant&&!app.uiVisible){val snap=after.cache.snapshot!!;Alerts.post(this@PrivateUpdatesService,Alerts.UPDATES,"changes:${snap.epoch}:${snap.generation}:${snap.sequence}","Your household has updates","Open Field Notes to see the latest assignments and changes.")}
                 }
                 try { LocalAlarms.reconcile(this@PrivateUpdatesService) } catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention. Open Field Notes."}
+                if(after.online||after.cache.compatibility?.blocked==true)app.updates.checkForUpdate(automatic=true)
+                val status=when {after.cache.compatibility?.blocked==true->"App update required · saved work retained";after.problem!=null->"Needs attention · ${after.problem}";after.online->"Connected · ${after.cache.outbox.size} queued · private sync active";else->"Server unavailable · cached reminders continue · automatic retry"}
+                getSystemService(NotificationManager::class.java).notify(90,NotificationCompat.Builder(this@PrivateUpdatesService,Alerts.CONNECTION).setSmallIcon(R.drawable.ic_field_notes).setContentTitle("Field Notes background updates").setContentText(status).setStyle(NotificationCompat.BigTextStyle().bigText(status)).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setVisibility(NotificationCompat.VISIBILITY_SECRET).addAction(0,"Stop background mode",stop).build())
                 if(after.online){retry=15_000;delay(retry)}else{wake?.takeIf { it.isHeld }?.release();retry=(retry*2).coerceAtMost(300_000);delay(retry)}
             }
         }

@@ -1,6 +1,7 @@
 mod crypto;
 mod downloads;
 mod http;
+mod sounds;
 mod store;
 mod tls;
 use std::{
@@ -289,17 +290,22 @@ async fn run() -> Result<(), String> {
         store.peer_status = Some(PathBuf::from(status));
     }
     let bind_devices = store.network.is_some() || !dev;
-    let app = http::App {
-        downloads: match arg(&args, "--downloads", "") {
-            value if value.is_empty() => None,
-            value => match downloads::Downloads::load(PathBuf::from(value)) {
-                Ok(downloads) => Some(Arc::new(downloads)),
-                Err(reason) => {
-                    eprintln!("Field Notes: Android downloads disabled: {reason}");
-                    None
-                }
-            },
+    let (android_downloads, downloads_error) = match arg(&args, "--downloads", "") {
+        value if value.is_empty() => (
+            None,
+            Some("No Android APK bundle is installed. Core notes remain available.".to_owned()),
+        ),
+        value => match downloads::Downloads::load(PathBuf::from(value)) {
+            Ok(downloads) => (Some(Arc::new(downloads)), None),
+            Err(reason) => {
+                eprintln!("Field Notes: Android downloads disabled: {reason}");
+                (None, Some(format!("Android updates unavailable: {reason}. Install a verified client bundle; notes and pairing are retained.")))
+            }
         },
+    };
+    let app = http::App {
+        downloads: android_downloads,
+        downloads_error,
         store: Arc::new(Mutex::new(store)),
         origin,
         dev,

@@ -22,6 +22,7 @@ use tokio::sync::Semaphore;
 #[derive(Clone)]
 pub struct App {
     pub downloads: Option<Arc<crate::downloads::Downloads>>,
+    pub downloads_error: Option<String>,
     pub store: Arc<Mutex<Store>>,
     pub origin: String,
     pub dev: bool,
@@ -340,7 +341,7 @@ async fn head(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault
         blocking(app, move |s| {
             s.actor(&token)?;
             let (e, g, q) = s.meta()?;
-            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?}))
+            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?,"compatibility":crate::store::Store::compatibility()}))
         })
         .await?,
     ))
@@ -351,7 +352,22 @@ async fn command(
     Json(c): Json<Command>,
 ) -> Result<Json<Value>, Fault> {
     let token = credential(&h, app.device)?;
-    Ok(Json(blocking(app, move |s| s.command(&token, c)).await?))
+    Ok(Json(
+        blocking(app, move |s| {
+            let actor = s.actor(&token)?;
+            let mut result = s.command(&token, c)?;
+            if let Some(value) = result.get_mut("record") {
+                let record: crate::store::Record = serde_json::from_value(value.clone())
+                    .map_err(|_| Fault(500, "Invalid command record".into()))?;
+                *value = serde_json::to_value(crate::store::Store::notification_projection(
+                    record, &actor,
+                ))
+                .map_err(|_| Fault(500, "Invalid command record".into()))?;
+            }
+            Ok(result)
+        })
+        .await?,
+    ))
 }
 async fn image(
     State(app): State<App>,
@@ -447,20 +463,20 @@ async fn devices(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fa
     ))
 }
 async fn android_download_info(State(app): State<App>) -> Json<Value> {
-    Json(
-        app.downloads
-            .as_ref()
-            .map_or(json!({"available":false}), |d| d.metadata()),
-    )
+    Json(app.downloads.as_ref().map_or(
+        json!({"available":false,"error":app.downloads_error}),
+        |d| d.metadata(),
+    ))
 }
 async fn device_update_info(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
     let token = credential(&h, true)?;
     blocking(app.clone(), move |s| s.actor(&token).map(|_| ())).await?;
-    Ok(Json(
-        app.downloads
-            .as_ref()
-            .map_or(json!({"available":false}), |d| d.update_metadata()),
-    ))
+    let mut info = app.downloads.as_ref().map_or(
+        json!({"available":false,"error":app.downloads_error}),
+        |d| d.update_metadata(),
+    );
+    info["compatibility"] = crate::store::Store::compatibility();
+    Ok(Json(info))
 }
 async fn device_update_chunk(
     State(app): State<App>,
@@ -695,45 +711,7 @@ pub fn router(app: App) -> Router {
                 "/sounds/v1/{name}",
                 get(
                     |axum::extract::Path(name): axum::extract::Path<String>| async move {
-                        let bytes: Option<&'static [u8]> = match name.as_str() {
-                            "reminder_chime_25.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_chime_25.wav"
-                            )),
-                            "reminder_chime_50.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_chime_50.wav"
-                            )),
-                            "reminder_chime_75.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_chime_75.wav"
-                            )),
-                            "reminder_chime_100.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_chime_100.wav"
-                            )),
-                            "reminder_bell_25.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_bell_25.wav"
-                            )),
-                            "reminder_bell_50.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_bell_50.wav"
-                            )),
-                            "reminder_bell_75.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_bell_75.wav"
-                            )),
-                            "reminder_bell_100.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_bell_100.wav"
-                            )),
-                            "reminder_pulse_25.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_pulse_25.wav"
-                            )),
-                            "reminder_pulse_50.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_pulse_50.wav"
-                            )),
-                            "reminder_pulse_75.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_pulse_75.wav"
-                            )),
-                            "reminder_pulse_100.wav" => Some(include_bytes!(
-                                "../../mobile/src/androidMain/res/raw/reminder_pulse_100.wav"
-                            )),
-                            _ => None,
-                        };
+                        let bytes = crate::sounds::get(&name);
                         match bytes {
                             Some(b) => ([("content-type", "audio/wav")], b).into_response(),
                             None => StatusCode::NOT_FOUND.into_response(),

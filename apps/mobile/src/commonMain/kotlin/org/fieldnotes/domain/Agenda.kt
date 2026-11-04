@@ -5,10 +5,6 @@ import kotlinx.datetime.*
 data class AgendaItem(val id: String, val title: String, val at: Long, val label: String)
 data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String, val profile:AlertProfile?=null, val progressKey:String=if(target==null)kind else "$kind:$target")
 
-private fun mineOrShared(record: Record, user: String): Boolean =
-    record.data.text("assignee").let { it.isBlank() || it == user } ||
-        (record.data.text("status") == "in_progress" && record.data.text("claimant") == user)
-
 /** Home-screen agenda uses dates/events, independently of the Focus score. */
 fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): List<AgendaItem> {
     val user = cache.snapshot?.actor?.user_id ?: return emptyList()
@@ -16,9 +12,10 @@ fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): L
     val end = today.plus(days, DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
     return projectRecords(cache).mapNotNull { row ->
         val r = row.record; val d = r.data
+        if(!cache.preferences.widgetHousehold&&!reminderRecipient(r,user))return@mapNotNull null
         when (r.kind) {
             "task" -> {
-                if (d.text("status") == "done" || !mineOrShared(r, user)) return@mapNotNull null
+                if (d.text("status") == "done") return@mapNotNull null
                 val due = runCatching { LocalDate.parse(d.text("due")) }.getOrNull()
                 val planned = runCatching { LocalDate.parse(d.text("planned_for")) }.getOrNull()
                 val date = if(due!=null&&due<today)due else listOfNotNull(due, planned?.takeIf { it>=today }).minOrNull() ?: return@mapNotNull null
@@ -52,10 +49,11 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone, seen:Set<String> = e
     val records = projectRecords(cache).map { it.record }
     val alerts = records.mapNotNull { r ->
         val d = r.data
+        if(!reminderRecipient(r,actor))return@mapNotNull null
         if(d.containsKey("reminders"))return@mapNotNull null
         when (r.kind) {
             "task" -> {
-                if (d.text("status") == "done" || !mineOrShared(r, actor)) return@mapNotNull null
+                if (d.text("status") == "done") return@mapNotNull null
                 val due = runCatching { LocalDate.parse(d.text("due")) }.getOrNull() ?: return@mapNotNull null
                 if (due < today) null else LocalAlert("due:${r.id}:$due", morning(due), r.id, "task")
             }
@@ -71,10 +69,10 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone, seen:Set<String> = e
         }
     }.filter { (it.at >= dayStart || it.kind=="calendar"&&it.at>=now.epochSeconds-86400) && it.at < horizon }
     val overdue = records.any { r -> r.kind == "task" && r.data.text("status") != "done" &&
-        !r.data.containsKey("reminders") && mineOrShared(r, actor) && runCatching { LocalDate.parse(r.data.text("due")) < today }.getOrDefault(false) }
+        !r.data.containsKey("reminders") && reminderRecipient(r,actor) && runCatching { LocalDate.parse(r.data.text("due")) < today }.getOrDefault(false) }
     val sources=sequence {
         yieldAll(alerts)
-        for(record in records)if(record.kind in setOf("event","task") && (record.kind!="task" || record.data.text("status")!="done"&&mineOrShared(record,actor)))yieldAll(customAlerts(record,now,zone))
+        for(record in records)if(record.kind in setOf("event","task") && reminderRecipient(record,actor) && (record.kind!="task" || record.data.text("status")!="done"))yieldAll(customAlerts(record,now,zone))
         if(overdue)yield(LocalAlert("overdue:$today",morning(today),null,"overdue"))
     }
     val order=compareBy<LocalAlert> { it.at }.thenBy { it.key }

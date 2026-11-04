@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
@@ -156,6 +158,7 @@ import org.fieldnotes.domain.*
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) };var eventStartClock by remember { mutableStateOf<String?>(null) }
     var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) }; var endpoint by remember { mutableStateOf(false) }
     LaunchedEffect(requestedPage,navigationSequence) {
+        if(requestedPage=="Settings"){settings=true;selected=null}
         if(requestedPage in listOf("Focus","Tasks","Calendar","Assignments","Notes")) {
             page=requestedPage!!;project=null;query=""
             // Retain an open event form; task/note drafts already persist independently.
@@ -211,6 +214,19 @@ import org.fieldnotes.domain.*
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp)) {
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             Text(when { state.connectionPaused -> "Connection paused · cached work and reminders remain available"; state.syncing -> "Synchronizing…"; state.online -> "Synced · ${state.cache.outbox.size} queued"; else -> "Offline · ${state.cache.outbox.size} queued · starts provisional" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if(!state.cache.preferences.visibilityChoiceSeen&&(!state.cache.preferences.notificationTitles||!state.cache.preferences.widgetTitles))OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                Text("Make your schedule visible at a glance",style=MaterialTheme.typography.titleSmall)
+                Text("Show full reminder and widget details while unlocked. Lock-screen visibility and the optional app lock remain separate.",style=MaterialTheme.typography.bodySmall)
+                Button(onClick={model.launch{model.preferences(state.cache.preferences.copy(notificationTitles=true,widgetTitles=true,visibilityChoiceSeen=true))}}){Text("Show reminder and widget details")}
+                TextButton(onClick={model.launch{model.preferences(state.cache.preferences.copy(visibilityChoiceSeen=true))}}){Text("Keep current visibility")}
+            }}
+            val issue=state.problem ?: device.warning.takeIf{it.isNotBlank()} ?: device.update.message.takeIf{device.update.problem} ?: reminderCompatibilityWarning(state.cache)
+            val compat=state.cache.compatibility
+            if(issue!=null||compat?.let{it.blocked||it.warning.isNotBlank()||it.version=="legacy"||it.recommendedClient>CURRENT_CLIENT_CODE}==true)OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                Text(if(issue!=null)"Needs attention" else "Version compatibility",style=MaterialTheme.typography.titleSmall)
+                Text(issue ?: compat!!.message,style=MaterialTheme.typography.bodySmall)
+                TextButton(onClick={settings=true}){Text("Review settings and updates")}
+            }}
             if (state.cache.conflicts.isNotEmpty()) SecondaryButton(onClick = { changes = true }) { Text("${state.cache.conflicts.size} changes need review") }
             if(device.update.available)SecondaryButton(onClick={settings=true}){Text("App update ${device.update.offered} available")}
             if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it })
@@ -267,6 +283,7 @@ import org.fieldnotes.domain.*
             ConnectionControls(model,state); Text("${actor.name} · ${actor.role}"); Text("Server: ${state.cache.config?.text("endpoint")}")
             SecondaryButton(onClick = { endpoint = true },modifier=Modifier.fillMaxWidth()) { Text("Edit server endpoint") }
             if(device.androidDelivery)AppUpdatesCard(device)
+            if(device.androidDelivery)SettingSwitch("Automatically prepare app updates","Download and verify updates from this paired server in the background. Android still asks before installation; interrupted transfers resume.",state.cache.preferences.autoDownloadUpdates){val p=state.cache.preferences.copy(autoDownloadUpdates=it);model.launch{model.preferences(p)}}
             if(device.androidDelivery){
                 Text("Alerts and home screen",style=MaterialTheme.typography.titleMedium)
                 Text(device.status,style=MaterialTheme.typography.bodySmall)
@@ -275,6 +292,13 @@ import org.fieldnotes.domain.*
                 SecondaryButton(onClick=device.testAlert,modifier=Modifier.fillMaxWidth()){Text("Play a sound test now")}
                 SecondaryButton(onClick=device.profileTest,modifier=Modifier.fillMaxWidth()){Text("Test in another profile (30 s)")}
                 SecondaryButton(onClick=device.notificationSettings,modifier=Modifier.fillMaxWidth()){Text("Notification sound settings")}
+                SecondaryButton(onClick=device.recheckDelivery,modifier=Modifier.fillMaxWidth()){Text("Check reminder delivery again")}
+                Text("Loud alarm reminders",style=MaterialTheme.typography.titleMedium)
+                SettingSwitch("Allow temporary alarm-volume control","For alarm reminders, raise and restore this phone's alarm volume. Manual changes take priority. Stop the alarm before force-stop or direct uninstall; Android cannot run restoration afterward.",state.cache.preferences.allowAlarmVolumeOverride){val p=state.cache.preferences.copy(allowAlarmVolumeOverride=it);model.launch{model.preferences(p)}}
+                SecondaryButton(onClick=device.testLoudAlarm,modifier=Modifier.fillMaxWidth(),enabled=state.cache.preferences.allowAlarmVolumeOverride){Text("Test a loud alarm (10 s)")}
+                SecondaryButton(onClick=device.stopAlarm,modifier=Modifier.fillMaxWidth()){Text("Stop alarm and restore volume")}
+                SecondaryButton(onClick=device.soundSettings,modifier=Modifier.fillMaxWidth()){Text("Android alarm volume")}
+                SecondaryButton(onClick=device.dndSettings,modifier=Modifier.fillMaxWidth()){Text("Do Not Disturb exceptions")}
                 SecondaryButton(onClick=device.alarmSettings,modifier=Modifier.fillMaxWidth()){Text("Allow precise reminders")}
                 SecondaryButton(onClick=device.batterySettings,modifier=Modifier.fillMaxWidth()){Text("Background battery settings")}
                 SecondaryButton(onClick={profileHelp=true},modifier=Modifier.fillMaxWidth()){Text("Alerts in other GrapheneOS profiles")}
@@ -282,12 +306,19 @@ import org.fieldnotes.domain.*
             Text("Appearance",style=MaterialTheme.typography.titleMedium)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(theme in listOf("system","light","dark"))FilterChip(state.cache.preferences.theme==theme,{model.launch { model.preferences(state.cache.preferences.copy(theme=theme)) }},{Text(theme.replaceFirstChar { it.uppercase() })})}
             SettingSwitch("Auto-refresh while open","Check for household changes without pressing refresh.",state.cache.preferences.autoRefresh){val p=state.cache.preferences.copy(autoRefresh=it);model.launch{model.preferences(p)}}
-            SettingSwitch("Titles in notifications","Show titles in the unlocked notification shade. Lock-screen public content remains generic.",state.cache.preferences.notificationTitles){val p=state.cache.preferences.copy(notificationTitles=it);model.launch{model.preferences(p)}}
+            Text("Visibility and app lock",style=MaterialTheme.typography.titleMedium)
+            Text("App locking, notification details and home-screen details are independent.",style=MaterialTheme.typography.bodySmall)
+            SettingSwitch("Require a credential to open the app","Optional device-credential check. Reminders and widgets keep their own visibility choices.",state.cache.preferences.appLock){val p=state.cache.preferences.copy(appLock=it);model.launch{model.preferences(p)}}
+            if(state.cache.preferences.appLock)FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(minutes in listOf(1,5,15,30))FilterChip(state.cache.preferences.lockMinutes==minutes,{model.launch{model.preferences(state.cache.preferences.copy(lockMinutes=minutes))}},{Text("$minutes min")})}
+            SettingSwitch("Detailed reminder notifications","Show the title, schedule, person, notes and activity in the notification shade.",state.cache.preferences.notificationTitles){val p=state.cache.preferences.copy(notificationTitles=it,visibilityChoiceSeen=true);model.launch{model.preferences(p)}}
+            SettingSwitch("Notification details on the lock screen","Show full reminder contents while this profile's device is locked. Android's lock-screen settings also apply.",state.cache.preferences.notificationOnLockScreen){val p=state.cache.preferences.copy(notificationOnLockScreen=it,notificationTitles=it||state.cache.preferences.notificationTitles);model.launch{model.preferences(p)}}
             SettingSwitch("Background catch-up", "Android schedules checks at 15-minute minimum intervals. Doze, force-stop and VPN policy can delay them.", state.cache.preferences.backgroundSync) { val p = state.cache.preferences.copy(backgroundSync = it); model.launch { model.preferences(p); background(p) } }
             SettingSwitch("Task and calendar reminders", "Use each item’s Reminders controls for multiple alerts, recurring windows and sound. Cached reminders also work offline.", state.cache.preferences.reminders) { val p = state.cache.preferences.copy(reminders = it); model.launch { model.preferences(p); background(p) } }
-            SettingSwitch("Titles in home-screen widgets", "Off by default. Enabling shares title copies with your launcher; a lock cannot erase copies it has cached. Notes and images stay private.", state.cache.preferences.widgetTitles) { val p = state.cache.preferences.copy(widgetTitles = it); model.launch { model.preferences(p); background(p) } }
-            Text("Add the Field Notes widget from your launcher's widget picker. It opens this locked app and refreshes from the encrypted local cache.", style = MaterialTheme.typography.bodySmall)
-            if(device.androidDelivery){SecondaryButton(onClick=device.addCalendarWidget,modifier=Modifier.fillMaxWidth()){Text("Add Calendar to home screen")};SecondaryButton(onClick=device.addUpcomingWidget,modifier=Modifier.fillMaxWidth()){Text("Add Upcoming to home screen")};SecondaryButton(onClick={removeInstallation=true},modifier=Modifier.fillMaxWidth(),dangerous=true){Text("Revoke this installation and uninstall")}}
+            SettingSwitch("Show schedules in home-screen widgets", "Display event and task titles without opening Field Notes. Your launcher receives those title copies.", state.cache.preferences.widgetTitles) { val p = state.cache.preferences.copy(widgetTitles = it,visibilityChoiceSeen=true); model.launch { model.preferences(p); background(p) } }
+            SettingSwitch("Widget details while the device is locked","Keep schedule details visible on a locked device; launchers can retain previously displayed copies.",state.cache.preferences.widgetOnLockScreen){val p=state.cache.preferences.copy(widgetOnLockScreen=it,widgetTitles=it||state.cache.preferences.widgetTitles);model.launch{model.preferences(p)}}
+            SettingSwitch("Include everyone's appointments in widgets","Off shows your reminders. On shows the shared household calendar, without sending you their alarms.",state.cache.preferences.widgetHousehold){val p=state.cache.preferences.copy(widgetHousehold=it);model.launch{model.preferences(p)}}
+            Text("Add a Field Notes widget from your launcher's picker. It refreshes from the encrypted local cache; an optional app lock does not hide its schedule.", style = MaterialTheme.typography.bodySmall)
+            if(device.androidDelivery){SecondaryButton(onClick=device.addWeekWidget,modifier=Modifier.fillMaxWidth()){Text("Add Week to home screen")};SecondaryButton(onClick=device.addCalendarWidget,modifier=Modifier.fillMaxWidth()){Text("Add Calendar to home screen")};SecondaryButton(onClick=device.addUpcomingWidget,modifier=Modifier.fillMaxWidth()){Text("Add Upcoming to home screen")};SecondaryButton(onClick={removeInstallation=true},modifier=Modifier.fillMaxWidth(),dangerous=true){Text("Revoke this installation and uninstall")}}
             Spacer(Modifier.height(24.dp))
         }
         }
@@ -446,7 +477,7 @@ import org.fieldnotes.domain.*
 }
 @Composable private fun Brand() { Text("Field Notes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
 @Composable private fun ErrorText(text: String) { Text(text, Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.error) }
-@Composable private fun SettingSwitch(title: String, detail: String, enabled: Boolean, change: (Boolean) -> Unit) { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(detail, style = MaterialTheme.typography.bodySmall) }; Switch(enabled, change) } }
+@Composable private fun SettingSwitch(title: String, detail: String, enabled: Boolean, change: (Boolean) -> Unit) { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(detail, style = MaterialTheme.typography.bodySmall) }; Switch(enabled, change,modifier=Modifier.semantics{contentDescription=title}) } }
 @Composable private fun TextDialog(title: String, label: String, close: () -> Unit, confirmLabel: String = "Create", initial: String = "", maxLength: Int = 160, submit: suspend (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf(initial) }
     var busy by remember { mutableStateOf(false) }

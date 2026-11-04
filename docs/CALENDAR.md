@@ -41,11 +41,18 @@ It is separate from the existing Upcoming agenda and Focus widgets. Resize it
 in the launcher. Its default fits four rows; compact sizes hide agenda text,
 while a taller widget reveals it. Tap a date to open that date in the app's calendar.
 
-Enable **Titles in home-screen widgets** in Field Notes settings to reveal event
-and task information. The default shows calendar dates and an unlock/settings
-message; titles and appointment markers are redacted while the device is locked
-or the saved session is known to need sign-in. Notification content remains
-private independently of the widget setting.
+Choose **Field Notes · Week** or **Add Week to home screen** for seven dated
+agenda rows, previous/next/this-week navigation and occupied-time bars for each
+day. A point marks a start-only event without reserving time. Tap any day to open
+it; edits and sync repaint the actual launcher widget. Resize to fit more text.
+
+**Show schedules in home-screen widgets** defaults on for new installs. Existing
+off choices are preserved and **Show schedule** opens the relevant settings.
+App credential locking is optional and does not hide widget titles. Device lock
+still requests redaction unless **Widget details while the device is locked**
+is explicitly enabled. Known invalid sessions always redact. By default widgets
+show your reminder recipients; **Include everyone's appointments in widgets**
+adds the shared household schedule without subscribing you to their alarms.
 
 The widget renders the encrypted local cache and pending offline changes.
 App state changes repaint it automatically, including edits while offline,

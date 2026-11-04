@@ -2,8 +2,12 @@
 
 The paired server selects the phone APK version. **Settings & widgets → App
 updates** shows the installed version and the version that server offers. Field
-Notes checks automatically while the unlocked app is in the foreground, at most
-once per six hours, and **Check for updates** checks immediately.
+Notes checks automatically in the foreground, the private background connection
+and catch-up worker, normally once per six hours. A changed recommendation can
+trigger an earlier check; failures back off for fifteen minutes. **Check for
+updates** checks immediately. **Automatically prepare app updates** defaults on:
+the verified download is prepared in the background, and a notification offers
+review/installation. Android still requires installation consent.
 
 If the installed app predates 0.3.2, it does not yet have this screen. Download
 the matching APK from the updated server and install it **over the existing app**, with the
@@ -24,9 +28,11 @@ signing certificate. It checks the server's current offer again immediately
 before opening the installer. Missing chunks, changed offers, revocation,
 connection pause, cancellation, corrupt files, wrong signers and downgrades stop
 the update. They do not reset enrollment or discard edits. Downloads use bounded
-256 KiB chunks with a 150 MiB artifact limit; an interrupted partial download is
-removed and can be retried. Cancel finishes when the current bounded request
-returns. The update cache is private and excluded from backup, and Android removes
+256 KiB chunks with a 150 MiB artifact limit. Complete chunks resume after a
+disconnect or process restart. A changed artifact/server/user starts fresh
+software bytes. The complete APK is hashed and signature-verified again before
+handoff. Explicit Cancel discards the partial software file after the current
+bounded request returns. The update cache is private and excluded from backup, and Android removes
 it on normal uninstall. A nonexported FileProvider grants the installer read
 access only to the staged software file.
 
@@ -39,7 +45,25 @@ queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults
 and keys remain separate, and Android decides which user may install an update.
 
-## Planner version 0.4
+## Compatible version drift
+
+Server and APK release numbers can differ while their core protocol remains
+compatible. The server reports its minimum/recommended client and supported
+features. A newer app can keep syncing with an older server; unsupported editor
+controls stay disabled. A retained edit requiring a newer feature is explained
+in Retained changes. Incompatible protocol/minimum requirements stop uploads
+with a persistent warning and preserve the cache, outbox and keys. The current
+server recommends code 11 and supports the code-10 core during rollout. Update
+older clients before relying on personal reminder recipient controls.
+
+A missing/corrupt/mismatched APK bundle or failed transfer produces a visible
+status; it does not take the notes server offline. A phone newer than the offered
+APK keeps its current version and compatible sync. It is never downgraded to
+match a server string. Metadata/signature/network failures are surfaced in
+Settings, the app's persistent status, widget footer and a notification when
+Android permits posting. The system cannot report a new error while force-stopped.
+
+## Planner version 0.5
 
 Upgrade the paired server before using the new reminder/list/start-only event
 features. The phone's in-app updater follows that matching server bundle. New

@@ -12,7 +12,7 @@ The Android app encrypts cache, drafts, pending commands, images, credentials an
 WireGuard keys with AES-GCM under a nonexportable Android Keystore key. Atomic
 writes prevent publishing unpersisted edits. Missing keys/tampered ciphertext
 fail closed and do not create an empty replacement workspace. The device
-credential locks the UI; the key permits scheduled background reads, so it is
+credential can optionally lock the UI; the key permits scheduled background reads, so it is
 not configured for a biometric prompt on every cryptographic operation.
 
 The server encrypts record payloads, normalized attachments, device secret
@@ -134,10 +134,12 @@ photo picker avoids broad storage permission. Production windows set FLAG_SECURE
 backups are disabled, clipboard copies are marked sensitive. These controls do
 not prevent every physical screenshot or compromised-device capture.
 
-Widget titles are hidden by default. Opt-in discloses title copies to the home
-launcher. Android/launchers may retain old RemoteViews, so lock/redaction is
+New installations show widget titles in the unlocked home launcher. Existing
+visibility choices are retained. Lock-screen widget/notification details have
+independent, default-off switches, separate from the optional app credential
+lock. Android/launchers may retain old RemoteViews, so lock/redaction is
 best-effort and cannot erase cached copies. Widgets never contain notes, images,
-tokens or private keys. Tap opens the credential-locked app; no unauthenticated
+tokens or private keys. Tap opens the app under its selected credential policy; no unauthenticated
 widget action mutates tasks. Offline QR decoding uses CameraX/ZXing with camera
 permission requested only for scanning; frames are not saved or uploaded.
 

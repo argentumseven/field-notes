@@ -2,170 +2,143 @@ package org.fieldnotes.app
 
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import com.android.apksig.ApkVerifier
 import java.io.File
 import java.security.MessageDigest
-import java.util.Base64
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.*
 import org.fieldnotes.domain.*
 
-/** Downloads software through the same pinned peer. Never writes the workspace or its keys. */
+/** The paired server selects software. Preparing an update never resets local
+ * work, pairing or keys, and Android still owns installation consent. */
 class ApkUpdates(private val app:FieldNotesApplication) {
     private val installed=app.packageManager.getPackageInfo(app.packageName,0)
     private val code=if(Build.VERSION.SDK_INT>=28)installed.longVersionCode else @Suppress("DEPRECATION") installed.versionCode.toLong()
-    private val folder=File(app.cacheDir,"updates")
-    private val apk=File(folder,"field-notes-update.apk")
-    val state=MutableStateFlow(AppUpdateUi(installed=installed.versionName?:code.toString()))
-    private data class Binding(val server:String,val token:String,val address:String)
+    private val apk=File(app.cacheDir,"updates/field-notes-update.apk")
+    private val transfer=UpdateTransfer(app,apk.parentFile!!,apk,code)
+    val state=MutableStateFlow(AppUpdateUi(installed=installed.versionName ?: code.toString()))
+    private data class Binding(val server:String,val token:String,val address:String,val user:String) {
+        val cacheKey get()=ApkUpdateVerifier.hex(MessageDigest.getInstance("SHA-256").digest("$server|$address|$user".toByteArray()))
+    }
     private var offer:UpdateOffer?=null
     private var bound:Binding?=null
     private var job:Job?=null
+    private var automaticJob=false
+    private var userCanceled=false
     private var checkedAt:Long?=null
-    init {
-        runCatching { if(folder.exists()){cacheFolder();apk.delete();File(folder,"download.partial").delete()} }
-            .onFailure { failure->state.update{it.copy(message=failure.message?:"The update cache is unavailable. Your planner data is kept.")} }
-    }
-    private fun cacheFolder(){
-        check(!java.nio.file.Files.isSymbolicLink(folder.toPath()) && folder.canonicalFile.parentFile==app.cacheDir.canonicalFile){"Update cache needs review; planner data is kept."}
-        check(folder.isDirectory||folder.mkdirs()){"Update cache could not be opened. Your planner data is kept."}
-    }
+    private var attemptedAt:Long?=null
+    private var installerOpened=false
+    private var lastRecommendation:Int?=null
     private fun binding():Binding {
         val s=app.model.state.value
-        check(s.ready&&!s.needsLogin&&!s.connectionPaused){"Sign in and resume your private connection to check updates."}
-        val c=s.cache.config?:error("Enroll this phone first.")
-        return Binding(c.text("server_key"),s.cache.token?:error("Sign in first."),c.text("address"))
+        check(s.ready&&!s.needsLogin&&!s.connectionPaused){"Sign in and resume the private connection. Pairing and cached work are kept."}
+        val c=s.cache.config ?: error("Enroll this phone first.")
+        return Binding(c.text("server_key"),s.cache.token ?: error("Sign in first."),c.text("address"),s.cache.snapshot?.actor?.user_id.orEmpty())
     }
-    private fun same(b:Binding){check(binding()==b){"The paired connection changed. Check updates again; your data is kept."}}
+    private fun same(b:Binding){check(binding()==b){"The paired connection changed. Check updates again; pairing and saved work are kept."}}
     private suspend fun request(path:String,b:Binding):Reply {
-        same(b)
-        val reply=app.model.softwareUpdate(path)
-        same(b)
-        check(reply.status==200){when(reply.status){404->"This server has no in-app update bundle yet. Update the paired server first.";409->"The server APK changed. Check for updates again.";401,403->"Sign in to your paired server again. Your pairing and edits are kept.";else->"Update request failed (${reply.status}). Retry when your server is reachable."}}
+        same(b);val reply=app.model.softwareUpdate(path);same(b)
+        check(reply.status==200){when(reply.status){404->"This server has no update endpoint. Update the paired server; core notes remain available.";409->"The server changed its APK. Check updates again; nothing was installed.";401,403->"Sign in to the paired server again. Pairing and queued edits are kept.";else->"Update request failed (${reply.status}). Complete chunks are retained for retry."}}
         return reply
     }
-    fun checkForUpdate(automatic:Boolean=false) {
-        if(job?.isCompleted==false)return
+    private fun failure(message:String) {
+        state.update{it.copy(problem=true,message=message,progress=null)}
+        app.deliveryError.value="App update: $message"
+    }
+    private fun healthy() {if(app.deliveryError.value?.startsWith("App update: ")==true)app.deliveryError.value=null}
+    private fun ready(target:UpdateOffer) {
+        healthy();state.update{it.copy(ready=true,available=true,problem=false,progress=null,message="Verified update ${target.version} is ready. Android asks before installing; pairing and queued edits stay in place.")}
+        if(!app.uiVisible)Alerts.post(app,Alerts.SOFTWARE,"software-update","Field Notes ${target.version} is ready","Tap to review and install the verified update. Pairing and saved work are kept.")
+    }
+    fun checkForUpdate(automatic:Boolean=false):Job? {
+        if(job?.isCompleted==false)return job.takeIf {automatic&&automaticJob}
         val now=SystemClock.elapsedRealtime()
-        if(automatic&&bound!=null&&runCatching{binding()==bound}.getOrDefault(false)&&checkedAt?.let { now-it<6*60*60*1000L }==true)return
+        val recommended=app.model.state.value.cache.compatibility?.recommendedClient ?: code.toInt()
+        val changedRecommendation=lastRecommendation!=null&&lastRecommendation!=recommended
+        if(automatic&&!changedRecommendation&&attemptedAt?.let{now-it<15*60_000L}==true)return null
+        if(automatic&&!changedRecommendation&&bound!=null&&runCatching{binding()==bound}.getOrDefault(false)&&checkedAt?.let{now-it<6*60*60_000L}==true)return null
+        lastRecommendation=recommended
+        attemptedAt=now;automaticJob=automatic;userCanceled=false
         job=app.scope.launch {
             state.update{it.copy(busy=true,progress=null,message="Checking the paired server…")}
             try {
-                val b=binding();val reply=request("/api/device/update",b)
-                val next=UpdateOffer.read(WireJson.parseToJsonElement(reply.body).jsonObject)
-                val reusable=next==offer&&b==bound&&state.value.ready&&apk.isFile&&apk.length()==next?.size
+                val b=binding();val data=WireJson.parseToJsonElement(request("/api/device/update",b).body).jsonObject
+                if(data.containsKey("compatibility"))app.model.observeCompatibility(data)
+                check(data.text("error").isBlank()){data.text("error")}
+                val next=UpdateOffer.read(data) ?: error("The paired server has no verified APK bundle. Ask its administrator to install one; notes and pairing remain usable.")
+                check(next.signer==ApkUpdateVerifier.installedSigner(app.packageManager,app.packageName)){"The server APK has a different signing certificate. Keep this app and pairing; the administrator must supply an APK signed for this installation."}
+                if(next.code>code)check(next.architecture in Build.SUPPORTED_ABIS){"The server APK does not support this phone's architecture. The existing app is kept."}
                 checkedAt=now;offer=next;bound=b
-                val ready=next!=null&&next.code>code
-                if(ready){
-                    check(next!!.architecture in Build.SUPPORTED_ABIS){"The server APK does not support this device architecture."}
-                    check(next.signer==ApkUpdateVerifier.installedSigner(app.packageManager,app.packageName)){"The server APK uses a different signing key. Rebuild it with this installation's signer. Do not uninstall or reset pairing."}
-                }
-                if(!reusable){cacheFolder();apk.delete()}
-                state.update{it.copy(offered=next?.version,available=ready,ready=reusable,message=when{reusable->"Verified update ${next?.version} is ready to install.";next==null->"The paired server has no APK bundle.";next.code<code->"This phone is newer than the paired server. Downgrades are blocked.";ready->"Update ${next.version} is available from your paired server. Pairing and queued edits stay in place.";else->"Up to date with your paired server."})}
-            }catch(e:Exception){if(e is CancellationException){state.update{it.copy(message="Update check canceled. Your data is kept.")};throw e};offer=null;bound=null;state.update{it.copy(available=false,ready=false,message=e.message?:"Update check failed.")}}
-            finally{state.update{it.copy(busy=false)}}
+                val available=next.code>code
+                val reusable=if(available)transfer.prepare(next,b.cacheKey) else {transfer.clear();false}
+                if(!available)app.getSystemService(android.app.NotificationManager::class.java).cancel("field-notes:"+Alerts.digest("software-update"),0)
+                healthy()
+                state.update{it.copy(offered=next.version,available=available,ready=reusable,problem=false,lastCheck=kotlinx.datetime.Clock.System.now().epochSeconds,message=when{reusable->"Verified update ${next.version} is ready to install.";available->"Update ${next.version} is available. Core sync can continue while it is prepared.";next.code<code->"This app is newer than the server's APK. Compatible core sync continues; an APK downgrade is unnecessary.";else->"Up to date with this server's APK. ${app.model.state.value.cache.compatibility?.message.orEmpty()}"})}
+                if(reusable)ready(next)
+                else if(available&&automatic&&app.model.state.value.cache.preferences.autoDownloadUpdates)downloadVerified(next,b)
+                else if(!available&&app.model.state.value.cache.compatibility?.blocked==true)failure("The server requires a newer app but offers an older APK. Its administrator must install a compatible client bundle; your edits are retained.")
+            }catch(e:Exception) {
+                if(e is CancellationException&&e !is TimeoutCancellationException){state.update{it.copy(message="Update preparation paused. Complete chunks and planner data are kept.")};throw e}
+                offer=null;bound=null;state.update{it.copy(available=false,ready=false)};failure(e.message ?: "Update check failed. Cached work is kept; use Check for updates to retry.")
+            }finally{state.update{it.copy(busy=false)}}
         }
+        return job
     }
-    fun download(){
+    private suspend fun downloadVerified(target:UpdateOffer,b:Binding) {
+        state.update{it.copy(busy=true,ready=false,problem=false,progress=0f,message="Preparing the verified update from your paired server…")}
+        try {
+            transfer.download(target,b.cacheKey,{same(b)},{path->request(path,b)}) {progress->state.update{it.copy(progress=progress)}}
+            same(b);ready(target)
+        }catch(e:Exception) {
+            if(e is CancellationException&&e !is TimeoutCancellationException){if(userCanceled)transfer.cancelPartial();state.update{it.copy(ready=false,progress=null,message=if(userCanceled)"Download canceled. Pairing and saved work are kept." else "Update preparation interrupted. Complete chunks will resume on retry.")};throw e}
+            checkedAt=null;state.update{it.copy(ready=false)};failure(e.message ?: "Download failed. Complete chunks are retained for retry.")
+        }finally{state.update{it.copy(busy=false)}}
+    }
+    fun download() {
         if(job?.isCompleted==false)return
-        val target=offer?:return;val b=bound?:return
-        if(target.code<=code)return
-        job=app.scope.launch {
-            val partial=File(folder,"download.partial")
-            state.update{it.copy(busy=true,ready=false,progress=0f,message="Downloading from your paired server…")}
-            try {
-                same(b)
-                withContext(Dispatchers.IO){
-                    cacheFolder()
-                    partial.outputStream().use{output->
-                        val digest=MessageDigest.getInstance("SHA-256");var count=0L
-                        for(index in 0 until target.chunks){
-                            currentCoroutineContext().ensureActive();same(b)
-                            val reply=request("/api/device/update/chunks/${target.sha256}/$index",b)
-                            val encoded=reply.binary?:error("The server returned an invalid APK chunk.")
-                            check(encoded.length<=((target.chunkSize+2)/3)*4){"APK chunk exceeds its bound."}
-                            val bytes=Base64.getDecoder().decode(encoded)
-                            check(bytes.size.toLong()==minOf(target.chunkSize.toLong(),target.size-count)){"APK chunk is incomplete."}
-                            output.write(bytes);digest.update(bytes);count+=bytes.size
-                            state.update{it.copy(progress=count.toFloat()/target.size)}
-                        }
-                        output.fd.sync()
-                        check(count==target.size&&ApkUpdateVerifier.hex(digest.digest())==target.sha256){"APK checksum mismatch. Nothing was installed."}
-                    }
-                    currentCoroutineContext().ensureActive();same(b)
-                    ApkUpdateVerifier.verify(app.packageManager,app.packageName,code,partial,target)
-                    check(partial.renameTo(apk)){"Could not save the verified update."}
-                }
-                state.update{it.copy(ready=true,progress=null,message="Verified update ${target.version}. Android will ask before installing; your keys and edits are preserved.")}
-            }catch(e:Exception){apk.delete();state.update{it.copy(ready=false,progress=null,message=if(e is CancellationException)"Download canceled. Your pairing and edits are kept." else e.message?:"Download failed.")}}
-            finally{partial.delete();state.update{it.copy(busy=false)}}
-        }
+        val target=offer;val b=bound
+        if(target==null||b==null){failure("Check the paired server's update offer before downloading. No planner data was changed.");return}
+        if(target.code<=code){state.update{it.copy(message="This APK is already installed or older. Compatible core sync remains available.")};return}
+        automaticJob=false;userCanceled=false;job=app.scope.launch{downloadVerified(target,b)}
     }
-    fun cancel(){job?.cancel();state.update{it.copy(message="Canceling the current bounded request…")}}
-    fun install(activity:Activity){
-        if(job?.isCompleted==false||!state.value.ready)return
-        val target=offer?:return;val b=bound?:return
-        if(!app.packageManager.canRequestPackageInstalls()){
-            try{activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:${app.packageName}")))
-                state.update{it.copy(message="Allow updates from Field Notes in Android Settings, then return and tap Install update. You can revoke this permission later.")}
-            }catch(e:Exception){state.update{it.copy(message=e.message?:"Android installation settings are unavailable.")}}
+    suspend fun prepareBackground() {
+        val current=app.model.state.value
+        if(!current.ready||current.needsLogin||current.connectionPaused||current.cache.token==null)return
+        val pending=checkForUpdate(automatic=true) ?: return
+        try {withTimeout(8*60_000L){pending.join()}}
+        catch(e:TimeoutCancellationException){if(job===pending&&automaticJob)pending.cancel();failure("Background update preparation timed out. Complete chunks and planner data are kept; check updates to resume.")}
+        catch(e:CancellationException){if(job===pending&&automaticJob)pending.cancel();throw e}
+    }
+    fun cancel(){if(job?.isActive==true){userCanceled=true;job?.cancel()}else state.update{it.copy(message="No update request is running. The current app and data are kept.")}}
+    fun installerReturned(){if(installerOpened){installerOpened=false;state.update{it.copy(message="The update is not installed yet. Tap Install update to continue with Android's installer.")}}}
+    fun install(activity:Activity) {
+        if(job?.isCompleted==false)return
+        val target=offer;val b=bound
+        if(!state.value.ready||target==null||b==null){failure("Download and verify the paired server's update first. The existing app is kept.");return}
+        if(!app.packageManager.canRequestPackageInstalls()) {
+            try {activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:${app.packageName}")));state.update{it.copy(message="Allow installations from Field Notes in Android Settings, then return and tap Install update.")}}
+            catch(e:Exception){failure(e.message ?: "Android installation settings are unavailable.")}
             return
         }
-        job=app.scope.launch {
-            state.update{it.copy(busy=true,message="Checking the verified update against your paired server…")}
+        automaticJob=false;job=app.scope.launch {
+            state.update{it.copy(busy=true,message="Confirming the paired server's current offer…")}
             try {
                 same(b)
                 val latest=UpdateOffer.read(WireJson.parseToJsonElement(request("/api/device/update",b).body).jsonObject)
-                if(latest!=target){offer=null;bound=null;state.update{it.copy(available=false,ready=false)};error("The paired server changed its APK. Check for updates again.")}
+                check(latest==target){"The server changed its APK. Check updates again. Nothing was installed."}
                 withContext(Dispatchers.IO){ApkUpdateVerifier.verify(app.packageManager,app.packageName,code,apk,target)}
                 same(b)
                 check(activity is androidx.lifecycle.LifecycleOwner&&activity.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)){"Return to Field Notes and tap Install update."}
-                val uri=FileProvider.getUriForFile(app,"${app.packageName}.updates",apk)
-                activity.startActivity(ApkUpdateVerifier.installIntent(app.packageManager,uri))
-                state.update{it.copy(message="Finish the update in Android's installer. Do not uninstall Field Notes.")}
-            }catch(e:Exception){state.update{it.copy(message=e.message?:"Android's installer could not open. Your data is kept.")}}
+                activity.startActivity(ApkUpdateVerifier.installIntent(app.packageManager,FileProvider.getUriForFile(app,"${app.packageName}.updates",apk)))
+                installerOpened=true;state.update{it.copy(problem=false,message="Finish the update in Android's installer. The existing app, pairing and data stay in place.")}
+            }catch(e:Exception){if(e is CancellationException&&e !is TimeoutCancellationException)throw e;failure(e.message ?: "Android's installer could not open. Your current app and data are kept.")}
             finally{state.update{it.copy(busy=false)}}
         }
-    }
-
-}
-
-internal object ApkUpdateVerifier {
-    @Suppress("DEPRECATION")
-    fun installIntent(pm:PackageManager,uri:Uri):Intent {
-        val intent=Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        val installer=pm.queryIntentActivities(intent,PackageManager.MATCH_SYSTEM_ONLY or PackageManager.MATCH_DEFAULT_ONLY).firstOrNull()?.activityInfo
-            ?:error("Android's system package installer is unavailable. Your existing app and data are kept.")
-        return intent.setClassName(installer.packageName,installer.name)
-    }
-    fun hex(bytes:ByteArray)=bytes.joinToString(""){"%02x".format(it)}
-    fun installedSigner(pm:PackageManager,name:String):String {
-        @Suppress("DEPRECATION") val info=pm.getPackageInfo(name,if(Build.VERSION.SDK_INT>=28)PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES)
-        @Suppress("DEPRECATION") val signatures=if(Build.VERSION.SDK_INT>=28)info.signingInfo!!.apkContentsSigners else info.signatures!!
-        check(signatures.size==1){"Multiple APK signers require an operator-reviewed upgrade."}
-        return hex(MessageDigest.getInstance("SHA-256").digest(signatures.single().toByteArray()))
-    }
-    fun verify(pm:PackageManager,name:String,current:Long,file:File,target:UpdateOffer){
-        check(target.code>current){"APK downgrade or same-version replacement blocked."}
-        check(file.length()==target.size){"APK length mismatch."}
-        val actual=file.inputStream().use{input->val hash=MessageDigest.getInstance("SHA-256");val buffer=ByteArray(65536);while(true){val n=input.read(buffer);if(n<0)break;hash.update(buffer,0,n)};hex(hash.digest())}
-        check(actual==target.sha256){"APK checksum mismatch."}
-        val verified=ApkVerifier.Builder(file).setMinCheckedPlatformVersion(26).build().verify()
-        check(verified.isVerified&&verified.signerCertificates.size==1){"APK signature verification failed. Nothing was installed."}
-        val signer=hex(MessageDigest.getInstance("SHA-256").digest(verified.signerCertificates.single().encoded))
-        check(signer==target.signer&&signer==installedSigner(pm,name)){"APK signer differs from this installation. Do not uninstall or reset pairing; rebuild the APK with the original signer."}
-        @Suppress("DEPRECATION") val archive=pm.getPackageArchiveInfo(file.path,0)?:error("APK package could not be read.")
-        val archiveCode=if(Build.VERSION.SDK_INT>=28)archive.longVersionCode else @Suppress("DEPRECATION") archive.versionCode.toLong()
-        check(archive.packageName==name&&archiveCode==target.code&&archive.versionName==target.version){"APK identity/version does not match the paired server."}
-        check(archive.applicationInfo!!.minSdkVersion<=Build.VERSION.SDK_INT){"This update needs a newer Android version."}
-        java.util.zip.ZipFile(file).use{zip->check(Build.SUPPORTED_ABIS.any{abi->zip.entries().asSequence().any{it.name.startsWith("lib/$abi/")}}){"APK architecture does not support this device."}}
     }
 }

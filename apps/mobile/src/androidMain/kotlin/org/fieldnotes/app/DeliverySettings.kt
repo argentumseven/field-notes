@@ -5,6 +5,7 @@ import android.content.*
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.media.AudioManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.work.WorkManager
@@ -25,11 +26,14 @@ object DeliverySettings {
             if(exact)"Precise alarms allowed" else "Alarms may be delayed; allow precise alarms",
             if(unrestricted)"Battery unrestricted" else "Battery restrictions can delay live updates",
             (context.applicationContext as FieldNotesApplication).deliveryError.value,
+            "Alarm volume: ${context.getSystemService(AudioManager::class.java).getStreamVolume(AudioManager.STREAM_ALARM)} / ${context.getSystemService(AudioManager::class.java).getStreamMaxVolume(AudioManager.STREAM_ALARM)}",
         ).filterNotNull().joinToString("\n")
     }
     fun open(context:Context,action:String,channel:String?=null){
         val intent=when(action){
-            "notifications"->Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID,channel?:Alerts.REMINDERS)
+            "notifications"->if(channel==null)Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName) else Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID,channel)
+            "sound"->Intent(Settings.ACTION_SOUND_SETTINGS)
+            "dnd"->Intent("android.settings.ZEN_MODE_SETTINGS")
             "alarms"->if(Build.VERSION.SDK_INT>=31)Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+context.packageName))else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+context.packageName))
             "profiles"->Intent(Settings.ACTION_SETTINGS)
             else->Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+context.packageName))
@@ -38,6 +42,7 @@ object DeliverySettings {
     }
     suspend fun remove(context:Context){
         val app=context.applicationContext as FieldNotesApplication
+        AlarmPlaybackService.stop(context);AlarmAudio.restoreAfterStop(context)
         app.model.removeInstallation()
         PrivateUpdatesService.stop(context)
         WorkManager.getInstance(context).cancelAllWork()
@@ -46,6 +51,17 @@ object DeliverySettings {
         app.vault.clearEffects()
         PlannerWidget.refresh(context);UpcomingWidget.refresh(context);CalendarWidget.refresh(context)
         open(context,"uninstall")
+    }
+    fun problem(context:Context):String? = when {
+        !Alerts.permissionAllowed(context)->"Android notifications are blocked. Enable them so reminders and alarm controls can be shown."
+        context.getSystemService(NotificationManager::class.java).currentInterruptionFilter==NotificationManager.INTERRUPTION_FILTER_NONE->"Do Not Disturb is blocking sounds. Review Android's exceptions for alarms."
+        else->null
+    }
+    suspend fun recheck(context:Context) {
+        val app=context.applicationContext as FieldNotesApplication
+        app.deliveryError.value=null
+        try { AlarmAudio.restore(context);LocalAlarms.reconcile(context,true);problem(context)?.let {app.deliveryError.value=it} }
+        catch(_:Exception){app.deliveryError.value="Delivery checks could not complete. Check storage and Android alarm permissions."}
     }
     fun pin(context:Context){
         if(!UpcomingWidget.pin(context))Toast.makeText(context,"Open your launcher's widget picker and choose Field Notes · Upcoming.",Toast.LENGTH_LONG).show()

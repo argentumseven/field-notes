@@ -3,6 +3,22 @@ package org.fieldnotes.app
 import android.content.Context
 import android.content.res.Configuration
 import org.fieldnotes.domain.Cache
+import org.fieldnotes.domain.*
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.Uri
+
+internal fun widgetRecords(cache:Cache)=projectRecords(cache).map { it.record }.filter { cache.preferences.widgetHousehold||reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty()) }
+internal fun widgetSettings(context:Context)=PendingIntent.getActivity(context,744,Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).setData(Uri.parse("fieldnotes-widget://settings/visibility")).putExtra("open_page","Settings"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+internal fun widgetProblem(context:Context):Boolean {
+    val app=context.applicationContext as FieldNotesApplication
+    return app.model.state.value.problem!=null || app.deliveryError.value!=null || app.deliveryPersistenceError.value!=null || app.updates.state.value.problem
+}
+internal fun widgetHiddenLabel(cache:Cache,unlocked:Boolean,authenticated:Boolean)=when {
+    !authenticated||cache.token==null||cache.snapshot==null->"Open Field Notes to sign in"
+    !unlocked&&!cache.preferences.widgetOnLockScreen->"Unlock phone to show schedule"
+    else->"Show schedule"
+}
 
 internal data class WidgetPalette(val background:Int,val text:Int,val muted:Int,val accent:Int,val selected:Int,val track:Int)
 internal fun widgetPalette(context:Context,cache:Cache):WidgetPalette {

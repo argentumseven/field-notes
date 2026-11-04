@@ -43,7 +43,12 @@ impl Store {
         Ok(())
     }
 
-    pub(super) fn calendar_event(data: &Value, record: &mut Record, actor: &Actor) -> Result<()> {
+    pub(super) fn calendar_event(
+        &self,
+        data: &Value,
+        record: &mut Record,
+        actor: &Actor,
+    ) -> Result<()> {
         fields(
             data,
             &[
@@ -55,6 +60,7 @@ impl Store {
                 "starts_at",
                 "ends_at",
                 "reminders",
+                "reminder_options",
             ],
         )?;
         if record.revision == 0 {
@@ -67,7 +73,11 @@ impl Store {
             );
         }
         for (key, value) in data.as_object().unwrap() {
-            record.data[key] = value.clone();
+            // Preserve the old audience until recipient validation can tell
+            // historical disabled accounts from newly selected ones.
+            if key != "reminder_options" {
+                record.data[key] = value.clone();
+            }
         }
         let title = text(&record.data, "title", 240)?;
         let notes = record.data["notes"]
@@ -114,6 +124,7 @@ impl Store {
             record.data["end_date"] = json!("");
         }
         Self::reminders(data, record)?;
+        self.reminder_options(data, record, actor)?;
         record.data["title"] = json!(title);
         record.data["updated_at"] = json!(now());
         Ok(())

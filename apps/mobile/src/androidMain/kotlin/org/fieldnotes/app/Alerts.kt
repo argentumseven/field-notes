@@ -25,15 +25,17 @@ object Alerts {
     const val REMINDERS = "reminders"
     const val UPDATES = "updates"
     const val CONNECTION = "private-connection"
+    const val ISSUES="delivery-issues"
+    const val SOFTWARE="software-updates"
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         val audio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT).build()
-        for ((id, name) in listOf(REMINDERS to "Upcoming tasks and calendar", UPDATES to "Household updates")) {
+        for ((id, name) in listOf(REMINDERS to "Upcoming tasks and calendar", UPDATES to "Household updates",ISSUES to "Delivery and compatibility issues",SOFTWARE to "Verified app updates")) {
             // Existing user changes to importance/sound are never reset.
             if (manager.getNotificationChannel(id) == null) manager.createNotificationChannel(
-                NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
-                    setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), audio)
-                    enableVibration(true)
+                NotificationChannel(id, name, if(id==ISSUES||id==SOFTWARE)NotificationManager.IMPORTANCE_DEFAULT else NotificationManager.IMPORTANCE_HIGH).apply {
+                    setSound(if(id==ISSUES||id==SOFTWARE)null else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), audio)
+                    enableVibration(id!=ISSUES&&id!=SOFTWARE)
                     lockscreenVisibility = Notification.VISIBILITY_PRIVATE
                 })
         }
@@ -45,23 +47,32 @@ object Alerts {
                 lockscreenVisibility = Notification.VISIBILITY_SECRET
             })
     }
-    fun allowed(context: Context, channel: String): Boolean {
+    fun permissionAllowed(context:Context):Boolean {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
-        val manager = context.getSystemService(NotificationManager::class.java)
-        return manager.areNotificationsEnabled() && manager.getNotificationChannel(channel)?.importance != NotificationManager.IMPORTANCE_NONE
+        return context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
     }
-    fun post(context: Context, channel: String, key: String, title: String, text: String, target:String?=null): Boolean {
+    fun allowed(context: Context, channel: String): Boolean = permissionAllowed(context)&&context.getSystemService(NotificationManager::class.java).getNotificationChannel(channel)?.importance != NotificationManager.IMPORTANCE_NONE
+    fun post(context: Context, channel: String, key: String, title: String, text: String, target:String?=null,details:String=text,whenAt:Long=0,alarm:Boolean=false): Boolean {
         channels(context)
         if (!allowed(context, channel)) return false
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .setData(Uri.parse("fieldnotes://notification/" + digest(key))).putExtra("open_record",target)
+        if(channel==ISSUES||channel==SOFTWARE)intent.putExtra("open_page","Settings")
         val open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_field_notes)
+        val prefs=(context.applicationContext as FieldNotesApplication).model.state.value.cache.preferences
+        val publicNotice=NotificationCompat.Builder(context,channel).setSmallIcon(R.drawable.ic_field_notes)
+            .setContentTitle(if(prefs.notificationOnLockScreen)title else "Field Notes alert")
+            .setContentText(if(prefs.notificationOnLockScreen)text else "Reminder details are hidden on the lock screen.")
+        if(prefs.notificationOnLockScreen)publicNotice.setStyle(NotificationCompat.BigTextStyle().bigText(details))
+        val builder = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_field_notes)
             .setContentTitle(title).setContentText(text).setContentIntent(open)
-            .setPublicVersion(NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_field_notes).setContentTitle("Field Notes alert").build())
-            .setCategory(NotificationCompat.CATEGORY_REMINDER).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setAutoCancel(true).setOnlyAlertOnce(true).build()
+            .setStyle(NotificationCompat.BigTextStyle().bigText(details)).setWhen(if(whenAt>0)whenAt*1000 else System.currentTimeMillis()).setShowWhen(true)
+            .setPublicVersion(publicNotice.build())
+            .setCategory(if(alarm)NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER).setVisibility(if(prefs.notificationOnLockScreen)NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
+            .setAutoCancel(true).setOnlyAlertOnce(true)
+        if(alarm)builder.addAction(0,"Stop alarm",AlarmPlaybackService.stopIntent(context))
+        val notification=builder.build()
         return try {
             // A unique tag per occurrence lets later reminders sound; retrying
             // this same occurrence updates its existing notification quietly.
@@ -128,10 +139,13 @@ object LocalAlarms {
         } }
         val delivered=if(same)previous.delivered.filterKeys { it in active } else emptyMap()
         val now = Clock.System.now()
-        val desired = if (cache == null) emptyMap() else
-            localAlerts(cache, now, TimeZone.currentSystemDefault(),seen.keys,delivered).filter { alert ->
+        val candidates=if(cache==null)emptyList() else localAlerts(cache,now,TimeZone.currentSystemDefault(),seen.keys,delivered)
+        cache?.let { reminderCompatibilityWarning(it)?.let { message->app.deliveryError.value=message } }
+        val enabled=candidates.filter { alert ->
                 alert.key !in seen && Alerts.allowed(context,alert.profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS)
-            }.take(64).associate { it.key to it.at }
+            }
+        if(enabled.size<candidates.size)app.deliveryError.value="Some reminders are blocked by Android notification permissions or channel settings. Review Alerts in Settings."
+        val desired=enabled.take(64).associate { it.key to it.at }
         if(!force&&!previous.applyPending&&same&&previous.scheduled==desired&&previous.delivered==delivered) return@withLock
         val alarms = context.getSystemService(AlarmManager::class.java)
         // Save desired state before external effects; boot/restart forcefully
@@ -166,13 +180,15 @@ object LocalAlarms {
         // frequency; a household with many 09:00 due dates needs one digest.
         val due = candidates.filter { it.at <= now.epochSeconds + 1 && it.key !in previous.seen }
         val posted=mutableListOf<String>()
-        val records=projectRecords(cache).associateBy { it.record.id }
-        for((profile,group) in due.groupBy { it.profile }) {
+        for((identity,group) in due.groupBy { it.profile to it.target }) {
+            val profile=identity.first
             val keys=group.map { it.key }.sorted()
-            val content=if(cache.preferences.notificationTitles)group.mapNotNull { records[it.target]?.record?.data?.text("title") }.distinct().take(3).joinToString(" · ") else "Open Field Notes for details."
+            val notice=reminderNotice(cache,group,TimeZone.currentSystemDefault())
             val channel=profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS
-            val title=if(group.size==1)"Field Notes reminder" else "${group.size} Field Notes reminders"
-            if(Alerts.post(context,channel,"$binding:"+keys.joinToString("|"),title,content,group.singleOrNull()?.target))posted+=keys
+            if(Alerts.post(context,channel,"$binding:"+keys.joinToString("|"),notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true)) {
+                posted+=keys
+                if(profile?.alarm==true&&!AlarmPlaybackService.start(context,keys))Alerts.post(context,Alerts.REMINDERS,"alarm-fallback:"+keys.joinToString("|"),notice.title,"Alarm playback needs attention · ${notice.summary}",notice.target,notice.details)
+            } else app.deliveryError.value="A reminder channel or notification permission is blocked. Open Android notification settings."
         }
         if(posted.isNotEmpty()) {
             val receipts=(previous.seen+posted.associateWith { now.epochSeconds }).entries.sortedByDescending { it.value }.take(2048).associate { it.toPair() }

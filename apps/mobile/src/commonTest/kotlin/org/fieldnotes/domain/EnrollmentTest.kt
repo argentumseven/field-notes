@@ -105,10 +105,15 @@ class EnrollmentTest {
         m=model();m.initialize();m.advanceEnrollment();assertEquals(2,transport.activations);assertNull(vault.cache.enrollment);assertEquals("active-token",vault.cache.token)
         m=model();m.initialize();assertFalse(m.state.value.needsLogin);m.sync();assertEquals("Alex",vault.cache.snapshot!!.actor.name)
     }
-    @Test fun failedPersistenceCannotSubmitAClaimAndWidgetTitlesAreOptIn() = runTest {
+    @Test fun failedPersistenceCannotSubmitAClaimAndWidgetVisibilityIsIndependentOfAppLock() = runTest {
         val v=EnrollmentVault();val t=EnrollmentTransport(v);val m=Workspace(t,v,{"11111111-1111-4111-8111-111111111111"},backgroundScope);m.initialize();v.fail=true
         assertFails { m.beginEnrollment(invitation(),"Phone") };assertTrue(t.claims.isEmpty());assertNull(m.state.value.cache.enrollment)
         val signed=Cache(token="token",snapshot=Snapshot(1,"e",1,0,emptyList(),t.account))
-        assertFalse(widgetMayShowTitles(signed,true));assertFalse(widgetMayShowTitles(signed.copy(preferences=Preferences(widgetTitles=true)),false));assertTrue(widgetMayShowTitles(signed.copy(preferences=Preferences(widgetTitles=true)),true))
+        assertTrue(widgetMayShowTitles(signed,true));assertFalse(widgetMayShowTitles(signed,false))
+        assertTrue(widgetMayShowTitles(signed.copy(preferences=Preferences(appLock=true)),true))
+        assertTrue(widgetMayShowTitles(signed.copy(preferences=Preferences(widgetOnLockScreen=true)),false))
+        assertFalse(widgetMayShowTitles(signed.copy(preferences=Preferences(widgetTitles=false)),true))
+        assertFalse(widgetMayShowTitles(signed,true,authenticated=false))
+        assertFalse(widgetMayShowTitles(signed.copy(token=null),true))
     }
 }

@@ -6,6 +6,7 @@ mod enrollment;
 mod lists;
 mod organization;
 mod planning;
+mod reminder_options;
 mod reminders;
 pub use enrollment::NetworkConfig;
 
@@ -256,7 +257,10 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?;
         let records = ids
             .iter()
-            .map(|i| self.record(i))
+            .map(|i| {
+                self.record(i)
+                    .map(|r| Self::notification_projection(r, &actor))
+            })
             .collect::<Result<Vec<_>>>()?;
         Ok(Snapshot {
             protocol: 1,

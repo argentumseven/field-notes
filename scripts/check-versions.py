@@ -7,6 +7,8 @@ assert tomllib.loads((root/'apps/server/Cargo.toml').read_text())['package']['ve
 assert json.loads((root/'package.json').read_text())['version']==v
 gradle=(root/'apps/mobile/build.gradle.kts').read_text()
 assert f'versionName = "{v}"' in gradle and f'versionCode = {r["android_version_code"]}' in gradle
+compatibility=(root/'apps/mobile/src/commonMain/kotlin/org/fieldnotes/domain/Compatibility.kt').read_text()
+assert re.search(r'CURRENT_CLIENT_CODE\s*=\s*'+str(r['android_version_code'])+r'\b',compatibility), 'Stale client compatibility code'
 for file in [*(root/'scripts/build').glob('*')]:
  if not file.is_file():continue
  for found in re.findall(r'(?:field-notes-|AppVersion=)(\d+\.\d+\.\d+)',file.read_text()):assert found==v,f'Stale artifact version in {file.name}'

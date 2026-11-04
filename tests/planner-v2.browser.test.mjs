@@ -81,6 +81,16 @@ test("calendar uses the highlighted day, local ten AM, optional ends and per-rem
     await page
       .getByLabel("Reminder 2 sound level", { exact: true })
       .selectOption("100");
+    await page.getByLabel("Who receives reminders",{exact:true}).selectOption("self");
+    // Changing audience rerenders the controls; expand the second sound panel.
+    await page.locator(".reminder-row").nth(1).locator("details>summary").click();
+    await page.getByLabel("Reminder 2 sound",{exact:true}).selectOption("sunrise");
+    await page.getByLabel("Reminder 2 · play as an alarm",{exact:true}).check();
+    await page.getByLabel("Reminder 2 alarm duration",{exact:true}).selectOption("30");
+    assert.match(await page.locator(".reminder-row").nth(1).locator("details>summary").textContent(),/Alarm.*Sunrise.*30 seconds/);
+    await shot(page,"42-personal-alarm-controls");
+    await page.getByLabel("Who receives reminders",{exact:true}).scrollIntoViewIfNeeded();
+    await shot(page,"43-reminder-recipients");
     await page
       .getByLabel("Repeat during a time window", { exact: true })
       .check();
@@ -107,6 +117,9 @@ test("calendar uses the highlighted day, local ten AM, optional ends and per-rem
     assert.equal(saved.data.reminders.alerts.length, 2);
     assert.equal(saved.data.reminders.alerts[1].importance, "urgent");
     assert.equal(saved.data.reminders.alerts[1].volume, 100);
+    assert.equal(saved.data.reminder_options.audience.mode,"people");
+    const playback=saved.data.reminder_options.playback[saved.data.reminders.alerts[1].id];
+    assert.equal(playback.tone,"sunrise");assert.equal(playback.duration_seconds,30);assert.equal(playback.alarm,true);assert.equal(playback.unmute,true);
     assert.deepEqual(saved.data.reminders.repeat.weekdays, [3, 5]);
     await page.getByRole("button", { name: "Day", exact: true }).click();
     const point = page
