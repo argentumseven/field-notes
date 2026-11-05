@@ -71,6 +71,15 @@ session, and scoped removal left no owned deployment resources. The public
 signing certificate remains unchanged; compatibility APKs use only an explicitly
 provided original household key and never replace public release bytes.
 
+The public [v0.6.0 release](https://github.com/argentumseven/field-notes/releases/tag/v0.6.0)
+was built from clean tagged source `a60005676fc0b8454768e20e704b845518338f3a`.
+Its [hosted publication check](https://github.com/argentumseven/field-notes/actions/runs/42101105472)
+passed. The final ARM64 release passed lint, all 79 shared checks, actual APK
+signature/package verification and 16 KiB alignment. A fresh public download
+independently passed the pinned-certificate check; all four published files match
+the tagged build and offline Linux bundle byte for byte. APK SHA-256:
+`047d4f14e002c44dbc2c91a4f43d49f90ebc8ed357f618f7eac748e5e7a5547f`.
+
 Evidence logs are under `dist/planner-v3-*`; these are local build artifacts,
 not committed household data. Current screenshots are linked in
 [WALKTHROUGH.md](WALKTHROUGH.md). No deployment to the home VM or physical
