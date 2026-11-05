@@ -43,13 +43,16 @@ class ApkUpdates(private val app:FieldNotesApplication) {
     }
     private fun same(b:Binding){check(binding()==b){"The paired connection changed. Check updates again; pairing and saved work are kept."}}
     private suspend fun request(path:String,b:Binding):Reply {
-        same(b);val reply=app.model.softwareUpdate(path);same(b)
+        same(b)
+        var reply=app.model.softwareUpdate(path,if(path=="/api/device/update")obj("installed_signer_sha256" to ApkUpdateVerifier.installedSigner(app.packageManager,app.packageName).j()) else null)
+        if(path=="/api/device/update"&&reply.status==405)reply=app.model.softwareUpdate(path)
+        same(b)
         check(reply.status==200){when(reply.status){404->"This server has no update endpoint. Update the paired server; core notes remain available.";409->"The server changed its APK. Check updates again; nothing was installed.";401,403->"Sign in to the paired server again. Pairing and queued edits are kept.";else->"Update request failed (${reply.status}). Complete chunks are retained for retry."}}
         return reply
     }
     private fun failure(message:String) {
         state.update{it.copy(problem=true,message=message,progress=null)}
-        app.deliveryError.value="App update: $message"
+        if(app.deliveryError.value==null||app.deliveryError.value?.startsWith("App update: ")==true)app.deliveryError.value="App update: $message"
     }
     private fun healthy() {if(app.deliveryError.value?.startsWith("App update: ")==true)app.deliveryError.value=null}
     private fun ready(target:UpdateOffer) {
@@ -71,8 +74,16 @@ class ApkUpdates(private val app:FieldNotesApplication) {
                 val b=binding();val data=WireJson.parseToJsonElement(request("/api/device/update",b).body).jsonObject
                 if(data.containsKey("compatibility"))app.model.observeCompatibility(data)
                 check(data.text("error").isBlank()){data.text("error")}
+                if(data.text("reason")=="signer_unavailable"&&data.number("offered_code")<=code){
+                    checkedAt=now;bound=b;offer=null;transfer.clear();healthy()
+                    state.update{it.copy(offered=data.text("offered_version"),available=false,ready=false,problem=false,lastCheck=kotlinx.datetime.Clock.System.now().epochSeconds,message="This app is already at or ahead of the server's offered version. Your original signing identity, pairing and work are kept; no APK replacement is needed.")};return@launch
+                }
+                if(data.text("reason")=="signer_unavailable")error(data.text("message","Ask the administrator to prepare the original-signer compatibility APK. Keep this app and pairing."))
                 val next=UpdateOffer.read(data) ?: error("The paired server has no verified APK bundle. Ask its administrator to install one; notes and pairing remain usable.")
-                check(next.signer==ApkUpdateVerifier.installedSigner(app.packageManager,app.packageName)){"The server APK has a different signing certificate. Keep this app and pairing; the administrator must supply an APK signed for this installation."}
+                if(next.code<=code&&next.signer!=ApkUpdateVerifier.installedSigner(app.packageManager,app.packageName)){
+                    checkedAt=now;bound=b;offer=null;transfer.clear();healthy();state.update{it.copy(offered=next.version,available=false,ready=false,problem=false,lastCheck=kotlinx.datetime.Clock.System.now().epochSeconds,message="Your installed app is current. The older server offers another signing identity; the existing app and pairing are kept. New server bundles can provide a matching compatibility APK.")};return@launch
+                }
+                check(next.signer==ApkUpdateVerifier.installedSigner(app.packageManager,app.packageName)){"A newer update needs this phone's original signer. Ask the administrator to prepare its compatibility APK. Keep this app, pairing and queued work."}
                 if(next.code>code)check(next.architecture in Build.SUPPORTED_ABIS){"The server APK does not support this phone's architecture. The existing app is kept."}
                 checkedAt=now;offer=next;bound=b
                 val available=next.code>code

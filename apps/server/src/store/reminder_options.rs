@@ -5,9 +5,9 @@ impl Store {
         &self,
         data: &Value,
         record: &mut Record,
-        actor: &Actor,
+        _actor: &Actor,
     ) -> Result<()> {
-        let default = json!({"audience":if record.kind=="event" {json!({"mode":"people","people":[actor.user_id]})}else{json!({"mode":"assigned","people":[]})},"playback":{}});
+        let default = json!({"audience":{"mode":"everyone","people":[]},"playback":{}});
         let Some(value) = data.get("reminder_options").or({
             if record.revision == 0 {
                 Some(&default)
@@ -127,7 +127,7 @@ impl Store {
     /// people, including clients that predate recipient controls. Modern
     /// editors can still inspect the original rules in the additive field.
     pub fn notification_projection(mut record: Record, actor: &Actor) -> Record {
-        if matches!(record.kind.as_str(), "event" | "task")
+        if matches!(record.kind.as_str(), "event" | "task" | "note")
             && !Self::reminder_recipient(&record, &actor.user_id)
         {
             record.data["reminder_rules"] =
@@ -142,6 +142,6 @@ impl Store {
             "/../../release.json"
         )))
         .expect("valid release metadata");
-        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1"]})
+        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3"]})
     }
 }

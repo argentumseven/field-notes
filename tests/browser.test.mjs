@@ -81,8 +81,8 @@ test("APK action stays visible on sign-in when metadata fails or the bundle is a
       )
       .waitFor();
     assert(await link.isVisible());
-    assert.equal(await link.getAttribute("aria-disabled"),"true");
-    assert.equal(await link.getAttribute("href"),null);
+    assert.equal(await link.getAttribute("aria-disabled"), "true");
+    assert.equal(await link.getAttribute("href"), null);
   } finally {
     await browser?.close();
     await f.close();
@@ -154,6 +154,10 @@ test("web workflow: sign in, project, task details, comment, board, admin and mo
       .selectOption("1");
     await page
       .locator(".detail")
+      .getByLabel("Assigned to", { exact: true })
+      .selectOption({ label: "owner" });
+    await page
+      .locator(".detail")
       .getByLabel("Due date", { exact: true })
       .fill("2026-11-04");
     await page
@@ -202,7 +206,7 @@ test("web workflow: sign in, project, task details, comment, board, admin and mo
     await page.getByLabel("List name", { exact: true }).fill("Groceries");
     await page.locator("#dialog-submit").click();
     await page
-      .getByRole("button", { name: /Groceries.*unchecked items/ })
+      .getByRole("button", { name: "Open list: Groceries", exact: true })
       .waitFor();
     await page.getByRole("button", { name: "Notes", exact: true }).click();
     await page
@@ -287,13 +291,34 @@ test("web workflow: sign in, project, task details, comment, board, admin and mo
         exact: true,
       })
       .waitFor();
+    await page.getByRole("button", { name: "Tasks", exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: "Open task: Order herb seedlings",
+        exact: true,
+      })
+      .click();
+    await page
+      .locator(".detail")
+      .getByLabel("Assigned to", { exact: true })
+      .selectOption({ label: "owner" });
+    await page
+      .getByRole("button", { name: "Save details", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "My tasks", exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: "Open task: Order herb seedlings",
+        exact: true,
+      })
+      .waitFor();
     await page
       .getByRole("button", {
         name: "Open task: Plan the kitchen shelves",
         exact: true,
       })
-      .waitFor();
+      .waitFor({ state: "hidden" });
     await page
       .getByRole("button", {
         name: "Open task: Choose a reading lamp",

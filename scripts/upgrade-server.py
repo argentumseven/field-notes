@@ -13,22 +13,23 @@ HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py
 
 def build_from_source(host,record,root=HERE.parent,runner=subprocess.run,recover=False):
  if record is None or record['phase'] not in (('installed','installing') if recover else ('installed',)) or record['runtime']!='containers':raise ValueError('Complete the retained installation check before upgrading')
- installed=verify_android(host.path(record['prefix']+'/downloads'))
+ installed_folder=host.path(record['prefix']+'/downloads');installed=verify_android(installed_folder)
  release=json.loads((root/'release.json').read_text())
  env=os.environ.copy();env.setdefault('FIELD_NOTES_TOOLS',str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
  env.pop('FIELD_NOTES_ANDROID_APK',None);env.pop('FIELD_NOTES_ANDROID_DOWNLOADS',None)
- if installed['signer_sha256']==release.get('public_android_signer_sha256'):
-  print('Using the matching public GitHub APK; no Android signing key is needed on this server.',flush=True)
-  runner(['bash','scripts/setup/cloud.sh','--server'],cwd=root,env=env,check=True)
- else:
-  if installed['signing']!='development':raise ValueError('Custom-signed installations need a matching --bundle built with the original signing key; the public APK cannot replace another signer')
-  signing=pathlib.Path(env['FIELD_NOTES_TOOLS'])/'android-user/debug.keystore'
+ legacy=verify_android(installed_folder/'legacy') if (installed_folder/'legacy').exists() else installed if installed['signer_sha256']!=release.get('public_android_signer_sha256') else None
+ if legacy is not None:
+  signing=pathlib.Path(env.get('FIELD_NOTES_ANDROID_LEGACY_KEYSTORE',str(pathlib.Path(env['FIELD_NOTES_TOOLS'])/'android-user/debug.keystore')))
   if signing.is_symlink() or not signing.is_file():raise ValueError('Original Android signing key is missing. Restore it; no replacement key or new pairing will be created')
   if signing.stat().st_uid!=os.geteuid():raise ValueError('Original Android signing key must belong to the build user')
-  signing.parent.chmod(0o700);signing.chmod(0o600)
-  print('Preserving the existing custom development APK signer; it differs from the GitHub public certificate.',flush=True)
-  env['FIELD_NOTES_ANDROID_APK']=str(root/f"dist/android/field-notes-{release['version']}-android-arm64-debug.apk")
-  runner(['bash','scripts/build/android.sh','debug'],cwd=root,env=env,check=True)
+  if signing.parent==pathlib.Path(env["FIELD_NOTES_TOOLS"])/"android-user":signing.parent.chmod(0o700)
+  signing.chmod(0o600)
+  print('Keeping the original local signer in a compatibility APK alongside the unchanged public GitHub APK.',flush=True)
+  env['FIELD_NOTES_ANDROID_LEGACY_KEYSTORE']=str(signing.resolve());env['FIELD_NOTES_ANDROID_LEGACY_SIGNER']=legacy['signer_sha256']
+ else:
+  env.pop('FIELD_NOTES_ANDROID_LEGACY_KEYSTORE',None);env.pop('FIELD_NOTES_ANDROID_LEGACY_SIGNER',None)
+  print('Using the matching public GitHub APK; no Android signing key is needed on this server.',flush=True)
+ runner(['bash','scripts/setup/cloud.sh','--server'],cwd=root,env=env,check=True)
  runner(['bash','scripts/build/server.sh'],cwd=root,env=env,check=True)
  folder=root/('dist/server/linux-'+os.uname().machine)
  if recover:preview(record,folder,host,recover=True)
@@ -65,8 +66,11 @@ def preview(record,folder,host=None,recover=False):
  release,apk,images=bundle_info(folder,current,recover)
  old=validate(record['docker']['settings'])
  existing=(host.path(record['prefix']) if host else pathlib.Path(record['prefix']))/'downloads'
- if existing.exists() and verify_android(existing)['signer_sha256']!=apk['signer_sha256']:
-  raise ValueError('APK signer changed. Rebuild with the existing stable signer; do not uninstall or reset phone pairing')
+ if existing.exists():
+  old_signers={verify_android(existing)['signer_sha256']};new_signers={apk['signer_sha256']}
+  if (existing/'legacy').exists():old_signers.add(verify_android(existing/'legacy')['signer_sha256'])
+  if (pathlib.Path(folder)/'downloads/legacy').exists():new_signers.add(verify_android(pathlib.Path(folder)/'downloads/legacy')['signer_sha256'])
+  if not old_signers.issubset(new_signers):raise ValueError('APK signer changed. Supply the matching original-signer compatibility APK; do not uninstall or reset phone pairing')
  if recover:
   if host is None:raise ValueError('Runtime recovery needs the existing host inventory')
   required={'field-notes.service','field-notes-peers.service','field-notes-peers.timer','field-notes-certificates.service','field-notes-certificates.timer'}

@@ -39,9 +39,9 @@ export async function demo(image, enrollment = false){
   const samId=(await f.request('/api/snapshot',{token:sam})).data.actor.user_id,ownerId=meta.actor.user_id;
   await login('Alex','Alex’s computer · Windows');
   const home=randomUUID(),workshop=randomUUID(),weekend=randomUUID();
-  await command('project.create',home,{title:'Home & garden'});
-  await command('project.create',workshop,{title:'The workbench'});
-  await command('project.create',weekend,{title:'Weekend plans'});
+  await command('project.create',home,{title:'Home & garden',category:'home'});
+  await command('project.create',workshop,{title:'The workbench',category:'home'});
+  await command('project.create',weekend,{title:'Weekend plans',category:'personal'});
   const tasks=[
    ['shelves',home,'Plan the kitchen shelves','decide','2026-11-08','Measure the alcove before buying timber.\n\nTwo oak shelves, 120 cm wide. Leave room for the coffee grinder. Check the wall fixings together.'],
    ['boiler',home,'Book the boiler service','do','2026-11-03','Ask for the first available morning appointment.'],
@@ -53,11 +53,12 @@ export async function demo(image, enrollment = false){
    ['seeds',home,'Order herb seedlings','do','','The nursery order is confirmed.'],
   ];
   const ids={home,workshop,weekend};
-  for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes,assignee:['boiler','herbs','walk'].includes(key)?samId:['shelves','backup','lamp'].includes(key)?ownerId:null,priority:({shelves:2,backup:1,lamp:2,bench:4})[key]||3,estimate_minutes:({shelves:30,backup:15,walk:20})[key]||0,planned_for:['shelves','walk'].includes(key)?'2026-10-30':'',blocked:key==='herbs',pinned:key==='backup'});}
+  for(const [key,project_id,title,quadrant,due,notes]of tasks){ids[key]=randomUUID();await command('task.create',ids[key],{project_id,title,quadrant,due,notes,category:({shelves:'honey_do',herbs:'food',backup:'action',walk:'personal',seeds:'food'})[key]||'home',assignee:['boiler','herbs','walk'].includes(key)?samId:['shelves','backup','lamp'].includes(key)?ownerId:null,priority:({shelves:2,backup:1,lamp:2,bench:4})[key]||3,estimate_minutes:({shelves:30,backup:15,walk:20})[key]||0,planned_for:['shelves','walk'].includes(key)?'2026-10-30':'',blocked:key==='herbs',pinned:key==='backup'});}
   ids.groceries=randomUUID();ids.routines=randomUUID();
-  await command('list.create',ids.groceries,{title:'Groceries',notes:'Shared shopping, without a project or deadline.',template:'groceries',fields:['quantity','notes'],perpetual:true});
+  await command('list.create',ids.groceries,{title:'Groceries',notes:'Shared shopping, without a project or deadline.',category:'food',template:'groceries',fields:['quantity','store','notes'],perpetual:true});
   await command('list.create',ids.routines,{title:'Household routines',notes:'The practical things we keep coming back to.'});
-  await command('task.create',randomUUID(),{title:'Oats and coffee',project_id:ids.groceries,priority:4});
+  await command('task.create',randomUUID(),{title:'Oats and coffee',project_id:ids.groceries,priority:4,store:'Market',quantity:'1 each',category:'food'});
+  await command('task.create',randomUUID(),{title:'Bananas',project_id:ids.groceries,store:'Costco',quantity:'2 bunches',category:'food'});
   await command('task.create',randomUUID(),{title:'Check parcel delivery',priority:2});
   ids.reference=randomUUID();
   await command('note.create',ids.reference,{title:'Household reference',body:'Useful details belong here, without becoming tasks.\n\nAir filter: 20 × 25 × 1\nPaint finish: warm white, matte\nKeep a copy of the appliance receipts with the household backup.',pinned:true});

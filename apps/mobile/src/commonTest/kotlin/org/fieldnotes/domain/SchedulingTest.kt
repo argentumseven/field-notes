@@ -22,7 +22,7 @@ class SchedulingTest {
         for((month,days) in listOf("2028-02-01" to 29,"2026-02-01" to 28,"2026-11-01" to 30,"2026-12-01" to 31)) {
             val cells=monthCells(LocalDate.parse(month));assertEquals(42,cells.size)
             assertEquals(days,cells.filterNotNull().size)
-            cells.forEachIndexed { i,d -> if(d!=null)assertEquals(i%7+1,d.dayOfWeek.isoDayNumber) }
+            cells.forEachIndexed { i,d -> if(d!=null)assertEquals(i%7,d.dayOfWeek.isoDayNumber%7) }
         }
         val record=Record("night","event",1,obj("title" to "Late evening".j(),"starts_at" to Instant.parse("2026-11-04T03:00:00Z").epochSeconds.j(),"ends_at" to Instant.parse("2026-11-04T04:00:00Z").epochSeconds.j()))
         assertEquals(1,calendarEntries(listOf(record),LocalDate.parse("2026-11-03"),ny).size)

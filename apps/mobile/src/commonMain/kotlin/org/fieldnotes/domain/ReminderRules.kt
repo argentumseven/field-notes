@@ -33,12 +33,17 @@ fun customAlerts(record:Record, now:Instant, deviceZone:TimeZone):List<LocalAler
     val rules=reminderSet(record) ?: return emptyList()
     if(runCatching { validateReminders(rules) }.isFailure)return emptyList()
     val d=record.data;val today=now.toLocalDateTime(deviceZone).date
-    val anchor=if(record.kind=="event"&&!record.flag("all_day")) d.number("starts_at").takeIf { it>0 }
-        else runCatching { LocalDate.parse(if(record.kind=="event")d.text("start_date") else d.text("due").ifBlank { d.text("planned_for") }) }.getOrNull()?.let { LocalDateTime(it,LocalTime(9,0)).toInstant(deviceZone).epochSeconds }
     val horizon=today.plus(8,DateTimeUnit.DAY).atStartOfDayIn(deviceZone).epochSeconds
-    val result=rules.alerts.mapNotNull { r -> anchor?.minus(r.minutes_before*60L)?.takeIf { it>=now.epochSeconds-600 && it<horizon }?.let {
-        LocalAlert("rule:${record.id}:${r.id}:$it",it,record.id,if(record.kind=="event")"calendar" else "task",effectiveAlertProfile(record,r.id,r.profile),"${record.id}:${r.id}")
-    }}.toMutableList()
+    val instances=if(record.kind=="event")eventInstances(record,today.minus(1,DateTimeUnit.DAY),today.plus(39,DateTimeUnit.DAY),deviceZone) else listOf(record)
+    val result=instances.flatMap { occurrence->
+        val fields=occurrence.data
+        val anchor=if(occurrence.kind=="event"&&!occurrence.flag("all_day"))fields.number("starts_at").takeIf { it>0 }
+            else if(occurrence.kind=="note")fields.number("remind_at").takeIf { it>0 }
+            else runCatching { LocalDate.parse(if(occurrence.kind=="event")fields.text("start_date") else fields.text("due").ifBlank { fields.text("planned_for") }) }.getOrNull()?.let { LocalDateTime(it,LocalTime(9,0)).toInstant(deviceZone).epochSeconds }
+        rules.alerts.mapNotNull { r->anchor?.minus(r.minutes_before*60L)?.takeIf { it>=now.epochSeconds-600&&it<horizon }?.let {
+            LocalAlert("rule:${record.id}:${r.id}:$it",it,record.id,if(record.kind=="event")"calendar" else if(record.kind=="note")"note" else "task",effectiveAlertProfile(record,r.id,r.profile),"${record.id}:${r.id}",sourceAt=anchor)
+        } }
+    }.toMutableList()
     rules.repeat?.let { r ->
         val zone=TimeZone.of(r.zone);val localToday=now.toLocalDateTime(zone).date;val first=LocalDate.parse(r.starts_on);val last=r.ends_on.takeIf { it.isNotBlank() }?.let(LocalDate::parse)
         val from=LocalTime.parse(r.from).toSecondOfDay()/60;val until=LocalTime.parse(r.until).toSecondOfDay()/60

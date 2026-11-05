@@ -17,7 +17,7 @@ static jbyteArray output(JNIEnv *env, char *bytes) {
 static jbyteArray call(JNIEnv *env, jbyteArray input, char *(*function)(char *)) {
     if (!input) return NULL;
     jsize size = (*env)->GetArrayLength(env, input);
-    if (size < 0 || size > 6600000) return NULL;
+    if (size < 0 || size > 64 * 1024 * 1024) return NULL;
     char *raw = calloc((size_t)size + 1, 1);
     if (!raw) return NULL;
     (*env)->GetByteArrayRegion(env, input, 0, size, (jbyte *)raw);

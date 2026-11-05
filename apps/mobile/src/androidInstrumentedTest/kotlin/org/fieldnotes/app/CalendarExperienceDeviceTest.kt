@@ -45,7 +45,7 @@ class CalendarExperienceDeviceTest {
         val snapshot=Snapshot(1,"calendar-fixture",1,1,listOf(event),Actor("owner","Owner","owner","session"))
         val cache=Cache(keys=app.model.state.value.cache.keys,config=obj("server_key" to "synthetic-calendar".j()),token="synthetic-session",snapshot=snapshot,
             preferences=Preferences(connectionPaused=true,backgroundSync=false,reminders=false,liveUpdates=false,widgetTitles=true),
-            people=listOf(HouseholdPerson("owner","Morgan",true),HouseholdPerson("sam","Sam",true)),compatibility=ServerCompatibility("0.5.0",features=setOf(REMINDER_OPTIONS_FEATURE),checkedAt=Clock.System.now().epochSeconds))
+            people=listOf(HouseholdPerson("owner","Morgan",true),HouseholdPerson("sam","Sam",true)),compatibility=ServerCompatibility("0.6.0",features=setOf(REMINDER_OPTIONS_FEATURE,PLANNER_FEATURE),checkedAt=Clock.System.now().epochSeconds))
         runBlocking { app.vault.save(cache);app.model.initialize() }
         app.deliveryError.value=null
         fun waitFor(condition:()->Boolean) { val until=System.currentTimeMillis()+90_000;while(System.currentTimeMillis()<until){if(condition())return;Thread.sleep(250)};error("Calendar fixture did not reach expected state; active="+instrumentation.uiAutomation.rootInActiveWindow?.packageName+"; windows="+instrumentation.uiAutomation.windows.map { it.root?.packageName }) }
@@ -77,9 +77,17 @@ class CalendarExperienceDeviceTest {
             compose.onNodeWithTag("nav-calendar").assertIsSelected()
             compose.onNodeWithText("10:00 AM – 11:00 AM").assertIsDisplayed()
             shot("30-calendar-home")
+            compose.onNodeWithText("Week",useUnmergedTree=true).performClick();shot("50-sunday-week")
+            compose.onNodeWithText("Month",useUnmergedTree=true).performClick();shot("51-sunday-month")
+            compose.onNodeWithText("Day",useUnmergedTree=true).performClick()
             compose.onNodeWithText("Household check-in").performClick()
             compose.onNodeWithText("10:00 AM").assertIsDisplayed()
             shot("31-local-event")
+            compose.onNode(hasText("Repeat: Does not repeat",substring=true)).performScrollTo().performClick()
+            compose.onNodeWithText("Every other day",useUnmergedTree=true).performClick()
+            compose.onNodeWithText("Repeating event").performScrollTo();shot("52-repeat-event")
+            compose.onNode(hasText("Repeat: Every other day",substring=true)).performScrollTo().performClick()
+            compose.onNodeWithText("Does not repeat",useUnmergedTree=true).performClick()
             compose.onNode(hasText("Reminders ·",substring=true)).performScrollTo().performClick()
             compose.onNodeWithText("Only me").performScrollTo().performClick()
             compose.onNode(isToggleable() and hasAnySibling(hasText("Repeat during a time window"))).performScrollTo().performClick()

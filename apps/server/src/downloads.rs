@@ -12,9 +12,25 @@ pub struct Downloads {
     pub info: Value,
     size: u64,
     slots: Arc<tokio::sync::Semaphore>,
+    legacy: Option<Box<Downloads>>,
 }
 impl Downloads {
     pub fn load(root: PathBuf) -> Result<Self, String> {
+        let mut result = Self::load_single(root.clone())?;
+        if root.join("legacy").exists() {
+            let mut legacy = Self::load_single(root.join("legacy"))?;
+            if legacy.info["version"] != result.info["version"]
+                || legacy.info["version_code"] != result.info["version_code"]
+                || legacy.info["signer_sha256"] == result.info["signer_sha256"]
+            {
+                return Err("Compatibility APK must match the release and retain its original distinct signer".into());
+            }
+            legacy.slots = result.slots.clone();
+            result.legacy = Some(Box::new(legacy));
+        }
+        Ok(result)
+    }
+    fn load_single(root: PathBuf) -> Result<Self, String> {
         let info: Value = serde_json::from_slice(
             &std::fs::read(root.join("android.json")).map_err(|_| "Missing APK metadata")?,
         )
@@ -60,6 +76,7 @@ impl Downloads {
             info,
             size,
             slots: Arc::new(tokio::sync::Semaphore::new(4)),
+            legacy: None,
         })
     }
     pub async fn file(&self, name: &str) -> Result<Response, Fault> {
@@ -109,12 +126,61 @@ impl Downloads {
         Ok(response)
     }
     pub fn metadata(&self) -> Value {
-        json!({"available":true,"artifact":self.info,"matching_server_release":self.info["version"]==env!("CARGO_PKG_VERSION")})
+        json!({"available":true,"artifact":self.info,"legacy_artifact":self.legacy.as_ref().map(|v|&v.info),"matching_server_release":self.info["version"]==env!("CARGO_PKG_VERSION")})
     }
     pub fn update_metadata(&self) -> Value {
         json!({"available":true,"artifact":self.info,"package":"org.fieldnotes.app","size":self.size,"chunk_size":CHUNK_SIZE,"protocol":1})
     }
+    pub fn update_for_signer(&self, signer: Option<&str>) -> Value {
+        let choice = match signer {
+            None => self.legacy.as_deref().unwrap_or(self),
+            Some(value) if self.info["signer_sha256"].as_str() == Some(value) => self,
+            Some(value) => match self
+                .legacy
+                .as_deref()
+                .filter(|v| v.info["signer_sha256"].as_str() == Some(value))
+            {
+                Some(legacy) => legacy,
+                None => {
+                    return json!({"available":false,"reason":"signer_unavailable","offered_code":self.info["version_code"],"offered_version":self.info["version"],"message":"A matching original-signer compatibility APK is needed. The administrator must retain the phone's existing signing key; keep pairing and saved work."})
+                }
+            },
+        };
+        let mut value = choice.update_metadata();
+        value["distribution"] = json!(if std::ptr::eq(choice, self) {
+            "official"
+        } else {
+            "compatibility"
+        });
+        value
+    }
+    pub async fn legacy_file(&self, name: &str) -> Result<Response, Fault> {
+        self.legacy
+            .as_ref()
+            .ok_or(Fault(
+                404,
+                "No compatibility APK is needed or installed".into(),
+            ))?
+            .file(name)
+            .await
+    }
     pub async fn chunk(&self, digest: &str, index: u64) -> Result<Response, Fault> {
+        if self.info["sha256"].as_str() == Some(digest) {
+            return self.chunk_file(digest, index).await;
+        }
+        if let Some(legacy) = self
+            .legacy
+            .as_deref()
+            .filter(|v| v.info["sha256"].as_str() == Some(digest))
+        {
+            return legacy.chunk_file(digest, index).await;
+        }
+        Err(Fault(
+            409,
+            "Server APK changed. Check for updates again".into(),
+        ))
+    }
+    async fn chunk_file(&self, digest: &str, index: u64) -> Result<Response, Fault> {
         if self.info["sha256"].as_str() != Some(digest) {
             return Err(Fault(
                 409,

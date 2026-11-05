@@ -38,6 +38,7 @@ function el(tag, cls = "", text = "") {
   if (text) n.textContent = text;
   return n;
 }
+class DialogCanceled extends Error {}
 function button(text, fn, cls = "") {
   const n = el("button", cls, text);
   n.type = "button";
@@ -47,7 +48,7 @@ function button(text, fn, cls = "") {
     try {
       await fn();
     } catch (e) {
-      notice(e.message);
+      if (!(e instanceof DialogCanceled)) notice(e.message);
     } finally {
       n.disabled = false;
     }
@@ -181,7 +182,11 @@ function updateSync() {
 }
 function brand() {
   const n = el("div", "brand");
-  n.append(el("span", "brand-mark"), el("span", "", "Field Notes"));
+  const icon = el("img", "brand-mark");
+  icon.src = "/field-notes-icon.svg";
+  icon.alt = "";
+  icon.width = icon.height = 32;
+  n.append(icon, el("span", "", "Field Notes"));
   return n;
 }
 function renderLogin({ username = "", message = "" } = {}) {
@@ -260,12 +265,37 @@ async function appendAndroidDownload(parent, cls = "") {
     if (!reply.ok) throw Error("Download details unavailable");
     const result = await reply.json();
     if (!result.available) {
-      status.textContent = result.error || "The server's APK is missing or failed verification. Ask the administrator to restore a verified client bundle; core notes remain available.";
-      link.removeAttribute("href");link.setAttribute("role","link");link.setAttribute("aria-disabled","true");
+      status.textContent =
+        result.error ||
+        "The server's APK is missing or failed verification. Ask the administrator to restore a verified client bundle; core notes remain available.";
+      link.removeAttribute("href");
+      link.setAttribute("role", "link");
+      link.setAttribute("aria-disabled", "true");
       return;
     }
     const data = result.artifact;
-    status.textContent = `Version ${data.version} · ARM64 · ${data.signing} signing`+(result.matching_server_release===false?" · Different server/client versions: core compatibility is negotiated. Install the matching client bundle for all new features.":"");
+    if (result.legacy_artifact) {
+      const compatibility = el("details"),
+        heading = el("summary", "", "Updating an older locally signed phone?");
+      compatibility.append(
+        heading,
+        el(
+          "p",
+          "muted",
+          "Its paired updater selects the compatibility APK automatically. For manual updates, keep the existing app and install this matching-signer copy over it.",
+        ),
+      );
+      const legacy = el("a", "download-link", "Download compatibility APK");
+      legacy.href = "/downloads/legacy/field-notes.apk";
+      legacy.download = "field-notes-compatibility.apk";
+      compatibility.append(legacy);
+      section.append(compatibility);
+    }
+    status.textContent =
+      `Version ${data.version} · ARM64 · ${data.signing} signing` +
+      (result.matching_server_release === false
+        ? " · Different server/client versions: core compatibility is negotiated. Install the matching client bundle for all new features."
+        : "");
     for (const [label, file] of [
       ["SHA-256 checksum", "field-notes.apk.sha256"],
       ["Signing certificate", "field-notes.apk.signer.txt"],
@@ -293,6 +323,7 @@ async function appendAndroidDownload(parent, cls = "") {
   }
 }
 function signedOut() {
+  FieldArchive.leave();
   state.drafts.clear();
   state.actor = null;
   state.snapshot = null;
@@ -304,15 +335,22 @@ function signedOut() {
   renderLogin();
 }
 function visibleTasks() {
-  return records("task").filter(
-    (t) =>
-      (!state.project || t.data.project_id === state.project) &&
-      (t.data.title + " " + t.data.notes)
-        .toLowerCase()
-        .includes(state.query.toLowerCase()),
-  );
+  return records("task")
+    .filter((t) => state.project || isPlannerTask(t))
+    .filter(
+      (t) =>
+        (!state.project || t.data.project_id === state.project) &&
+        (t.data.title + " " + t.data.notes)
+          .toLowerCase()
+          .includes(state.query.toLowerCase()),
+    );
 }
 function render() {
+  if (state.actor && state.page === "archive" && FieldArchive.isOpen()) {
+    updateSync();
+    return;
+  }
+  FieldArchive.leave();
   if (!state.actor) {
     renderLogin();
     return;
@@ -350,6 +388,7 @@ function render() {
         ["calendar", "Calendar"],
         ["tasks", "Tasks"],
         ["focus", "Focus"],
+        ["later", "Later & reminders"],
       ],
       true,
     ],
@@ -426,6 +465,18 @@ function render() {
       "quiet",
     ),
   );
+  bottom.append(
+    button(
+      "Export & import",
+      () => {
+        closeDetail();
+        state.page = "archive";
+        state.project = null;
+        render();
+      },
+      state.page === "archive" ? "active" : "",
+    ),
+  );
   bottom.append(settingsNav);
   if (state.drafts.size)
     bottom.append(
@@ -492,6 +543,7 @@ function render() {
         : {
             inbox: "Inbox",
             notes: "Notes",
+            later: "Later & reminders",
             collections: "Collections",
             waiting: "Waiting",
             completed: "Completed",
@@ -505,6 +557,7 @@ function render() {
             lists: "Lists",
             projects: "Projects",
             admin: "Management",
+            archive: "Export & import",
           }[state.page],
     ),
     el(
@@ -525,6 +578,8 @@ function render() {
         unassigned: "Open tasks without a responsible person yet.",
         calendar: "Your calendar, on your server.",
         admin: "People, enrolled devices and server maintenance.",
+        archive:
+          "Encrypted copies, duplicate-safe imports and retained alternatives.",
       }[state.page],
     ),
   );
@@ -548,6 +603,10 @@ function render() {
     renderAdmin().catch((e) => notice(e.message));
     return;
   }
+  if (state.page === "archive") {
+    FieldArchive.render(main);
+    return;
+  }
   if (state.page === "assignments") {
     renderAssignments(main);
     return;
@@ -557,7 +616,7 @@ function render() {
     if (state.selected) renderDetail();
     return;
   }
-  if (state.page === "notes") {
+  if (["notes", "later"].includes(state.page)) {
     renderNotes(main);
     if (state.selected) renderDetail();
     return;
@@ -568,6 +627,15 @@ function render() {
   }
   if (state.project) {
     const c = byId(state.project);
+    if (c)
+      main.append(
+        button(c.kind === "list" ? "‹ All lists" : "‹ All projects", () => {
+          state.project = null;
+          state.page = c.kind === "list" ? "lists" : "projects";
+          state.query = "";
+          render();
+        }),
+      );
     if (c?.kind === "list") {
       renderChecklist(main, c);
       return;
@@ -649,7 +717,98 @@ function renderTasks() {
   const root = $("#task-view");
   if (!root) return;
   root.replaceChildren();
-  let tasks = visibleTasks();
+  state.taskFilters ||= {
+    category: "*",
+    person: "*",
+    status: "all",
+    priority: "0",
+    sort: "smart",
+    expanded: false,
+  };
+  const filters = state.taskFilters,
+    bar = el("div", "view-filters");
+  const choose = (label, key, options) => {
+    const wrap = el("label"),
+      node = select(label, options, filters[key]);
+    node.node.id = "task-filter-" + key;
+    node.label.htmlFor = node.node.id;
+    wrap.append(node.label, node.node);
+    node.node.onchange = () => {
+      filters[key] = node.node.value;
+      renderTasks();
+      document.getElementById(node.node.id)?.focus();
+    };
+    bar.append(wrap);
+  };
+  bar.append(
+    button(filters.expanded ? "Hide filters ▴" : "Filters ▾", () => {
+      filters.expanded = !filters.expanded;
+      renderTasks();
+    }),
+  );
+  choose("Sort by", "sort", [
+    ["smart", state.page === "focus" ? "Focus score" : "View order"],
+    ["priority", "Priority"],
+    ["title", "Name A–Z"],
+    ["updated", "Recently changed"],
+    ["due", "Due date"],
+    ["planned_for", "Planned day"],
+    ["estimate_minutes", "Effort"],
+  ]);
+  if (filters.expanded) {
+    choose("Category", "category", [
+      ["*", "All categories"],
+      ...Object.entries(recordCategories),
+    ]);
+    choose("Person", "person", [
+      ["*", "Everyone"],
+      ["__none", "Unassigned"],
+      ...state.people.map((p) => [p.id, p.name]),
+    ]);
+    choose("Status", "status", [
+      ["all", "All statuses"],
+      ["open", "Open"],
+      ["todo", "To do"],
+      ["in_progress", "In progress"],
+      ["done", "Done"],
+    ]);
+    choose("Priority", "priority", [
+      ["0", "Any priority"],
+      ["1", "Urgent"],
+      ["2", "High"],
+      ["3", "Normal"],
+      ["4", "Low"],
+    ]);
+    bar.append(
+      button("Clear filters", () => {
+        state.taskFilters = {
+          category: "*",
+          person: "*",
+          status: "all",
+          priority: "0",
+          sort: "smart",
+          expanded: true,
+        };
+        renderTasks();
+      }),
+    );
+  }
+  root.append(bar);
+  let tasks = visibleTasks().filter(
+    (t) =>
+      (filters.category === "*" ||
+        (t.data.category || "general") === filters.category) &&
+      (filters.person === "*" ||
+        (t.data.assignee || "") ===
+          (filters.person === "__none" ? "" : filters.person)) &&
+      (filters.status === "all" ||
+        (filters.status === "open"
+          ? t.data.status !== "done"
+          : t.data.status === filters.status)) &&
+      (filters.priority === "0" ||
+        Number(t.data.priority || 3) === Number(filters.priority)),
+  );
+
   if (state.page === "inbox")
     tasks = tasks.filter((t) => !t.data.project_id && t.data.status !== "done");
   if (state.page === "mine")
@@ -712,6 +871,29 @@ function renderTasks() {
         (a.data.created_at || 0) - (b.data.created_at || 0) ||
         a.id.localeCompare(b.id),
     );
+  if (filters.sort !== "smart")
+    tasks.sort((a, b) =>
+      filters.sort === "title"
+        ? a.data.title.localeCompare(b.data.title)
+        : filters.sort === "updated"
+          ? (b.data.last_activity_at || b.data.updated_at || 0) -
+            (a.data.last_activity_at || a.data.updated_at || 0)
+          : filters.sort === "priority"
+            ? (a.data.priority || 3) - (b.data.priority || 3)
+            : filters.sort === "estimate_minutes"
+              ? (a.data.estimate_minutes || Infinity) -
+                (b.data.estimate_minutes || Infinity)
+              : String(a.data[filters.sort] || "9999-12-31").localeCompare(
+                  String(b.data[filters.sort] || "9999-12-31"),
+                ),
+    );
+  root.append(
+    el(
+      "p",
+      "muted",
+      tasks.length + " tasks · checklist items stay inside their lists",
+    ),
+  );
   if (!tasks.length) {
     root.append(
       el(
@@ -780,6 +962,7 @@ function taskCard(t) {
   b.dataset.taskId = t.id;
   b.append(el("span", "task-status " + t.data.status));
   const content = el("div", "task-main");
+  content.append(typeBadges(t));
   content.append(el("div", "task-title", t.data.title));
   const meta = el("div", "task-meta");
   for (const text of [
@@ -896,6 +1079,14 @@ function renderDetail() {
   title.className = "title-input";
   title.maxLength = 240;
   const notes = addField(detail, input("Notes", draft.notes, "textarea"));
+  const category = addField(
+    detail,
+    select(
+      "Category",
+      Object.entries(recordCategories),
+      draft.category || "general",
+    ),
+  );
   notes.placeholder = "A few details, links, or a little more context…";
   notes.maxLength = 16384;
   const due = addField(detail, input("Due date", draft.due || "", "date"));
@@ -1016,6 +1207,7 @@ function renderDetail() {
     state.drafts.set(task.id, {
       ...draft,
       title: title.value,
+      category: category.value,
       notes: notes.value,
       assignee: assignee.value || null,
       due: due.value,
@@ -1028,6 +1220,7 @@ function renderDetail() {
     });
   for (const n of [
     title,
+    category,
     notes,
     due,
     priority,
@@ -1405,7 +1598,7 @@ async function formDialog(
         secret.remove();
       dialog.close();
       if (ok) resolve();
-      else reject(Error("Action canceled."));
+      else reject(new DialogCanceled("Action canceled."));
     };
     const dismiss = () => finish(false);
     state.dismissDialog = dismiss;
@@ -1554,3 +1747,12 @@ setInterval(async () => {
     renderLogin();
   }
 })();
+
+function updateAvailableViewport() {
+  document.documentElement.style.setProperty(
+    "--available-height",
+    Math.round(window.visualViewport?.height || innerHeight) + "px",
+  );
+}
+updateAvailableViewport();
+window.visualViewport?.addEventListener("resize", updateAvailableViewport);

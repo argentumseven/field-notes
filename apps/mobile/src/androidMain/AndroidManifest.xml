@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
  <uses-permission android:name="android.permission.INTERNET"/>
  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -17,11 +17,14 @@
  <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
  <queries><intent><action android:name="android.intent.action.INSTALL_PACKAGE"/><data android:scheme="content" android:mimeType="application/vnd.android.package-archive"/></intent></queries>
  <application android:name="org.fieldnotes.app.FieldNotesApplication" android:label="Field Notes" android:theme="@style/Theme.FieldNotes" android:icon="@mipmap/ic_launcher" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:supportsRtl="true">
+  <provider android:name="androidx.startup.InitializationProvider" android:authorities="${applicationId}.androidx-startup" tools:node="merge">
+   <meta-data android:name="androidx.work.WorkManagerInitializer" tools:node="remove"/>
+  </provider>
   <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
    <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
   </provider>
   <activity android:name="org.fieldnotes.app.EnrollmentCaptureActivity" android:exported="false" android:screenOrientation="fullSensor" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout" android:theme="@style/zxing_CaptureTheme" android:windowSoftInputMode="stateAlwaysHidden"/>
-  <activity android:name="org.fieldnotes.app.MainActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize">
+  <activity android:name="org.fieldnotes.app.MainActivity" android:windowSoftInputMode="adjustResize" android:exported="true" android:launchMode="singleTop">
    <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="fieldnotes" android:host="enroll"/></intent-filter>
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
   </activity>

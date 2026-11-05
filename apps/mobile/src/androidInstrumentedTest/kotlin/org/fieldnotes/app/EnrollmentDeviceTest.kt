@@ -182,11 +182,15 @@ class EnrollmentDeviceTest {
             val name=compose.onNodeWithTag("phone-name")
             name.performClick().performTextClearance();name.performTextInput("Alex’s GrapheneOS phone")
             var keyboardTop=0
-            compose.waitUntil(30_000) {
+            try { compose.waitUntil(30_000) {
                 if(dismissFixtureSystemDialog())name.performClick()
                 var shown=false
                 activity.onActivity { a->val insets=ViewCompat.getRootWindowInsets(a.window.decorView);shown=insets?.isVisible(WindowInsetsCompat.Type.ime())==true;keyboardTop=a.window.decorView.height-(insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom?:0) }
                 shown && compose.onNodeWithText("Request enrollment").fetchSemanticsNode().boundsInRoot.bottom<=keyboardTop
+            } } catch(failure:Exception) {
+                capture(activity,"enrollment-keyboard-failure.png")
+                val request=compose.onNodeWithText("Request enrollment").fetchSemanticsNode().boundsInRoot
+                throw AssertionError("Keyboard top=$keyboardTop, name=${name.fetchSemanticsNode().boundsInRoot}, request=$request",failure)
             }
             name.assertIsDisplayed();compose.onNode(isToggleable()).assertIsDisplayed()
             compose.onNodeWithText("Request enrollment").assertIsDisplayed().assertIsNotEnabled()

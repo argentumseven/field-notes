@@ -52,7 +52,7 @@ test("rolling list schemas preserve item values and stale checked-item removal c
       template: "groceries",
     });
     assert.equal(created.status, 200);
-    assert.deepEqual(created.data.record.data.fields, ["quantity", "notes"]);
+    assert.deepEqual(created.data.record.data.fields, ["quantity", "store", "notes"]);
     assert.equal(created.data.record.data.perpetual, true);
     let r = await send("task.create", item, {
       project_id: list,

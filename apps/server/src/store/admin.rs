@@ -152,7 +152,8 @@ impl Store {
                 {
                     return fail(409, "Confirmation or workspace generation does not match");
                 }
-                self.db.execute_batch("DELETE FROM blobs; DELETE FROM objects; DELETE FROM operations; UPDATE meta SET generation=generation+1 WHERE id=1;")?;
+                self.transfer_schema()?;
+                self.db.execute_batch("DELETE FROM transfer_parts; DELETE FROM transfer_plans; DELETE FROM transfer_receipts; DELETE FROM transfer_maps; DELETE FROM transfer_recovered; DELETE FROM transfer_restored; DELETE FROM blobs; DELETE FROM objects; DELETE FROM operations; UPDATE meta SET generation=generation+1 WHERE id=1;")?;
                 self.audit(&a, &action, "workspace", &json!({}))?;
                 self.db.execute("INSERT INTO events(generation,object_id,action,actor,at) VALUES((SELECT generation FROM meta),'workspace','workspace.clear',?,?)",params![a.user_id,now()])?;
             }

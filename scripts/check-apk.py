@@ -10,6 +10,7 @@ assert all(name in manifest for name in ['org.fieldnotes.app.PlannerWidget','org
 assert 'org.fieldnotes.app.MainActivity' in manifest and 'org.fieldnotes.app.FieldNotesApplication' in manifest
 assert all(name in manifest for name in ['org.fieldnotes.app.WeekCalendarWidget','org.fieldnotes.app.AlarmPlaybackService','org.fieldnotes.app.AlarmVolumeRecoveryReceiver','android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK','android.permission.MODIFY_AUDIO_SETTINGS'])
 assert 'usesCleartextTraffic' in manifest and 'dataExtractionRules' in manifest
+assert 'androidx.work.WorkManagerInitializer' not in manifest, 'WorkManager must initialize on demand, not block application startup'
 with zipfile.ZipFile(apk) as archive:
  names=archive.namelist()
  native=[name for name in names if name.startswith('lib/') and name.endswith('.so')]

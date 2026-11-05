@@ -2,6 +2,7 @@ use super::*;
 
 impl Store {
     pub(super) fn planning(data: &Value, record: &mut Record) -> Result<()> {
+        Self::category(data, record)?;
         for (field, default, min, max) in [("priority", 3, 1, 4), ("estimate_minutes", 0, 0, 480)] {
             let value = match data.get(field) {
                 Some(v) => v
@@ -61,8 +62,29 @@ impl Store {
                 "ends_at",
                 "reminders",
                 "reminder_options",
+                "category",
+                "recurrence",
             ],
         )?;
+        if record.revision > 0
+            && record.data.get("recurrence").is_some_and(|v| !v.is_null())
+            && data.get("recurrence").is_none()
+            && [
+                "all_day",
+                "start_date",
+                "end_date",
+                "starts_at",
+                "ends_at",
+                "reminders",
+            ]
+            .iter()
+            .any(|key| {
+                data.get(*key)
+                    .is_some_and(|v| record.data.get(*key) != Some(v))
+            })
+        {
+            return fail(409,"This is a repeating series. Use the current app or website to change its schedule; your edit was not applied");
+        }
         if record.revision == 0 {
             record.data = json!({"author_id":actor.user_id,"created_at":now(),"notes":""});
         }
@@ -124,6 +146,8 @@ impl Store {
             record.data["end_date"] = json!("");
         }
         Self::reminders(data, record)?;
+        Self::category(data, record)?;
+        Self::recurrence(data, record)?;
         self.reminder_options(data, record, actor)?;
         record.data["title"] = json!(title);
         record.data["updated_at"] = json!(now());

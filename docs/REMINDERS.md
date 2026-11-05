@@ -7,8 +7,8 @@ tasks. Saving an explicit empty reminder set disables that item's reminders.
 Older items without a reminder setting retain the previous default policy.
 
 Choose **Who should receive these reminders?**: Only me, Everyone, an assigned
-task's person, or selected household people. New events start with Only me;
-new tasks follow their assignee, falling back to their creator. This controls
+task's person, or selected household people. New tasks, events and reminder
+notes start with Everyone. Existing personal selections stay unchanged. This controls
 alerts, not shared calendar visibility. A recipient's own enrolled instances
 can each alert; the app does not elect one of that person's phones. Existing
 events keep their previous household policy until changed.

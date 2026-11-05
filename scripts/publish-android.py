@@ -10,7 +10,7 @@ def public_identity(info,root):
 
 def queue(folder,tag,apply=False,runner=subprocess.run):
     """Push a dedicated CI payload branch; keep binaries off main and keys local."""
-    folder=pathlib.Path(folder).resolve();info=verify(folder)
+    folder=pathlib.Path(folder).resolve();info=verify(folder,allow_legacy=False)
     if tag!='v'+info['version']:raise ValueError('Tag must match the APK version')
     result=dict(tag=tag,branch='release-assets/'+tag,assets=sorted(FILES),source_commit=info['source_commit'])
     if not apply:return result
@@ -36,7 +36,7 @@ def queue(folder,tag,apply=False,runner=subprocess.run):
     return {**result,'queued':True,'payload_commit':commit}
 
 def publish(folder,tag,apply=False,runner=subprocess.run,latest=False):
-    folder=pathlib.Path(folder).resolve();info=verify(folder)
+    folder=pathlib.Path(folder).resolve();info=verify(folder,allow_legacy=False)
     if tag!='v'+info['version']:raise ValueError('Tag must match the APK version')
     result=dict(tag=tag,source_commit=info['source_commit'],source_dirty=info['source_dirty'],assets=sorted(FILES),signing=info['signing'],prerelease=not latest)
     if not apply:return result

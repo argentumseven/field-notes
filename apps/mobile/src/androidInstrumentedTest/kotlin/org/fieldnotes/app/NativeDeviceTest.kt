@@ -60,6 +60,12 @@ class NativeDeviceTest {
             assertEquals(200,created.status);assertEquals(title,WireJson.parseToJsonElement(created.body).jsonObject["record"]!!.jsonObject["data"]!!.jsonObject.text("title"))
             val start=command("task.start",task,obj(),1);assertEquals(200,start.status)
             val repeat=command("task.start",task,obj(),1);assertEquals(409,repeat.status)
+            val exported=transport.exchange("/api/transfer/export",token,serverKey=peer);assertEquals(200,exported.status)
+            val manifest=WireJson.parseToJsonElement(exported.body).jsonObject
+            val prepared=transport.exchange("/api/transfer/prepare",token,obj("manifest" to manifest),peer);assertEquals(200,prepared.status)
+            val preview=WireJson.parseToJsonElement(prepared.body).jsonObject;assertEquals(0L,preview.number("new_items"));assertEquals(2L,preview.number("already_present"))
+            val imported=transport.exchange("/api/transfer/commit",token,obj("plan_id" to preview.getValue("plan_id")),peer);assertEquals(200,imported.status)
+            val again=transport.exchange("/api/transfer/commit",token,obj("plan_id" to preview.getValue("plan_id")),peer);assertEquals(imported.body,again.body)
             try{transport.exchange("/api/head",token,serverKey="different-server");fail("Stale server identity accepted")}catch(_:IllegalStateException){}
         }finally{transport.stop();File(context.filesDir,"native-test-public.txt").delete();ready.delete()}
     }

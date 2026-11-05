@@ -6,6 +6,9 @@ import android.app.NotificationManager
 import android.graphics.Bitmap
 import android.os.ParcelFileDescriptor
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.core.app.ActivityScenario
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import kotlinx.coroutines.*
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.JsonObject
@@ -14,10 +17,12 @@ import java.util.UUID
 import org.fieldnotes.domain.*
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Rule
 
 /** Actual Android service, alarm receiver and notification channels; no Google
  * services. This cannot establish GrapheneOS cross-user forwarding or acoustics. */
 class DeliveryDeviceTest {
+    @get:Rule val compose=createEmptyComposeRule()
     @Test fun backgroundServiceAndCachedAlarmPostPrivateAudibleChannelAlerts() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as FieldNotesApplication
@@ -33,7 +38,7 @@ class DeliveryDeviceTest {
         val record = Record("alarm-event", "event", 1, obj("title" to "PRIVATE synthetic calendar title".j(), "starts_at" to (now+615).j(), "ends_at" to (now+3600).j()))
         val snapshot = Snapshot(1,"delivery-test",1,1,listOf(record),Actor("owner","Owner","owner","session"))
         val seed = Cache(keys=originalCache.keys,config=obj("server_key" to "synthetic-delivery-server".j()),token="PRIVATE synthetic token",snapshot=snapshot,
-            preferences=Preferences(backgroundSync=false,reminders=true,liveUpdates=true))
+            preferences=Preferences(backgroundSync=false,reminders=true,liveUpdates=true,notificationTitles=false))
         val transport = object: Transport {
             override suspend fun keys() = originalCache.keys!!
             override suspend fun configure(configuration: JsonObject) {}
@@ -53,15 +58,21 @@ class DeliveryDeviceTest {
             while(System.currentTimeMillis()<end) { if(condition())return;Thread.sleep(250) }
             error(message)
         }
+        var scenario:ActivityScenario<MainActivity>?=null
         try {
+                // The automatic startup provider is disabled. Real periodic
+                // catch-up still initializes and persists through the IO path.
+                runBlocking {
+                    CatchUpWorker.schedule(app,seed.preferences)
+                    val jobs=withContext(Dispatchers.IO){androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork("field-notes-catch-up").get(60,java.util.concurrent.TimeUnit.SECONDS)}
+                    assertTrue("On-demand background scheduling did not persist",jobs.isNotEmpty())
+                }
                 // Delivery is observed outside the app, in real launcher and
                 // System UI tasks rather than an ActivityScenario-owned task.
-                app.startActivity(android.content.Intent(app,MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
-                waitFor("Application window did not become visible") { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()==app.packageName }
-                instrumentation.runOnMainSync {
-                    val activity=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<MainActivity>().single()
-                    assertTrue(PrivateUpdatesService.start(activity))
-                }
+                scenario=ActivityScenario.launch(MainActivity::class.java)
+                compose.waitUntil(90_000){compose.onAllNodesWithContentDescription("Browse workspace").fetchSemanticsNodes().isNotEmpty()}
+                compose.waitForIdle()
+                scenario.onActivity { assertTrue(PrivateUpdatesService.start(it)) }
                 waitFor("Foreground connection status was not posted") { manager.activeNotifications.any { it.id==90 } }
                 val ongoing=manager.activeNotifications.first { it.id==90 }.notification
                 assertTrue(ongoing.flags and Notification.FLAG_FOREGROUND_SERVICE != 0)
@@ -71,6 +82,7 @@ class DeliveryDeviceTest {
                 assertEquals(NotificationManager.IMPORTANCE_HIGH,channel.importance)
                 assertNotNull(channel.sound)
                 // Leave the app: the scheduled broadcast, not UI polling, posts.
+                compose.waitForIdle()
                 instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
                 runBlocking { LocalAlarms.reconcile(app,true) }
                 waitFor("Cached calendar alarm was not delivered by Android") { manager.activeNotifications.any { it.notification.channelId==Alerts.REMINDERS && it.tag?.startsWith("field-notes:")==true } }
@@ -107,8 +119,10 @@ class DeliveryDeviceTest {
                 waitFor("Stop must remove the foreground service despite a disk failure") { manager.activeNotifications.none { it.id==90 } }
         } finally {
             PrivateUpdatesService.stop(app)
+            runBlocking {CatchUpWorker.schedule(app,Preferences(backgroundSync=false,reminders=false,liveUpdates=false))}
             runBlocking { LocalAlarms.clear(app);app.vault.clearEffects();app.vault.save(originalCache) }
             manager.cancelAll();app.model=original
+            scenario?.close()
         }
     }
 }

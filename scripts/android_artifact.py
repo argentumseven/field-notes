@@ -14,9 +14,11 @@ def inspect(apk,release):
     if len(signers)!=1:raise ValueError('Expected one verified APK signer')
     return report,signers[0].lower(),'development' if 'application-debuggable' in badging else 'release'
 
-def verify(folder,version=None):
+def verify(folder,version=None,allow_legacy=True):
     folder=pathlib.Path(folder)
-    if folder.is_symlink() or not folder.is_dir() or {p.name for p in folder.iterdir()}!=FILES:raise ValueError('Incomplete Android download bundle')
+    if folder.is_symlink() or not folder.is_dir():raise ValueError('Incomplete Android download bundle')
+    names={p.name for p in folder.iterdir()}
+    if names!=FILES and not (allow_legacy and names==FILES|{'legacy'}):raise ValueError('Incomplete Android download bundle')
     for name in FILES:
         if (folder/name).is_symlink() or not (folder/name).is_file():raise ValueError('Download files must be regular files')
     info=json.loads((folder/'android.json').read_text())
@@ -31,6 +33,9 @@ def verify(folder,version=None):
     with apk.open('rb') as file:digest=hashlib.file_digest(file,'sha256').hexdigest()
     if digest!=info['sha256'] or (folder/'field-notes.apk.sha256').read_text()!=digest+'  field-notes.apk\n':raise ValueError('APK checksum mismatch')
     if re.findall(r'^Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]{64})$',(folder/'field-notes.apk.signer.txt').read_text(),re.M)!=[info['signer_sha256']]:raise ValueError('Signer report mismatch')
+    if 'legacy' in names:
+        legacy=verify(folder/'legacy',info['version'],allow_legacy=False)
+        if legacy['version_code']!=info['version_code'] or legacy['signer_sha256']==info['signer_sha256']:raise ValueError('Legacy APK must match this version/code and retain a distinct original signer')
     return info
 
 def verify_signed(folder,release,public=False):
@@ -42,7 +47,32 @@ def verify_signed(folder,release,public=False):
         pin=release.get('public_android_signer_sha256','')
         if not re.fullmatch('[a-f0-9]{64}',pin) or signer!=pin:raise ValueError('APK does not use the pinned public signing certificate')
         if signing!='release' or info['source_dirty'] or not info['source_commit']:raise ValueError('Public APK must be a clean tagged release build')
+    if (pathlib.Path(folder)/'legacy').exists():verify_signed(pathlib.Path(folder)/'legacy',release)
     return info
+
+def add_legacy(folder,release,key,expected_signer,alias='androiddebugkey'):
+    """Keep the official bytes unchanged; sign an explicitly requested companion
+    with an existing household key. That private key never enters the bundle."""
+    folder=pathlib.Path(folder);key=pathlib.Path(key)
+    main=verify_signed(folder,release,public=True)
+    if not re.fullmatch('[a-f0-9]{64}',expected_signer) or expected_signer==main['signer_sha256']:raise ValueError('Provide the existing distinct legacy certificate')
+    if key.is_symlink() or not key.is_file() or key.stat().st_uid!=os.geteuid() or key.stat().st_mode&0o077:raise ValueError('Legacy signing requires the original private key owned by the builder, mode 600; no replacement is generated')
+    if (folder/'legacy').exists():raise ValueError('Legacy APK already exists; refusing replacement')
+    env=os.environ.copy();env.setdefault('FIELD_NOTES_LEGACY_STORE_PASSWORD','android');env.setdefault('FIELD_NOTES_LEGACY_KEY_PASSWORD',env['FIELD_NOTES_LEGACY_STORE_PASSWORD'])
+    with tempfile.TemporaryDirectory(prefix='.legacy-apk-',dir=folder.parent) as tmp:
+        apk=pathlib.Path(tmp)/'signed.apk';sdk=pathlib.Path(os.environ['ANDROID_HOME'])/'build-tools/35.0.0'
+        subprocess.run([str(sdk/'apksigner'),'sign','--ks',str(key.resolve()),'--ks-key-alias',alias,'--ks-pass','env:FIELD_NOTES_LEGACY_STORE_PASSWORD','--key-pass','env:FIELD_NOTES_LEGACY_KEY_PASSWORD','--out',str(apk),str((folder/'field-notes.apk').resolve())],env=env,check=True,capture_output=True)
+        report,signer,signing=inspect(apk,release)
+        if signer!=expected_signer:raise ValueError('Legacy APK key differs from the installed certificate. Restore the original key; pairing and data were not changed')
+        digest=hashlib.sha256(apk.read_bytes()).hexdigest();output=pathlib.Path(tmp)/'bundle';output.mkdir()
+        shutil.copyfile(apk,output/'field-notes.apk')
+        (output/'android.json').write_text(json.dumps({**main,'sha256':digest,'signer_sha256':signer,'signing':signing},indent=2)+'\n')
+        (output/'field-notes.apk.sha256').write_text(digest+'  field-notes.apk\n');(output/'field-notes.apk.signer.txt').write_text(report)
+        verify_signed(output,release)
+        for path in output.iterdir():path.chmod(0o644)
+        output.chmod(0o755);output.rename(folder/'legacy')
+    verify_signed(folder,release,public=True)
+    return verify(folder/'legacy')
 
 def copy_verified(folder,output,release):
     info=verify_signed(folder,release)
@@ -100,7 +130,11 @@ def package(apk,output,root):
     verify(output,release['version']);return info
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--apk');source.add_argument('--downloads',help='Preserve the source metadata of an already packaged APK');source.add_argument('--public',action='store_true',help='Download the matching GitHub release and verify its pinned public certificate');parser.add_argument('--output',required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--apk');source.add_argument('--downloads',help='Preserve the source metadata of an already packaged APK');source.add_argument('--public',action='store_true',help='Download the matching GitHub release and verify its pinned public certificate');parser.add_argument('--output',required=True);parser.add_argument('--legacy-key');parser.add_argument('--legacy-signer');parser.add_argument('--legacy-alias',default='androiddebugkey');args=parser.parse_args()
     root=pathlib.Path(__file__).resolve().parents[1]
-    try:print(json.dumps(fetch_public(root,args.output) if args.public else copy_verified(args.downloads,args.output,json.loads((root/'release.json').read_text())) if args.downloads else package(args.apk,args.output,root),indent=2))
+    try:
+        if bool(args.legacy_key)!=bool(args.legacy_signer):raise ValueError('Provide both --legacy-key and --legacy-signer')
+        info=fetch_public(root,args.output) if args.public else copy_verified(args.downloads,args.output,json.loads((root/'release.json').read_text())) if args.downloads else package(args.apk,args.output,root)
+        if args.legacy_key:add_legacy(args.output,json.loads((root/'release.json').read_text()),args.legacy_key,args.legacy_signer,args.legacy_alias)
+        print(json.dumps(info,indent=2))
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:raise SystemExit('APK packaging stopped: '+str(error))

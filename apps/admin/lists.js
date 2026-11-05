@@ -1,6 +1,7 @@
 // List schemas, field choices and rolling checklists. No retailer requests.
 const listFieldLabels = {
   quantity: "Quantity",
+  store: "Store",
   notes: "Notes",
   link_url: "Web link",
   price: "Price",
@@ -19,14 +20,17 @@ const listTemplates = {
 };
 const defaultListFields = (type) =>
   type === "groceries"
-    ? ["quantity", "notes"]
+    ? ["quantity", "store", "notes"]
     : type === "shopping"
       ? ["quantity", "link_url", "images"]
       : type === "custom"
         ? []
         : ["notes"];
-const fieldsOf = (list) =>
-  list.data.fields || defaultListFields(list.data.template || "general");
+const fieldsOf = (list) => [
+  ...new Set([
+    ...(list.data.fields || defaultListFields(list.data.template || "general")),
+  ]),
+];
 async function newCollection(kind = "list") {
   return collectionEditor(kind);
 }
@@ -52,6 +56,7 @@ async function collectionEditor(kind, record) {
       required: false,
       max: 16384,
     },
+    categoryField(record),
     ...(isList
       ? [
           {
@@ -71,6 +76,18 @@ async function collectionEditor(kind, record) {
             label: "Rolling list · keep using it",
             type: "checkbox",
             value: d.perpetual !== false,
+          },
+          {
+            key: "notify_additions",
+            label: "Notify when items are added",
+            type: "checkbox",
+            value: d.notify_additions !== false,
+          },
+          {
+            key: "item_reminders",
+            label: "Scheduled item reminders",
+            type: "checkbox",
+            value: d.item_reminders !== false,
           },
         ]
       : []),
@@ -110,6 +127,7 @@ async function collectionEditor(kind, record) {
       }
       const data = {
         title: v.title,
+        category: v.category,
         notes: v.notes,
         ...(isList
           ? {
@@ -118,6 +136,8 @@ async function collectionEditor(kind, record) {
                 (key) => v["field_" + key],
               ),
               perpetual: v.perpetual,
+              notify_additions: v.notify_additions,
+              item_reminders: v.item_reminders,
             }
           : {}),
       };
@@ -163,6 +183,12 @@ async function collectionEditor(kind, record) {
         for (const key of Object.keys(listFieldLabels))
           nodes["field_" + key].onchange = update;
         nodes.template.onchange = () => {
+          if (
+            !record &&
+            nodes.category.value === "general" &&
+            nodes.template.value === "groceries"
+          )
+            nodes.category.value = "food";
           const selected = defaultListFields(nodes.template.value);
           for (const key of Object.keys(listFieldLabels))
             nodes["field_" + key].checked = selected.includes(key);
@@ -206,22 +232,77 @@ function renderCollections(root) {
       : state.page === "projects"
         ? ["project"]
         : ["list", "project"];
-  const tools = el("div", "toolbar");
+  state.libraryViews ||= {};
+  const view = (state.libraryViews[state.page] ||= {
+    query: "",
+    template: "*",
+    category: "*",
+    sort: "title",
+  });
+  const tools = el("div", "toolbar"),
+    filters = el("div", "view-filters"),
+    library = el("section", "collection-library");
   if (mayWrite())
     for (const kind of kinds)
       tools.append(button("New " + kind, () => newCollection(kind), "primary"));
   root.append(tools);
-  for (const kind of kinds) {
-    const library = el("section", "collection-library");
-    const group = containers().filter((c) => c.kind === kind);
+  const search = input("Search names and descriptions", view.query, "search");
+  filters.append(addField(el("div"), search).parentElement);
+  search.node.oninput = () => {
+    view.query = search.node.value;
+    draw();
+  };
+  const choice = (label, key, options) => {
+    const n = select(label, options, view[key]),
+      box = el("label");
+    box.append(n.label, n.node);
+    n.node.onchange = () => {
+      view[key] = n.node.value;
+      draw();
+    };
+    filters.append(box);
+  };
+  if (kinds.includes("list"))
+    choice("List type", "template", [
+      ["*", "All types"],
+      ...Object.entries(listTemplates),
+    ]);
+  choice("Category", "category", [
+    ["*", "All categories"],
+    ...Object.entries(recordCategories),
+  ]);
+  choice("Sort by", "sort", [
+    ["title", "Name A–Z"],
+    ["updated", "Recently changed"],
+  ]);
+  root.append(filters, library);
+  function draw() {
+    library.replaceChildren();
+    const group = containers()
+      .filter(
+        (c) =>
+          kinds.includes(c.kind) &&
+          (view.template === "*" ||
+            c.kind !== "list" ||
+            (c.data.template || "general") === view.template) &&
+          (view.category === "*" ||
+            (c.data.category || "general") === view.category) &&
+          (c.data.title + " " + c.data.notes)
+            .toLocaleLowerCase()
+            .includes(view.query.toLocaleLowerCase()),
+      )
+      .sort((a, b) =>
+        view.sort === "updated"
+          ? (b.data.last_activity_at || b.data.updated_at || 0) -
+            (a.data.last_activity_at || a.data.updated_at || 0)
+          : a.data.title.localeCompare(b.data.title),
+      );
     if (!group.length)
       library.append(
         el(
           "p",
           "empty",
-          kind === "list"
-            ? "Build a grocery list, an online shopping list, or a list with your own fields."
-            : "Keep an outcome and its related tasks together.",
+          "No collections match. Change a filter or create a list/project.",
         ),
       );
     for (const c of group) {
@@ -235,28 +316,23 @@ function renderCollections(root) {
         },
         "collection-row",
       );
+      row.setAttribute("aria-label", "Open " + c.kind + ": " + c.data.title);
       row.append(
-        el(
-          "span",
-          "eyebrow",
-          kind === "list"
-            ? listTemplates[c.data.template || "general"] || "List"
-            : "Project",
-        ),
+        typeBadges(c),
         el("strong", "", c.data.title),
         el(
           "span",
           "item-sub",
           records("task").filter(
             (t) => t.data.project_id === c.id && t.data.status !== "done",
-          ).length + (kind === "list" ? " unchecked items" : " open tasks"),
+          ).length + (c.kind === "list" ? " unchecked items" : " open tasks"),
         ),
         el("span", "muted", c.data.notes || ""),
       );
       library.append(row);
     }
-    root.append(library);
   }
+  draw();
 }
 function safeShoppingLink(value) {
   try {
@@ -271,124 +347,323 @@ function safeShoppingLink(value) {
   }
 }
 function renderChecklist(root, list) {
+  state.listViews ||= {};
+  const view = (state.listViews[list.id] ||= {
+    query: "",
+    store: "",
+    sort: "title",
+    status: "all",
+  });
   const fields = fieldsOf(list),
-    items = records("task").filter((t) => t.data.project_id === list.id),
-    checked = items.filter((t) => t.data.status === "done");
-  const toolbar = el("div", "toolbar");
+    all = records("task").filter((t) => t.data.project_id === list.id);
+  if (!fields.includes("store")) view.store = "";
+  if (!["title", "added", "updated", ...fields].includes(view.sort))
+    view.sort = "title";
+  const stores = [...new Set(all.map((t) => (t.data.store || "").trim()))].sort(
+    (a, b) => a.localeCompare(b),
+  );
+  const toolbar = el("div", "toolbar"),
+    filters = el("div", "view-filters"),
+    results = el("section", "checklist-items");
+  const search = input("Search this list", view.query, "search");
+  search.node.placeholder = "Search titles, notes, stores and links";
+  filters.append(addField(el("div"), search).parentElement);
+  const choose = (label, options, value, changed) => {
+    const box = el("label"),
+      node = select(label, options, value);
+    box.append(node.label, node.node);
+    node.node.onchange = () => {
+      changed(node.node.value);
+      draw();
+    };
+    filters.append(box);
+    return node;
+  };
+  search.node.oninput = () => {
+    view.query = search.node.value;
+    draw();
+  };
+  if (fields.includes("store"))
+    choose(
+      "Store",
+      [
+        ["*", "All stores"],
+        ...stores.map((store) => [store || "__none", store || "No store yet"]),
+      ],
+      view.store || "*",
+      (value) => (view.store = value === "*" ? "" : value),
+    );
+  choose(
+    "Show",
+    [
+      ["all", "All items"],
+      ["open", "Unchecked"],
+      ["done", "Checked"],
+    ],
+    view.status,
+    (value) => (view.status = value),
+  );
+  const sorts = [
+    ["title", "Name A–Z"],
+    ["added", "Recently added"],
+    ["updated", "Recently changed"],
+    ...fields
+      .filter((f) => !["notes", "images", "link_url", "store"].includes(f))
+      .map((f) => [f, listFieldLabels[f]]),
+  ];
+  choose("Sort by", sorts, view.sort, (value) => (view.sort = value));
+  const clear = button("Clear checked", clearChecked);
+  clear.disabled = true;
   if (mayWrite())
     toolbar.append(
-      button("Add item", () => editListItem(list), "primary"),
+      button(
+        "Add item",
+        () =>
+          editListItem(list, null, view.store === "__none" ? "" : view.store),
+        "primary",
+      ),
       button("List settings", () => editCollection(list)),
+      clear,
     );
-  if (checked.length && mayWrite())
-    toolbar.append(
-      button("Clear checked (" + checked.length + ")", async () => {
-        await confirmDialog(
-          "Clear " + checked.length + " checked items?",
-          "Only these checked items and their attachments will be removed. Changed items remain for review.",
-          "Clear checked",
-        );
-        const basis = {
-          epoch: state.snapshot.epoch,
-          generation: state.snapshot.generation,
-        };
-        let cleared = 0;
-        const failures = [];
-        state.loading = true;
-        try {
-          for (const item of checked) {
-            try {
-              await api("/commands", {
-                operation_id: uuid(),
-                ...basis,
-                action: "task.delete",
-                target: item.id,
-                expected_revision: item.revision,
-                data: {},
-              });
-              cleared++;
-            } catch (e) {
-              failures.push(e.message);
-              if (!state.actor) break;
-            }
-          }
-          if (state.actor) {
-            await refresh();
-            render();
-          }
-          notice(
-            cleared +
-              " cleared" +
-              (failures.length
-                ? " · " + failures.length + " changed items kept for review."
-                : ""),
-          );
-        } finally {
-          state.loading = false;
-        }
-      }),
+  root.append(typeBadges(list), toolbar, filters);
+  if (
+    list.data.notify_additions === false ||
+    list.data.item_reminders === false
+  )
+    root.append(
+      el(
+        "p",
+        "muted",
+        [
+          list.data.notify_additions === false
+            ? "Item-addition alerts muted"
+            : "",
+          list.data.item_reminders === false
+            ? "Scheduled item reminders muted"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      ),
     );
-  root.append(toolbar);
-  const open = el("div", "checklist-items"),
-    done = el("details", "checked-items");
-  done.open = true;
-  done.append(el("summary", "", checked.length + " checked items"));
-  for (const item of items.sort(
-    (a, b) =>
-      Number(a.data.status === "done") - Number(b.data.status === "done"),
-  )) {
-    const d = item.data,
-      row = el("article", "checklist-item"),
-      check = el("input");
-    check.type = "checkbox";
-    check.checked = d.status === "done";
-    check.setAttribute("aria-label", "Check " + d.title);
-    check.disabled =
-      !mayWrite() || (!!d.claimant && d.claimant !== state.actor.user_id);
-    check.onchange = () =>
-      mutate(
-        check.checked ? "task.complete" : "task.reopen",
-        item.id,
-        {},
-        item.revision,
-      ).catch((e) => notice(e.message));
-    const detail = button("", () => editListItem(list, item), "checklist-open");
-    detail.append(el("strong", "", d.title));
-    const attrs = [];
-    if (fields.includes("quantity") && d.quantity) attrs.push(d.quantity);
-    if (fields.includes("price") && d.price)
-      attrs.push((d.currency || "USD") + " " + d.price);
-    if (fields.includes("link_url") && safeShoppingLink(d.link_url))
-      attrs.push(new URL(d.link_url).hostname);
-    if (attrs.length)
-      detail.append(el("span", "list-attributes", attrs.join(" · ")));
-    if (fields.includes("notes") && d.notes)
-      detail.append(el("span", "muted", d.notes));
-    detail.append(historyNode(item));
-    row.append(check, detail);
-    if (fields.includes("images")) {
-      const image = records("image").find((i) => i.data.task_id === item.id);
-      if (image) {
-        const picture = el("img", "list-thumbnail");
-        picture.alt = "Attached preview for " + d.title;
-        picture.loading = "lazy";
-        picture.src = "/api/images/" + encodeURIComponent(image.id);
-        row.append(picture);
+  root.append(results);
+  let visible = [];
+  const matching = (item) => {
+    const d = item.data;
+    return (
+      (!view.store ||
+        (d.store || "").trim() ===
+          (view.store === "__none" ? "" : view.store)) &&
+      (!view.query ||
+        [d.title, d.notes, d.store, d.quantity, d.link_url, d.price]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(view.query.toLocaleLowerCase())) &&
+      (view.status === "all" ||
+        (d.status === "done") === (view.status === "done"))
+    );
+  };
+  const compare = (a, b) => {
+    const d = a.data,
+      e = b.data;
+    let order = 0;
+    if (view.sort === "added" || view.sort === "updated")
+      order =
+        (e[view.sort === "added" ? "created_at" : "last_activity_at"] ||
+          e.updated_at ||
+          0) -
+        (d[view.sort === "added" ? "created_at" : "last_activity_at"] ||
+          d.updated_at ||
+          0);
+    else if (view.sort === "price")
+      order =
+        (d.currency || "USD").localeCompare(e.currency || "USD") ||
+        Number(d.price || Infinity) - Number(e.price || Infinity);
+    else if (["priority", "estimate_minutes"].includes(view.sort))
+      order = Number(d[view.sort] || 0) - Number(e[view.sort] || 0);
+    else
+      order = String(d[view.sort] || "~").localeCompare(
+        String(e[view.sort] || "~"),
+        undefined,
+        { numeric: true, sensitivity: "base" },
+      );
+    return order || d.title.localeCompare(e.title) || a.id.localeCompare(b.id);
+  };
+  function draw() {
+    results.replaceChildren();
+    visible = all
+      .filter(matching)
+      .sort((a, b) =>
+        fields.includes("store") && !view.store
+          ? String(a.data.store || "~").localeCompare(
+              String(b.data.store || "~"),
+            ) || compare(a, b)
+          : compare(a, b),
+      );
+    const checked = visible.filter((t) => t.data.status === "done");
+    clear.textContent = `Clear checked (${checked.length})`;
+    clear.disabled = !checked.length;
+    results.append(
+      el(
+        "p",
+        "muted",
+        `${visible.length} of ${all.length} items · ${visible.filter((t) => t.data.status !== "done").length} unchecked`,
+      ),
+    );
+    for (const done of [false, true]) {
+      const rows = visible.filter((t) => (t.data.status === "done") === done);
+      if (!rows.length) continue;
+      const section = done
+        ? el("details", "checked-items")
+        : el("div", "open-items");
+      if (done) {
+        section.append(el("summary", "", rows.length + " checked items"));
+        section.open = view.status === "done";
       }
+      let lastStore = null;
+      for (const item of rows) {
+        const d = item.data,
+          store = (d.store || "").trim();
+        if (fields.includes("store") && !view.store && lastStore !== store) {
+          const heading = el("div", "store-heading");
+          heading.append(
+            el("h3", "", store || "No store yet"),
+            el(
+              "span",
+              "count",
+              String(
+                rows.filter((r) => (r.data.store || "").trim() === store)
+                  .length,
+              ),
+            ),
+          );
+          section.append(heading);
+          lastStore = store;
+        }
+        const row = el("article", "checklist-item"),
+          check = el("input");
+        check.type = "checkbox";
+        check.checked = done;
+        check.setAttribute(
+          "aria-label",
+          (done ? "Uncheck " : "Check ") + d.title,
+        );
+        check.disabled =
+          !mayWrite() || (!!d.claimant && d.claimant !== state.actor.user_id);
+        check.onchange = () =>
+          mutate(
+            done ? "task.reopen" : "task.complete",
+            item.id,
+            {},
+            item.revision,
+          ).catch((e) => notice(e.message));
+        const detail = button(
+          "",
+          () => editListItem(list, item),
+          "checklist-open",
+        );
+        detail.setAttribute("aria-label", "Open item: " + d.title);
+        detail.append(typeBadges(item), el("strong", "", d.title));
+        const attrs = [];
+        if (fields.includes("quantity") && d.quantity) attrs.push(d.quantity);
+        if (fields.includes("store") && store) attrs.push(store);
+        if (fields.includes("price") && d.price)
+          attrs.push((d.currency || "USD") + " " + d.price);
+        if (fields.includes("link_url") && safeShoppingLink(d.link_url))
+          attrs.push(new URL(d.link_url).hostname);
+        if (attrs.length)
+          detail.append(el("span", "list-attributes", attrs.join(" · ")));
+        if (fields.includes("notes") && d.notes)
+          detail.append(el("span", "muted", d.notes));
+        detail.append(historyNode(item));
+        row.append(check, detail);
+        if (fields.includes("images")) {
+          const image = records("image").find(
+            (i) => i.data.task_id === item.id,
+          );
+          if (image) {
+            const picture = el("img", "list-thumbnail");
+            picture.alt = "Attached preview for " + d.title;
+            picture.loading = "lazy";
+            picture.src = "/api/images/" + encodeURIComponent(image.id);
+            row.append(picture);
+          }
+        }
+        section.append(row);
+      }
+      results.append(section);
     }
-    (d.status === "done" ? done : open).append(row);
+    if (!visible.length)
+      results.append(
+        el(
+          "p",
+          "empty",
+          all.length
+            ? "No items match these filters. Clear the search or choose All stores."
+            : "Your list is ready. Add an item to get started.",
+        ),
+      );
   }
-  if (!items.length)
-    open.append(
-      el("p", "empty", "Your list is ready. Add an item to get started."),
+  async function clearChecked() {
+    const checked = visible.filter((t) => t.data.status === "done");
+    if (!checked.length) return;
+    await confirmDialog(
+      "Clear " + checked.length + " checked items?",
+      "Only the checked items matching this list view will be removed. Unchecked or changed items stay in place.",
+      "Clear checked",
     );
-  root.append(open);
-  if (checked.length) root.append(done);
+    const basis = {
+      epoch: state.snapshot.epoch,
+      generation: state.snapshot.generation,
+    };
+    let cleared = 0;
+    const failures = [];
+    state.loading = true;
+    try {
+      for (const item of checked) {
+        try {
+          await api("/commands", {
+            operation_id: uuid(),
+            ...basis,
+            action: "task.delete",
+            target: item.id,
+            expected_revision: item.revision,
+            data: {},
+          });
+          cleared++;
+        } catch (e) {
+          failures.push(e.message);
+          if (!state.actor) break;
+        }
+      }
+      if (state.actor) {
+        await refresh();
+        render();
+      }
+      notice(
+        cleared +
+          " cleared" +
+          (failures.length
+            ? " · " + failures.length + " changed items kept for review."
+            : ""),
+      );
+    } finally {
+      state.loading = false;
+    }
+  }
+  draw();
 }
-async function editListItem(list, record) {
-  const d = record?.data || {},
+async function editListItem(list, record, initialStore = "") {
+  const d = record?.data || {
+      store: initialStore,
+      category: list.data.category || "general",
+    },
     schema = fieldsOf(list),
-    fields = [{ key: "title", label: "Item name", value: d.title, max: 240 }];
+    fields = [
+      { key: "title", label: "Item name", value: d.title, max: 240 },
+      { ...categoryField(record), value: d.category || "general" },
+    ];
   for (const key of schema) {
     if (key === "images") continue;
     if (key === "assignee") {
@@ -440,9 +715,14 @@ async function editListItem(list, record) {
         max: 3,
       });
   }
-  let reminders = FieldReminders.rulesFor(record) || { alerts: d.due?[{id:record.id,minutes_before:0,...FieldReminders.profile}]:[], repeat: null },
+  let reminders = FieldReminders.rulesFor(record) || {
+      alerts: d.due
+        ? [{ id: record.id, minutes_before: 0, ...FieldReminders.profile }]
+        : [],
+      repeat: null,
+    },
     reminderDirty = false;
-  let reminderOptions=FieldReminders.optionsFor(record,"task");
+  let reminderOptions = FieldReminders.optionsFor(record, "task");
   await formDialog(
     record ? (mayWrite() ? "Edit item" : "View item") : "New item",
     list.data.title,
@@ -456,7 +736,8 @@ async function editListItem(list, record) {
         FieldReminders.validate(reminders);
         data.reminders = reminders;
       }
-      FieldReminders.validateOptions(reminderOptions);data.reminder_options=reminderOptions;
+      FieldReminders.validateOptions(reminderOptions);
+      data.reminder_options = reminderOptions;
       await mutate(
         record ? "task.update" : "task.create",
         record?.id || uuid(),
@@ -476,7 +757,13 @@ async function editListItem(list, record) {
             reminders = v;
             reminderDirty = true;
           },
-          {value:reminderOptions,kind:"task",changed:v=>{reminderOptions=v;}},
+          {
+            value: reminderOptions,
+            kind: "task",
+            changed: (v) => {
+              reminderOptions = v;
+            },
+          },
         );
       if (safeShoppingLink(d.link_url))
         body.append(

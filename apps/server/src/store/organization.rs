@@ -19,9 +19,27 @@ impl Store {
         fields(
             data,
             if note {
-                &["title", "body", "pinned"][..]
+                &[
+                    "title",
+                    "body",
+                    "pinned",
+                    "category",
+                    "on_radar",
+                    "remind_at",
+                    "reminders",
+                    "reminder_options",
+                ][..]
             } else {
-                &["title", "notes", "template", "fields", "perpetual"][..]
+                &[
+                    "title",
+                    "notes",
+                    "template",
+                    "fields",
+                    "perpetual",
+                    "category",
+                    "notify_additions",
+                    "item_reminders",
+                ][..]
             },
         )?;
         if record.revision == 0 {
@@ -43,6 +61,34 @@ impl Store {
             record.data[body] = json!("");
         }
         if note {
+            {
+                let key = "on_radar";
+                let value = data
+                    .get(key)
+                    .or_else(|| record.data.get(key))
+                    .cloned()
+                    .unwrap_or(json!(false));
+                if !value.is_boolean() {
+                    return fail(400, "Choose whether this note belongs in Later & reminders");
+                }
+                record.data[key] = value;
+            }
+            if let Some(value) = data.get("remind_at") {
+                if !value
+                    .as_i64()
+                    .is_some_and(|n| (0..=7_258_118_400).contains(&n))
+                {
+                    return fail(400, "Choose an optional note reminder time");
+                }
+                record.data["remind_at"] = value.clone();
+            }
+            if record.data.get("remind_at").is_none() {
+                record.data["remind_at"] = json!(0);
+            }
+            if record.data["remind_at"].as_i64().unwrap_or(0) > 0 {
+                record.data["on_radar"] = json!(true);
+            }
+            Self::reminders(data, record)?;
             if let Some(value) = data.get("pinned") {
                 if !value.is_boolean() {
                     return fail(400, "Pinned must be true or false");
@@ -53,13 +99,20 @@ impl Store {
             }
         }
         if record.kind != "list"
-            && ["template", "fields", "perpetual"]
-                .iter()
-                .any(|f| data.get(f).is_some())
+            && [
+                "template",
+                "fields",
+                "perpetual",
+                "notify_additions",
+                "item_reminders",
+            ]
+            .iter()
+            .any(|f| data.get(f).is_some())
         {
             return fail(400, "List options belong to lists");
         }
         Self::list_schema(data, record)?;
+        Self::category(data, record)?;
         record.data["updated_at"] = json!(now());
         Ok(())
     }

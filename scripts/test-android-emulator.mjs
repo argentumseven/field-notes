@@ -5,8 +5,18 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fixture } from "../tests/support.mjs";
+import assert from "node:assert/strict";
+import vm from "node:vm";
+import { webcrypto } from "node:crypto";
+import * as fflate from "fflate";
 const run = promisify(execFile);
 const nativeOnly = process.argv.includes("--native-only");
+const uiOnly = process.argv.includes("--ui-only");
+let portableFixture = null;
+const selectedUi = process.argv
+  .find((a) => a.startsWith("--ui-class="))
+  ?.slice("--ui-class=".length)
+  .split(",");
 const tools = process.env.FIELD_NOTES_TOOLS || "/workspace/.cache/field-notes";
 const adb = join(tools, "android-sdk/platform-tools/adb");
 const serial = process.env.FIELD_NOTES_EMULATOR || "emulator-5554";
@@ -30,7 +40,14 @@ if (avd !== "field-notes-test")
     "Use the dedicated field-notes-test AVD. Existing user devices are not cleared.",
   );
 // The AVD presents a hardware keyboard; explicitly exercise the real soft IME.
-await call(["shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1"]);
+await call([
+  "shell",
+  "settings",
+  "put",
+  "secure",
+  "show_ime_with_hard_keyboard",
+  "1",
+]);
 await call(["shell", "input", "keyevent", "KEYCODE_WAKEUP"]);
 await call(["shell", "wm", "dismiss-keyguard"]);
 const network = await call(["shell", "ip", "-4", "addr"]);
@@ -39,11 +56,7 @@ if (!/\binet 10\.0\.2\.(15|16)\//.test(network))
     "Connect the dedicated AVD to its emulated AndroidWifi network before native tests; no host route is assigned.",
   );
 await mkdir("dist/android-test-results", { recursive: true });
-await call([
-  "install",
-  "-r",
-  "dist/android-emulator/FieldNotes-debug.apk",
-]);
+await call(["install", "-r", "dist/android-emulator/FieldNotes-debug.apk"]);
 await call([
   "install",
   "-r",
@@ -87,12 +100,76 @@ async function instrument(classes, extra = [], report) {
 }
 if (!nativeOnly) {
   console.log("Running Android Keystore and first-launch UI tests.");
-  const first = await instrument(
-    "org.fieldnotes.app.VaultDeviceTest,org.fieldnotes.app.InterfaceDeviceTest,org.fieldnotes.app.EnrollmentDeviceTest,org.fieldnotes.app.EditorDeviceTest,org.fieldnotes.app.WidgetDeviceTest,org.fieldnotes.app.UpdateDeviceTest",
-    [],
-    "vault-ui.txt",
-  );
-  await writeFile("dist/android-test-results/vault-ui.txt", first);
+  const reports = [];
+  const names = [
+    "VaultDeviceTest",
+    "InterfaceDeviceTest",
+    "EnrollmentDeviceTest",
+    "EditorDeviceTest",
+    "WidgetDeviceTest",
+    "UpdateDeviceTest",
+    "ArchiveDeviceTest",
+  ];
+  if (selectedUi?.some((name) => !names.includes(name)))
+    throw Error("Unknown UI test class");
+  for (const name of selectedUi || names) {
+    console.log("Running " + name + " on the disposable AVD.");
+    reports.push(
+      await instrument("org.fieldnotes.app." + name, [], name + ".txt"),
+    );
+    if (name === "ArchiveDeviceTest") {
+      const { stdout } = await run(
+        adb,
+        [
+          "-s",
+          serial,
+          "exec-out",
+          "run-as",
+          "org.fieldnotes.app",
+          "cat",
+          "files/portable-interop.fieldnotes",
+        ],
+        { encoding: "buffer", maxBuffer: 1024 * 1024 },
+      );
+      await writeFile(
+        "dist/android-test-results/portable-interop.fieldnotes",
+        stdout,
+      );
+      const context = {
+        window: {},
+        crypto: webcrypto,
+        TextEncoder,
+        TextDecoder,
+        Uint8Array,
+        DataView,
+        fflate,
+        setTimeout,
+      };
+      vm.runInNewContext(
+        await readFile("apps/admin/archive.js", "utf8"),
+        context,
+      );
+      const codec = context.window.FieldArchive;
+      const zip = await codec.decrypt(
+        new Uint8Array(stdout),
+        "A portable café 🌙 with punctuation!",
+      );
+      try {
+        portableFixture = await codec.unpack(zip);
+      } finally {
+        zip.fill(0);
+      }
+      assert.equal(portableFixture.manifest.records.length, 2);
+      console.log(
+        "Actual Android document export decrypted and verified with WebCrypto, including Unicode passphrase and its offline image.",
+      );
+    }
+  }
+  await writeFile("dist/android-test-results/vault-ui.txt", reports.join("\n"));
+}
+if (uiOnly) {
+  console.log("Selected Android UI checks completed.");
+  process.exit(0);
 }
 const f = await fixture();
 let hub;
@@ -192,10 +269,59 @@ try {
     await monitor;
   }
   await writeFile("dist/android-test-results/native.txt", second);
+  if (portableFixture) {
+    const token = await f.login();
+    for (let pass = 0; pass < 2; pass++) {
+      const prepared = await f.request("/api/transfer/prepare", {
+        token,
+        body: { manifest: portableFixture.manifest },
+      });
+      assert.equal(prepared.status, 200, JSON.stringify(prepared.data));
+      const plan = prepared.data;
+      assert.equal(plan.new_items, pass === 0 ? 2 : 0);
+      assert.equal(plan.retained_changes, pass === 0 ? 1 : 0);
+      for (const id of plan.needed_media) {
+        const bytes = portableFixture.files["media/" + id + ".bin"];
+        for (
+          let index = 0;
+          index < Math.ceil(bytes.length / plan.chunk_size);
+          index++
+        ) {
+          const result = await f.request("/api/transfer/image", {
+            token,
+            body: {
+              plan_id: plan.plan_id,
+              image_id: id,
+              index,
+              bytes: Buffer.from(
+                bytes.subarray(
+                  index * plan.chunk_size,
+                  (index + 1) * plan.chunk_size,
+                ),
+              ).toString("base64"),
+            },
+          });
+          assert.equal(result.status, 200, JSON.stringify(result.data));
+        }
+      }
+      const committed = await f.request("/api/transfer/commit", {
+        token,
+        body: { plan_id: plan.plan_id },
+      });
+      assert.equal(committed.status, 200, JSON.stringify(committed.data));
+    }
+    assert.equal(
+      (await f.request("/api/snapshot", { token })).data.records.length,
+      4,
+    );
+    console.log(
+      "Actual Android content file imported twice into Rust with its offline image and retained command; no duplicate items or spurious image conflicts.",
+    );
+  }
   console.log(
     nativeOnly
       ? "Android emulator: 2 native/manifest integration tests passed."
-      : "Android emulator: 4 vault tests, 2 Compose UI tests, 1 widget privacy test, 3 APK verifier/provider tests, 2 native/manifest integration tests passed.",
+      : "Selected Android UI checks and 2 real native/manifest integration tests passed.",
   );
 } finally {
   hub?.kill("SIGTERM");

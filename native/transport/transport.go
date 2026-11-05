@@ -205,12 +205,15 @@ func Stop() {
 	}
 }
 func Exchange(raw string) (string, error) {
-	if len(raw) > 6_600_000 {
+	if len(raw) > 64*1024*1024 {
 		return "", errors.New("request exceeds size limit")
 	}
 	var r Request
 	if e := decode(raw, &r); e != nil {
 		return "", e
+	}
+	if (r.Path != "/api/transfer/prepare" && len(raw) > 6_600_000) || len(r.Body) > 32*1024*1024 {
+		return "", errors.New("request exceeds size limit")
 	}
 	if r.Method != "GET" && r.Method != "POST" {
 		return "", errors.New("unsupported HTTP method")
@@ -276,12 +279,16 @@ func Exchange(raw string) (string, error) {
 		return "", connectionFailure(e, true)
 	}
 	defer response.Body.Close()
-	data, e := io.ReadAll(io.LimitReader(response.Body, 16*1024*1024+1))
-	if e != nil || len(data) > 16*1024*1024 {
+	limit := 16 * 1024 * 1024
+	if r.Path == "/api/transfer/export" || r.Path == "/api/transfer/recovered" {
+		limit = 32 * 1024 * 1024
+	}
+	data, e := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
+	if e != nil || len(data) > limit {
 		return "", errors.New("response incomplete or exceeds size limit")
 	}
 	out := Response{Status: response.StatusCode}
-	if response.Header.Get("Content-Type") == "image/png" || (strings.HasPrefix(r.Path, "/api/device/update/chunks/") && response.Header.Get("Content-Type") == "application/octet-stream") {
+	if response.Header.Get("Content-Type") == "image/png" || ((strings.HasPrefix(r.Path, "/api/device/update/chunks/") || strings.HasPrefix(r.Path, "/api/transfer/media/")) && response.Header.Get("Content-Type") == "application/octet-stream") {
 		out.Binary = base64.StdEncoding.EncodeToString(data)
 	} else {
 		out.Body = string(data)
@@ -293,6 +300,8 @@ func Exchange(raw string) (string, error) {
 func devicePath(path string) bool {
 	switch path {
 	case "/api/enrollment/claim", "/api/enrollment/status", "/api/enrollment/cancel":
+		return true
+	case "/api/transfer/export", "/api/transfer/recovered", "/api/transfer/prepare", "/api/transfer/review", "/api/transfer/image", "/api/transfer/commit", "/api/transfer/cancel", "/api/transfer/restore", "/api/transfer/discard":
 		return true
 	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/device/activate", "/api/device/revoke-self", "/api/device/update":
 		return true
@@ -314,8 +323,8 @@ func devicePath(path string) bool {
 		}
 		return true
 	}
-	if strings.HasPrefix(path, "/api/images/") {
-		id := strings.TrimPrefix(path, "/api/images/")
+	if strings.HasPrefix(path, "/api/images/") || strings.HasPrefix(path, "/api/transfer/media/") {
+		id := strings.TrimPrefix(strings.TrimPrefix(path, "/api/images/"), "/api/transfer/media/")
 		if len(id) != 36 {
 			return false
 		}

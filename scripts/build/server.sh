@@ -2,20 +2,26 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source scripts/dev-env.sh
+python3 tools/sync-brand-icons.py --check
 [[ $(uname -s) == Linux ]] || { echo 'Server builds require Linux.' >&2; exit 1; }
 arch=$(uname -m)
 version=$(python3 -c 'import json; print(json.load(open("release.json"))["version"])')
 mkdir -p dist/server
 stage=$(mktemp -d dist/server/.stage.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT
+legacy_args=()
+if [[ -n ${FIELD_NOTES_ANDROID_LEGACY_KEYSTORE:-} || -n ${FIELD_NOTES_ANDROID_LEGACY_SIGNER:-} ]]; then
+  [[ -n ${FIELD_NOTES_ANDROID_LEGACY_KEYSTORE:-} && -n ${FIELD_NOTES_ANDROID_LEGACY_SIGNER:-} ]] || { echo 'Both original legacy key and certificate are required; no replacement is generated.' >&2; exit 1; }
+  legacy_args=(--legacy-key "$FIELD_NOTES_ANDROID_LEGACY_KEYSTORE" --legacy-signer "$FIELD_NOTES_ANDROID_LEGACY_SIGNER" --legacy-alias "${FIELD_NOTES_ANDROID_LEGACY_ALIAS:-androiddebugkey}")
+fi
 if [[ -n ${FIELD_NOTES_ANDROID_APK:-} && -n ${FIELD_NOTES_ANDROID_DOWNLOADS:-} ]]; then
   echo 'Choose FIELD_NOTES_ANDROID_APK or FIELD_NOTES_ANDROID_DOWNLOADS, not both.' >&2; exit 1
 elif [[ -n ${FIELD_NOTES_ANDROID_DOWNLOADS:-} ]]; then
-  python3 -B scripts/android_artifact.py --downloads "$FIELD_NOTES_ANDROID_DOWNLOADS" --output "$stage/downloads"
+  python3 -B scripts/android_artifact.py --downloads "$FIELD_NOTES_ANDROID_DOWNLOADS" --output "$stage/downloads" "${legacy_args[@]}"
 elif [[ -n ${FIELD_NOTES_ANDROID_APK:-} ]]; then
-  python3 -B scripts/android_artifact.py --apk "$FIELD_NOTES_ANDROID_APK" --output "$stage/downloads"
+  python3 -B scripts/android_artifact.py --apk "$FIELD_NOTES_ANDROID_APK" --output "$stage/downloads" "${legacy_args[@]}"
 else
-  python3 -B scripts/android_artifact.py --public --output "$stage/downloads"
+  python3 -B scripts/android_artifact.py --public --output "$stage/downloads" "${legacy_args[@]}"
 fi
 cargo build --locked --release -j "${FIELD_NOTES_JOBS:-4}"
 bash scripts/build/containers.sh

@@ -10,7 +10,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.5.0.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.6.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -18,9 +18,9 @@ services. iOS/native desktop packages are deferred.
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
 [Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [List types and fields](docs/LISTS.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
-[Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
+[Household planning](docs/PLANNER-0.6.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
-![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/36-calendar-blocks.png)
+![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/50-sunday-week-aligned.png)
 
 ## Planner and administration
 
@@ -34,16 +34,19 @@ services. iOS/native desktop packages are deferred.
 - Focus ranks tasks using priority, optional due date, planned day, waiting time
   and estimate. Pins come first; blocked/completed/other-claimed/future-planned
   tasks stay out of Focus. Each task explains its score. No artificial due dates.
-- Calendar opens first, with day/week time blocks, a month view and local clock
+- Sunday-first calendars open first, with aligned day/week time blocks, a continuous month grid and local clock
   controls. End times are optional; start-only markers do not occupy time.
   Multiple reminders support separate importance, eight sounds and relative volume.
   Choose recipients per person or everyone, and optionally ring a longer alarm
   with temporary alarm-volume raising and restoration on each consenting phone.
-  Repeat reminders within a chosen daily/weekly window, even without a due date.
+  Repeat events on selected weekdays, alternate days/weeks, custom intervals or individual dates, with skipped dates. Repeat reminders within a chosen daily/weekly window, even without a due date. New items default to Everyone; existing personal choices are preserved.
 - Lists have grocery, online shopping, general and custom presets. Select fields
-  such as quantity, link, optional price, images and dates. Rolling lists let you
+  such as quantity, store, link, optional price, images and dates. Store groups and filters keep groceries in their own subview. Rolling lists let you
   clear checked items while retaining unchecked ones. Image previews use attached
   images only; there are no retailer requests. Rows show creator/activity times.
+- Later & reminders keeps undated ideas and optional follow-up alerts outside occupied calendar time. Searches include titles and content, with category/person/status filters and useful sort fields.
+- Granular shared-addition notices name the person, item and list. Each list can mute additions and scheduled item reminders separately.
+- Encrypted content export/import works on phone and web, preserves offline changes and images, skips duplicates and retains conflicting alternatives without overwriting current work.
 - Task notes, image attachments and comments; encrypted offline edits/outbox,
   replay-safe retries, server-arbitrated claims and retained conflicts.
 - QR enrollment: bind the phone public key on your PC, scan, enter the phone's code

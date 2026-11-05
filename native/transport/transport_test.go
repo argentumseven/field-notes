@@ -82,6 +82,11 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 			w.Write([]byte("PK binary update chunk"))
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/api/transfer/media/") {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write([]byte("private recovered attachment"))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/commands" {
 			body, _ := io.ReadAll(r.Body)
@@ -137,6 +142,14 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 	if err = json.Unmarshal([]byte(chunkReply), &chunk); err != nil || chunk.Status != 200 || chunk.Binary == "" {
 		t.Fatal("Update chunk did not traverse the pinned peer as bounded binary", err)
 	}
+	mediaReply, err := Exchange(`{"method":"GET","path":"/api/transfer/media/12345678-1234-1234-1234-123456789abc","token":"","body":""}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var media Response
+	if err = json.Unmarshal([]byte(mediaReply), &media); err != nil || media.Status != 200 || media.Binary == "" {
+		t.Fatal("Recovered image did not traverse the pinned private endpoint", err)
+	}
 	if _, err := Exchange(`{"method":"POST","path":"/api/commands","body":"{\"operation_id\":\"same-durable-operation\"}"}`); err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +186,23 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 	Stop()
 	if _, e = Exchange(`{"method":"GET","path":"/api/head"}`); e == nil {
 		t.Fatal("stopped transport accepted request")
+	}
+}
+
+func TestPortableRoutesStayNarrow(t *testing.T) {
+	for _, path := range []string{"/api/transfer/export", "/api/transfer/recovered", "/api/transfer/prepare", "/api/transfer/review", "/api/transfer/image", "/api/transfer/commit", "/api/transfer/cancel", "/api/transfer/restore", "/api/transfer/discard", "/api/transfer/media/12345678-1234-1234-1234-123456789abc"} {
+		if !devicePath(path) {
+			t.Errorf("Missing fixed content route %s", path)
+		}
+	}
+	for _, path := range []string{"/api/transfer/admin", "/api/transfer/media/not-a-uuid", "/api/transfer/media/../../admin", "/api/transfer/prepare/extra", "/api/admin/backup", "/downloads/legacy/field-notes.apk"} {
+		if devicePath(path) {
+			t.Errorf("Unexpected route allowed %s", path)
+		}
+	}
+	oversized, _ := json.Marshal(Request{Method: "POST", Path: "/api/commands", Body: strings.Repeat("x", 6_600_001)})
+	if _, e := Exchange(string(oversized)); e == nil || !strings.Contains(e.Error(), "size limit") {
+		t.Fatal("ordinary requests must retain their original bound", e)
 	}
 }
 func TestInvalidConfigurationNeverCreatesAnOSRoute(t *testing.T) {

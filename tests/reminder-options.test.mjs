@@ -27,8 +27,8 @@ test('personal alerts retain shared calendar content, replay safely and fence le
   assert.equal(changed.status,200,JSON.stringify(changed.data));assert.deepEqual(changed.data.record.data.reminders,rules);
   assert.deepEqual((await f.request('/api/snapshot',{token:owner})).data.records.find(r=>r.id===event).data.reminders,rules);
   const task=randomUUID();const taskReply=await send(owner,'task.create',task,{title:'Assigned task',assignee:samId,due:'2026-11-05'});
-  assert.equal(taskReply.status,200);assert.equal(taskReply.data.record.data.reminder_options.audience.mode,'assigned');assert.deepEqual(taskReply.data.record.data.reminders,{alerts:[],repeat:null});
-  assert.equal((await f.request('/api/snapshot',{token:sam})).data.records.find(r=>r.id===task).data.reminders,undefined,'assigned person retains legacy due reminder');
+  assert.equal(taskReply.status,200);assert.equal(taskReply.data.record.data.reminder_options.audience.mode,'everyone');assert.equal(taskReply.data.record.data.reminders,undefined,'Everyone retains the implicit due-date reminder when no explicit rule was set');
+  assert.equal((await f.request('/api/snapshot',{token:sam})).data.records.find(r=>r.id===task).data.reminders,undefined,'Everyone includes the assigned person for the implicit due reminder');
   const head=(await f.request('/api/head',{token:sam})).data;assert.equal(head.compatibility.protocol_min,1);assert(head.compatibility.features.includes('reminder-options-v1'));
   const metadata=(await f.request('/api/device/update',{token:sam,base:f.device})).data;assert.deepEqual(metadata.compatibility,head.compatibility);assert.equal(metadata.available,false);assert.match(metadata.error,/APK/i);
   const onlySam={...options,audience:{mode:'people',people:[samId]}};

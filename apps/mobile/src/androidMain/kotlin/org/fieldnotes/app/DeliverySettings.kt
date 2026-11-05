@@ -45,7 +45,7 @@ object DeliverySettings {
         AlarmPlaybackService.stop(context);AlarmAudio.restoreAfterStop(context)
         app.model.removeInstallation()
         PrivateUpdatesService.stop(context)
-        WorkManager.getInstance(context).cancelAllWork()
+        withContext(Dispatchers.IO){WorkManager.getInstance(context).cancelAllWork()}
         LocalAlarms.clear(context)
         context.getSystemService(NotificationManager::class.java).cancelAll()
         app.vault.clearEffects()

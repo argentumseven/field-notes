@@ -60,6 +60,18 @@ class MainActivity : ComponentActivity() {
     private var lastUnlock by mutableStateOf(0L)
     private var deliveryWarning by mutableStateOf<String?>(null)
     private var deliveryStatus by mutableStateOf("")
+    private var exportPassphrase:CharArray?=null
+    private val exportDocument=registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")){uri->
+        val pass=exportPassphrase;exportPassphrase=null
+        if(uri!=null&&pass!=null)app.files.export(uri,pass) else {
+            pass?.fill('\u0000')
+            if(uri!=null){
+                try{if(emptyExportDocument(contentResolver,uri))android.provider.DocumentsContract.deleteDocument(contentResolver,uri)}catch(_:Exception){}
+                Toast.makeText(this,"Export canceled because the screen was recreated. Choose Export again.",Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    private val importDocument=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null)app.files.choose(uri)}
     private val invitationImage = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if(uri!=null) lifecycleScope.launch {
             try {
@@ -133,6 +145,7 @@ class MainActivity : ComponentActivity() {
             else if(lastUnlock==0L||SystemClock.elapsedRealtime()-lastUnlock>prefs.lockMinutes.coerceIn(1,30)*60_000L){unlocked=false;unlock()}
         }
     }
+    override fun onDestroy(){exportPassphrase?.fill('\u0000');exportPassphrase=null;super.onDestroy()}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -143,7 +156,9 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         lifecycleScope.launch {
             app.initialized.await()
-            CatchUpWorker.schedule(this@MainActivity, app.model.state.value.cache.preferences)
+            try { withContext(Dispatchers.IO){CatchUpWorker.schedule(this@MainActivity, app.model.state.value.cache.preferences)} }
+            catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(_:Exception){app.deliveryError.value="Background scheduling could not start. Open Settings to review delivery; cached work is kept."}
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (isActive) { if (unlocked && app.model.state.value.cache.preferences.autoRefresh) app.model.poll(); delay(15_000) }
             }
@@ -180,6 +195,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = back != null) { back?.invoke() }
                 val lifecycleState by lifecycle.currentStateFlow.collectAsState()
                 val updateState by app.updates.state.collectAsState()
+                val transferState by app.files.state.collectAsState()
                 val deliveryIssue by app.deliveryError.collectAsState()
                 val deliveryStorageIssue by app.deliveryPersistenceError.collectAsState()
                 LaunchedEffect(workspace.cache.token,workspace.cache.config,workspace.connectionPaused,workspace.needsLogin,lifecycleState){
@@ -191,12 +207,17 @@ class MainActivity : ComponentActivity() {
                     if(workspace.connectionPaused)PrivateUpdatesService.stop(this@MainActivity)
                     else if(lifecycleState.isAtLeast(Lifecycle.State.STARTED)&&workspace.cache.token!=null&&!workspace.needsLogin&&workspace.cache.preferences.liveUpdates){
                         if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this@MainActivity,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){if(!notificationAsked){notificationAsked=true;requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)}}
-                        else PrivateUpdatesService.start(this@MainActivity)
+                        else {
+                            // Let the initial composition finish before starting
+                            // Android's foreground-service deadline.
+                            withFrameNanos { };yield()
+                            PrivateUpdatesService.start(this@MainActivity)
+                        }
                     }
                 }
                 FieldNotesApp(app.model,
                     requestedRecord=requestedRecord,requestedPage=requestedPage,requestedDate=requestedDate,navigationSequence=navigationSequence,
-                    deviceActions=DeviceActions(previewSound={profile->app.scope.launch { try { withContext(Dispatchers.IO){ReminderSounds.preview(this@MainActivity,profile)} }catch(_:Exception){Toast.makeText(this@MainActivity,"Sound preview unavailable. Check Android notification settings.",Toast.LENGTH_LONG).show()} }},openLink={url->
+                    deviceActions=DeviceActions(transfer=transferState,exportData={password->exportPassphrase?.fill('\u0000');exportPassphrase=password.toCharArray();exportDocument.launch("field-notes-${java.time.LocalDate.now()}.fieldnotes")},chooseImport={importDocument.launch(arrayOf("application/octet-stream","application/zip","*/*"))},previewImport=app.files::preview,reviewImport=app.files::review,commitImport=app.files::commit,cancelImport=app.files::cancel,mapImportPerson=app.files::mapPerson,refreshRecovered=app.files::refreshRecovered,restoreRecovered=app.files::restore,discardRecovered=app.files::discard,previewSound={profile->app.scope.launch { try { withContext(Dispatchers.IO){ReminderSounds.preview(this@MainActivity,profile)} }catch(_:Exception){Toast.makeText(this@MainActivity,"Sound preview unavailable. Check Android notification settings.",Toast.LENGTH_LONG).show()} }},openLink={url->
                         val uri=Uri.parse(url)
                         if(uri.scheme in setOf("http","https")&&!uri.host.isNullOrBlank())try{startActivity(Intent(Intent.ACTION_VIEW,uri).addCategory(Intent.CATEGORY_BROWSABLE))}catch(_:Exception){Toast.makeText(this,"No browser is available to open this link.",Toast.LENGTH_LONG).show()}
                     },androidDelivery=true,status=deliveryStatus,warning=listOfNotNull(deliveryWarning,deliveryIssue,deliveryStorageIssue).distinct().joinToString("\n"),use24Hour=android.text.format.DateFormat.is24HourFormat(this),addCalendarWidget={if(!CalendarWidget.pin(this))Toast.makeText(this,"Add Field Notes · Calendar from your launcher’s widget picker.",Toast.LENGTH_LONG).show()},
@@ -215,7 +236,11 @@ class MainActivity : ComponentActivity() {
                     copyText = { text -> getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Field Notes", text).apply { description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) } }) },
                     attachImage = { id -> pendingImage = id; pendingEpoch = app.model.state.value.cache.snapshot?.epoch; pendingGeneration = app.model.state.value.cache.snapshot?.generation; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     configureBackground = { preferences ->
-                        CatchUpWorker.schedule(this, preferences)
+                        app.scope.launch(Dispatchers.IO) {
+                            try{CatchUpWorker.schedule(this@MainActivity, preferences)}
+                            catch(e:kotlinx.coroutines.CancellationException){throw e}
+                            catch(_:Exception){app.deliveryError.value="Background scheduling could not be updated. Review delivery settings; cached work is kept."}
+                        }
                         if(preferences.liveUpdates)PrivateUpdatesService.start(this)else PrivateUpdatesService.stop(this)
                         app.scope.launch { LocalAlarms.reconcile(this@MainActivity,true) }
                         if ((preferences.backgroundSync || preferences.reminders) && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)

@@ -3,13 +3,13 @@
 These screenshots contain only a synthetic household. Browser captures use the
 real Rust server/database. Android captures render actual Compose/RemoteViews
 with a test-only connection and encrypted local cache. Image 11 compares the
-RemoteViews renderer in a test activity; image 22 is a widget actually bound to
-the AOSP home-screen launcher through Android's normal pin confirmation.
+RemoteViews renderer in a test activity; images 32 and 42 show widgets actually
+bound to the AOSP launcher through Android's normal pin confirmation.
 Screenshots do not prove live enrollment, home firewall isolation, camera optics,
 GrapheneOS VPN coexistence or background timing. The shipped app keeps screen
 capture protection enabled. Test invitations expire and their fixture is deleted.
-The focused ten-AM examples and browser use America/New_York; the overview
-emulator gallery uses UTC. Each view displays its device's local clock.
+The focused ten-AM examples and browser use America/New_York. Each Android
+view displays its emulator's local clock.
 
 The enrollment captures show the PC phone-key form, compact key-bound
 PNG invitation, Android public-key screen and real open keyboard. Rendered QR
@@ -17,13 +17,35 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Current 0.6 planner and content files
+
+These captures show the current website, using a synthetic household and the
+real Rust API. Calendar alignment is measured with 12 px and 28 px scrollbars
+while scrolling. Sunday is the first day in the week and month.
+
+![Sunday-first aligned week](screenshots/web/50-sunday-week-aligned.png)
+![Continuous Sunday-first month grid](screenshots/web/51-sunday-month.png)
+![Encrypted export and recovered alternatives](screenshots/web/52-encrypted-export-import.png)
+![Grocery list filtered by store](screenshots/web/53-grocery-stores.png)
+![Later notes with optional follow-up](screenshots/web/54-later-reminders.png)
+![Alternating-week schedule editor](screenshots/web/55-repeat-schedule.png)
+
+These current Android captures include the actual software keyboard and its
+uncovered save action. The header uses the APK's calendar icon.
+
+| Sunday-first week | Continuous month | Keyboard-safe list editor |
+| --- | --- | --- |
+| <img src="screenshots/android/50-sunday-week.png" width="250" alt="Android week beginning on Sunday, with the APK icon in the header"> | <img src="screenshots/android/51-sunday-month.png" width="250" alt="Continuous Android month grid starting on Sunday"> | <img src="screenshots/android/53-keyboard-grocery.png" width="250" alt="Actual Android keyboard below the visible Save item action"> |
+
+![Native repeating-event controls](screenshots/android/52-repeat-event.png)
+
 ## Personal alerts, long alarms and the week at a glance
 
-These 0.5.0 captures show the actual Android notification shade and launcher
+These captures show the actual Android notification shade and launcher
 Week widget, plus the native and browser settings. The optional app credential
 lock is separate from notification, home-screen and lock-screen disclosure.
 Existing off choices stay off; Show schedule leads to visibility settings.
-The new native fixtures use UTC; the browser fixture uses America/New_York.
+The focused calendar fixtures use America/New_York.
 
 Choose people or Everyone for an item's reminders. The shared calendar can
 remain visible without ringing every person's phones. Longer alarms offer
@@ -38,9 +60,8 @@ manually. DND and GrapheneOS's forwarded-notification channel still apply.
 ![Browser alarm controls](screenshots/web/42-personal-alarm-controls.png)
 ![Browser recipient selection](screenshots/web/43-reminder-recipients.png)
 
-The broader 0.4.0 workspace tour below remains useful for lists, tasks, notes,
-enrollment and management. Those older settings images predate the new
-visibility switches. The 0.5.0 examples above show the current controls.
+The broader workspace tour below covers lists, tasks, notes, enrollment and
+management. App locking and notification/widget visibility have separate controls.
 
 ## Calendar first, local time, and an actual month widget
 
@@ -217,21 +238,23 @@ attempt. Reset and new-key generation are separate explicit choices.
 
 | Widget privacy settings | Actual RemoteViews renderer | Light theme |
 | --- | --- | --- |
-| <img src="screenshots/android/09-settings-widgets.png" width="250" alt="Settings including widget title opt-in"> | <img src="screenshots/android/11-widget.png" width="250" alt="Private default and title-enabled widget rendering"> | <img src="screenshots/android/10-focus-paper.png" width="250" alt="Android light theme"> |
+| <img src="screenshots/android/09-settings-widgets.png" width="250" alt="Independent widget visibility settings"> | <img src="screenshots/android/11-widget.png" width="250" alt="Title-hidden and title-enabled widget rendering"> | <img src="screenshots/android/10-focus-paper.png" width="250" alt="Android light theme"> |
 
-| Actual home-screen Upcoming widget | Android notification shade |
+| Actual home-screen Calendar widget | Android notification shade |
 | --- | --- |
-| <img src="screenshots/android/22-home-upcoming-widget.png" width="280" alt="Upcoming widget hosted on the actual AOSP home screen"> | <img src="screenshots/android/23-android-notifications.png" width="280" alt="Actual Android reminder and foreground connection status"> |
+| <img src="screenshots/android/32-home-calendar.png" width="280" alt="Calendar widget hosted on the actual AOSP home screen"> | <img src="screenshots/android/43-detailed-notifications.png" width="280" alt="Actual Android reminder showing its title, time, recipient and notes"> |
 
 | Background delivery settings | Full-profile guidance |
 | --- | --- |
 | <img src="screenshots/android/24-background-settings.png" width="280" alt="Background delivery, permissions and test controls"> | <img src="screenshots/android/25-profile-help.png" width="280" alt="GrapheneOS forwarding and full user profile limitations"> |
 
 Upcoming shows dates and internal calendar events; Focus shows ranked work.
-Widgets hide titles by default. Opting in shares title copies with the launcher,
-which can retain them. Notes/images/credentials are never included. Tap opens
-the credential-locked app; the Upcoming footer requests a refresh. The screenshots
-opt into synthetic titles. The documentation fixture disables live mode so its
+New installations show widget titles while the phone is unlocked; existing
+explicit hidden choices stay hidden. The launcher receives title copies and can
+retain them. Notes/images/credentials are never included. App credential locking
+is optional and separate from widget and lock-screen disclosure. Tap opens the
+chosen day or item; widget footers expose connection and refresh status.
+The screenshots use synthetic titles. The documentation fixture disables live mode so its
 fake server identity never starts a real network connection; new installations
 default it on after enrollment and notification permission.
 
@@ -251,7 +274,7 @@ checksum and certificate downloads have outlined controls.
 ## App updates
 
 The paired server selects the APK. These actual update settings components use
-a synthetic 0.3.6 → 0.4.0 offer to show download and install states. Actual
+a synthetic 0.5.0 → 0.6.0 offer to show download and install states. Actual
 publication and downloaded-artifact verification are recorded in
 [VALIDATION.md](VALIDATION.md).
 
@@ -275,9 +298,10 @@ the Android app-contained tunnel; the website remains a home-LAN interface.
 source scripts/dev-env.sh
 cargo build --locked
 python3 -B scripts/android_artifact.py \
-  --apk dist/android/field-notes-0.4.0-android-arm64-release.apk \
+  --apk dist/android/field-notes-0.6.0-android-arm64-release.apk \
   --output dist/android-download # Fresh destination; do not overwrite an existing bundle.
-FIELD_NOTES_DOWNLOADS="$PWD/dist/android-download" node scripts/capture-web.mjs
+export FIELD_NOTES_DOWNLOADS="$PWD/dist/android-download"
+node scripts/capture-web.mjs
 bash scripts/build/android-emulator.sh
 # Only on the disposable field-notes-test AVD:
 node scripts/capture-android.mjs

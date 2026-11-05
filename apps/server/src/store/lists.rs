@@ -3,6 +3,7 @@ use super::*;
 pub(super) const LIST_FIELDS: &[&str] = &[
     "notes",
     "quantity",
+    "store",
     "link_url",
     "price",
     "assignee",
@@ -13,6 +14,25 @@ pub(super) const LIST_FIELDS: &[&str] = &[
     "images",
 ];
 impl Store {
+    pub(super) fn category(data: &Value, record: &mut Record) -> Result<()> {
+        if data.get("category").is_some_and(|v| !v.is_string()) {
+            return fail(400, "Choose a supported household category");
+        }
+        let category = data
+            .get("category")
+            .or_else(|| record.data.get("category"))
+            .and_then(Value::as_str)
+            .unwrap_or("general");
+        if ![
+            "general", "action", "food", "honey_do", "home", "errands", "work", "personal",
+        ]
+        .contains(&category)
+        {
+            return fail(400, "Choose a supported household category");
+        }
+        record.data["category"] = json!(category);
+        Ok(())
+    }
     pub(super) fn list_schema(data: &Value, record: &mut Record) -> Result<()> {
         if record.kind != "list" {
             return Ok(());
@@ -27,7 +47,7 @@ impl Store {
             return fail(400, "Choose a list type");
         }
         let defaults = match template.as_str() {
-            "groceries" => json!(["quantity", "notes"]),
+            "groceries" => json!(["quantity", "store", "notes"]),
             "shopping" => json!(["quantity", "link_url", "images"]),
             _ => json!(["notes"]),
         };
@@ -59,11 +79,23 @@ impl Store {
         record.data["template"] = json!(template);
         record.data["fields"] = schema.clone();
         record.data["perpetual"] = perpetual.clone();
+        for field in ["notify_additions", "item_reminders"] {
+            let value = data
+                .get(field)
+                .or_else(|| record.data.get(field))
+                .cloned()
+                .unwrap_or(json!(true));
+            if !value.is_boolean() {
+                return fail(400, "Choose list notification settings");
+            }
+            record.data[field] = value;
+        }
         Ok(())
     }
     pub(super) fn list_item_fields(data: &Value, record: &mut Record) -> Result<()> {
         for (field, max) in [
             ("quantity", 80),
+            ("store", 120),
             ("link_url", 2048),
             ("price", 16),
             ("currency", 3),

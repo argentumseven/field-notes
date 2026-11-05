@@ -8,13 +8,47 @@
     vibrate: true,
   };
   const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const tones={chime:"Chime",bell:"Bell",pulse:"Pulse",beacon:"Beacon",marimba:"Marimba",orbit:"Orbit",sunrise:"Sunrise",siren:"Siren"};
-  let activePreview=null;
-  const rulesFor=(record)=>record?.data && "reminder_rules" in record.data ? record.data.reminder_rules : record?.data?.reminders;
-  const optionsFor=(record,kind)=>structuredClone(record?.data?.reminder_options || {audience:kind==="task"?{mode:"assigned",people:[]}:record?{mode:"everyone",people:[]}:{mode:"people",people:[state.actor.user_id]},playback:{}});
+  const tones = {
+    chime: "Chime",
+    bell: "Bell",
+    pulse: "Pulse",
+    beacon: "Beacon",
+    marimba: "Marimba",
+    orbit: "Orbit",
+    sunrise: "Sunrise",
+    siren: "Siren",
+  };
+  let activePreview = null;
+  const rulesFor = (record) =>
+    record?.data && "reminder_rules" in record.data
+      ? record.data.reminder_rules
+      : record?.data?.reminders;
+  const optionsFor = (record, kind) =>
+    structuredClone(
+      record?.data?.reminder_options || {
+        audience: { mode: "everyone", people: [] },
+        playback: {},
+      },
+    );
   function validateOptions(value) {
-    if(!["everyone","people","assigned"].includes(value.audience?.mode)||!Array.isArray(value.audience.people)||value.audience.people.length>64||new Set(value.audience.people).size!==value.audience.people.length||(value.audience.mode==="people"&&!value.audience.people.length))throw Error("Choose who receives reminders.");
-    for(const p of Object.values(value.playback||{}))if((p.tone&&!tones[p.tone])||![0,5,10,15,30,60].includes(p.duration_seconds)||!Number.isInteger(p.alarm_volume)||p.alarm_volume<25||p.alarm_volume>100||(p.unmute&&!p.alarm))throw Error("Choose a supported sound, duration and alarm volume.");
+    if (
+      !["everyone", "people", "assigned"].includes(value.audience?.mode) ||
+      !Array.isArray(value.audience.people) ||
+      value.audience.people.length > 64 ||
+      new Set(value.audience.people).size !== value.audience.people.length ||
+      (value.audience.mode === "people" && !value.audience.people.length)
+    )
+      throw Error("Choose who receives reminders.");
+    for (const p of Object.values(value.playback || {}))
+      if (
+        (p.tone && !tones[p.tone]) ||
+        ![0, 5, 10, 15, 30, 60].includes(p.duration_seconds) ||
+        !Number.isInteger(p.alarm_volume) ||
+        p.alarm_volume < 25 ||
+        p.alarm_volume > 100 ||
+        (p.unmute && !p.alarm)
+      )
+        throw Error("Choose a supported sound, duration and alarm volume.");
   }
   const minute = (s) => {
     if (!/^\d{2}:\d{2}$/.test(s || ""))
@@ -77,7 +111,7 @@
       }
     }
   }
-  function controls(parent, initial, getDay, changed, extension=null) {
+  function controls(parent, initial, getDay, changed, extension = null) {
     const rules = structuredClone(initial || { alerts: [], repeat: null }),
       section = el("details", "reminder-editor"),
       summary = el("summary"),
@@ -87,16 +121,35 @@
     const notify = () => {
       summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat ? " + recurring" : ""}`;
       changed(structuredClone(rules));
-      if(extension){const ids=new Set([...rules.alerts.map(r=>r.id),...(rules.repeat?[rules.repeat.id]:[])]);for(const id of Object.keys(extension.value.playback))if(!ids.has(id))delete extension.value.playback[id];extension.changed(structuredClone(extension.value));}
+      if (extension) {
+        const ids = new Set([
+          ...rules.alerts.map((r) => r.id),
+          ...(rules.repeat ? [rules.repeat.id] : []),
+        ]);
+        for (const id of Object.keys(extension.value.playback))
+          if (!ids.has(id)) delete extension.value.playback[id];
+        extension.changed(structuredClone(extension.value));
+      }
     };
     const field = (p, label, value, type = "text") =>
       addField(p, input(label, value, type));
     function profileFields(container, r, prefix) {
       const fields = el("div", "sound-options");
-      const extra=extension?.value.playback[r.id] || {tone:r.sound,duration_seconds:0,alarm:false,unmute:false,alarm_volume:100};
-      let alarmSection=null,alarmControl=null,unmuteControl=null;
-      const profileSummary=container.querySelector(":scope > summary");
-      const updateSummary=()=>{if(profileSummary)profileSummary.textContent=`${extra.alarm?"Alarm":r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm?(extra.duration_seconds || 30)+" seconds":"notification"} · ${r.volume}%`;};
+      const extra = extension?.value.playback[r.id] || {
+        tone: r.sound,
+        duration_seconds: 0,
+        alarm: false,
+        unmute: false,
+        alarm_volume: 100,
+      };
+      let alarmSection = null,
+        alarmControl = null,
+        unmuteControl = null;
+      const profileSummary = container.querySelector(":scope > summary");
+      const updateSummary = () => {
+        if (profileSummary)
+          profileSummary.textContent = `${extra.alarm ? "Alarm" : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.duration_seconds || 30) + " seconds" : "notification"} · ${r.volume}%`;
+      };
       const importance = addField(
         fields,
         select(
@@ -113,7 +166,9 @@
         fields,
         select(
           prefix + " sound",
-          Object.entries(tones).filter(([key])=>extension||["chime","bell","pulse"].includes(key)),
+          Object.entries(tones).filter(
+            ([key]) => extension || ["chime", "bell", "pulse"].includes(key),
+          ),
           extra.tone || r.sound,
         ),
       );
@@ -136,15 +191,28 @@
       fields.append(vibLabel);
       const update = () => {
         r.importance = importance.value;
-        r.sound = ["chime","bell","pulse"].includes(sound.value)?sound.value:"chime";
+        r.sound = ["chime", "bell", "pulse"].includes(sound.value)
+          ? sound.value
+          : "chime";
         r.volume = Number(volume.value);
         r.vibrate = vib.checked;
-        if(extension){extra.tone=sound.value;if(r.importance==="quiet"){extra.alarm=false;extra.unmute=false;if(alarmControl)alarmControl.checked=false;if(unmuteControl)unmuteControl.checked=false;}extension.value.playback[r.id]=extra;if(alarmSection)alarmSection.hidden=r.importance==="quiet";}
+        if (extension) {
+          extra.tone = sound.value;
+          if (r.importance === "quiet") {
+            extra.alarm = false;
+            extra.unmute = false;
+            if (alarmControl) alarmControl.checked = false;
+            if (unmuteControl) unmuteControl.checked = false;
+          }
+          extension.value.playback[r.id] = extra;
+          if (alarmSection) alarmSection.hidden = r.importance === "quiet";
+        }
         sound.disabled =
           volume.disabled =
           vib.disabled =
             r.importance === "quiet";
-        updateSummary();notify();
+        updateSummary();
+        notify();
       };
       for (const n of [importance, sound, volume, vib]) n.onchange = update;
       sound.disabled =
@@ -155,9 +223,9 @@
         button("Preview sound", () => {
           if (r.importance === "quiet") return;
           activePreview?.pause();
-          const audio = activePreview = new Audio(
+          const audio = (activePreview = new Audio(
             `/sounds/v1/reminder_${extra.tone || r.sound}_${r.volume}.wav`,
-          );
+          ));
           audio
             .play()
             .catch(() =>
@@ -167,18 +235,68 @@
             );
         }),
       );
-      fields.append(button("Stop preview",()=>{activePreview?.pause();activePreview=null;}));
-      if(extension) {
-        alarmSection=el("div","alarm-options");alarmSection.hidden=r.importance==="quiet";
-        const choice=(label,checked)=>{const l=el("label","dialog-choice"),n=el("input");n.type="checkbox";n.checked=checked;l.append(n,document.createTextNode(label));alarmSection.append(l);return n;};
-        const alarm=choice(prefix+" · play as an alarm",extra.alarm),unmute=choice("Temporarily raise alarm volume",extra.unmute);
-        alarmControl=alarm;unmuteControl=unmute;
-        const duration=addField(alarmSection,select(prefix+" alarm duration",[5,10,15,30,60].map(n=>[String(n),n+" seconds"]),String(extra.duration_seconds||30)));
-        const level=addField(alarmSection,select(prefix+" alarm volume",[25,50,75,100].map(n=>[String(n),n+"% alarm volume"]),String(extra.alarm_volume)));
-        const updateAlarm=()=>{extra.alarm=alarm.checked;extra.unmute=alarm.checked&&unmute.checked;extra.duration_seconds=alarm.checked?Number(duration.value):0;extra.alarm_volume=Number(level.value);extension.value.playback[r.id]=extra;unmute.disabled=duration.disabled=level.disabled=!alarm.checked;updateSummary();notify();};
-        alarm.onchange=()=>{if(alarm.checked)unmute.checked=true;updateAlarm();};unmute.onchange=duration.onchange=level.onchange=updateAlarm;
-        unmute.disabled=duration.disabled=level.disabled=!alarm.checked;
-        alarmSection.append(el("p","muted","Alarm mode uses the phone’s alarm audio stream. Each phone must enable temporary volume control; its previous level is restored afterward. Android’s DND and profile settings apply."));fields.append(alarmSection);
+      fields.append(
+        button("Stop preview", () => {
+          activePreview?.pause();
+          activePreview = null;
+        }),
+      );
+      if (extension) {
+        alarmSection = el("div", "alarm-options");
+        alarmSection.hidden = r.importance === "quiet";
+        const choice = (label, checked) => {
+          const l = el("label", "dialog-choice"),
+            n = el("input");
+          n.type = "checkbox";
+          n.checked = checked;
+          l.append(n, document.createTextNode(label));
+          alarmSection.append(l);
+          return n;
+        };
+        const alarm = choice(prefix + " · play as an alarm", extra.alarm),
+          unmute = choice("Temporarily raise alarm volume", extra.unmute);
+        alarmControl = alarm;
+        unmuteControl = unmute;
+        const duration = addField(
+          alarmSection,
+          select(
+            prefix + " alarm duration",
+            [5, 10, 15, 30, 60].map((n) => [String(n), n + " seconds"]),
+            String(extra.duration_seconds || 30),
+          ),
+        );
+        const level = addField(
+          alarmSection,
+          select(
+            prefix + " alarm volume",
+            [25, 50, 75, 100].map((n) => [String(n), n + "% alarm volume"]),
+            String(extra.alarm_volume),
+          ),
+        );
+        const updateAlarm = () => {
+          extra.alarm = alarm.checked;
+          extra.unmute = alarm.checked && unmute.checked;
+          extra.duration_seconds = alarm.checked ? Number(duration.value) : 0;
+          extra.alarm_volume = Number(level.value);
+          extension.value.playback[r.id] = extra;
+          unmute.disabled = duration.disabled = level.disabled = !alarm.checked;
+          updateSummary();
+          notify();
+        };
+        alarm.onchange = () => {
+          if (alarm.checked) unmute.checked = true;
+          updateAlarm();
+        };
+        unmute.onchange = duration.onchange = level.onchange = updateAlarm;
+        unmute.disabled = duration.disabled = level.disabled = !alarm.checked;
+        alarmSection.append(
+          el(
+            "p",
+            "muted",
+            "Alarm mode uses the phone’s alarm audio stream. Each phone must enable temporary volume control; its previous level is restored afterward. Android’s DND and profile settings apply.",
+          ),
+        );
+        fields.append(alarmSection);
       }
       container.append(
         fields,
@@ -192,14 +310,75 @@
     }
     function render() {
       body.replaceChildren();
-      if(extension) {
-        const recipients=el("section","reminder-recipients"),audience=extension.value.audience;
-        const options=[["self","Only me"],["everyone","Everyone"],["assigned",extension.kind==="event"?"Event creator":"Assigned person"],...state.people.map(p=>["person:"+p.id,p.name]),["people","Choose several people"]];
-        const selected=audience.mode==="people"?(audience.people.length===1?(audience.people[0]===state.actor.user_id?"self":"person:"+audience.people[0]):"people"):audience.mode;
-        const who=addField(recipients,select("Who receives reminders",options,selected));
-        who.onchange=()=>{const choice=who.value;extension.value.audience=choice==="everyone"?{mode:"everyone",people:[]}:choice==="assigned"?{mode:"assigned",people:[]}:{mode:"people",people:choice==="self"?[state.actor.user_id]:choice.startsWith("person:")?[choice.slice(7)]:audience.mode==="people"?audience.people:[state.actor.user_id]};notify();render();};
-        if(selected==="people")for(const person of state.people){const l=el("label","dialog-choice"),n=el("input");n.type="checkbox";n.checked=audience.people.includes(person.id);l.append(n,document.createTextNode(person.name));n.onchange=()=>{extension.value.audience.people=n.checked?[...audience.people,person.id]:audience.people.filter(id=>id!==person.id);notify();};recipients.append(l);}
-        recipients.append(el("p","muted","This controls alerts. The household calendar remains shared."));body.append(recipients);
+      if (extension) {
+        const recipients = el("section", "reminder-recipients"),
+          audience = extension.value.audience;
+        const options = [
+          ["self", "Only me"],
+          ["everyone", "Everyone"],
+          [
+            "assigned",
+            extension.kind === "event" ? "Event creator" : "Assigned person",
+          ],
+          ...state.people.map((p) => ["person:" + p.id, p.name]),
+          ["people", "Choose several people"],
+        ];
+        const selected =
+          audience.mode === "people"
+            ? audience.people.length === 1
+              ? audience.people[0] === state.actor.user_id
+                ? "self"
+                : "person:" + audience.people[0]
+              : "people"
+            : audience.mode;
+        const who = addField(
+          recipients,
+          select("Who receives reminders", options, selected),
+        );
+        who.onchange = () => {
+          const choice = who.value;
+          extension.value.audience =
+            choice === "everyone"
+              ? { mode: "everyone", people: [] }
+              : choice === "assigned"
+                ? { mode: "assigned", people: [] }
+                : {
+                    mode: "people",
+                    people:
+                      choice === "self"
+                        ? [state.actor.user_id]
+                        : choice.startsWith("person:")
+                          ? [choice.slice(7)]
+                          : audience.mode === "people"
+                            ? audience.people
+                            : [state.actor.user_id],
+                  };
+          notify();
+          render();
+        };
+        if (selected === "people")
+          for (const person of state.people) {
+            const l = el("label", "dialog-choice"),
+              n = el("input");
+            n.type = "checkbox";
+            n.checked = audience.people.includes(person.id);
+            l.append(n, document.createTextNode(person.name));
+            n.onchange = () => {
+              extension.value.audience.people = n.checked
+                ? [...audience.people, person.id]
+                : audience.people.filter((id) => id !== person.id);
+              notify();
+            };
+            recipients.append(l);
+          }
+        recipients.append(
+          el(
+            "p",
+            "muted",
+            "This controls alerts. The household calendar remains shared.",
+          ),
+        );
+        body.append(recipients);
       }
       for (const [i, r] of rules.alerts.entries()) {
         const row = el("section", "reminder-row"),
@@ -412,9 +591,14 @@
   }
   async function edit(record) {
     let settings = structuredClone(
-      rulesFor(record) || { alerts: record.data.due?[{id:record.id,minutes_before:0,...profile}]:[], repeat: null },
+      rulesFor(record) || {
+        alerts: record.data.due
+          ? [{ id: record.id, minutes_before: 0, ...profile }]
+          : [],
+        repeat: null,
+      },
     );
-    let options=optionsFor(record,record.kind);
+    let options = optionsFor(record, record.kind);
     await formDialog(
       "Reminders",
       record.data.title,
@@ -425,7 +609,7 @@
         await mutate(
           record.kind + ".update",
           record.id,
-          { reminders: settings,reminder_options:options },
+          { reminders: settings, reminder_options: options },
           record.revision,
         );
       },
@@ -441,7 +625,13 @@
           (v) => {
             settings = v;
           },
-          {value:options,kind:record.kind,changed:v=>{options=v;}},
+          {
+            value: options,
+            kind: record.kind,
+            changed: (v) => {
+              options = v;
+            },
+          },
         ),
     );
   }
@@ -512,5 +702,14 @@
     } catch {}
     return null;
   }
-  root.FieldReminders = { validate, validateOptions,controls, edit, profile, windowLabel,rulesFor,optionsFor };
+  root.FieldReminders = {
+    validate,
+    validateOptions,
+    controls,
+    edit,
+    profile,
+    windowLabel,
+    rulesFor,
+    optionsFor,
+  };
 })(globalThis);

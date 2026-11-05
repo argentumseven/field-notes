@@ -26,6 +26,15 @@ class AndroidArtifact(unittest.TestCase):
    (folder/'unexpected').unlink();(folder/'field-notes.apk').unlink();(folder/'field-notes.apk').symlink_to('/etc/passwd')
    with self.assertRaises(ValueError):verify(folder)
 
+ def test_legacy_bundle_is_separate_strict_and_never_accepted_for_public_publication(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   folder=pathlib.Path(tmp);main=self.bundle(folder);legacy=folder/'legacy';legacy.mkdir();info=self.bundle(legacy);info['signer_sha256']='b'*64
+   (legacy/'android.json').write_text(json.dumps(info));(legacy/'field-notes.apk.signer.txt').write_text('Signer #1 certificate SHA-256 digest: '+'b'*64+'\n')
+   self.assertEqual(verify(folder),main)
+   with self.assertRaises(ValueError):verify(folder,allow_legacy=False)
+   (legacy/'unexpected').write_text('unrelated')
+   with self.assertRaises(ValueError):verify(folder)
+
 class PublicAndroidArtifact(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.root=pathlib.Path(self.tmp.name);self.source=self.root/'source';self.source.mkdir()

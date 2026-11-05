@@ -55,7 +55,7 @@ class GalleryDeviceTest {
             instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("isn't responding").isNullOrEmpty()
         }
     }
-    private fun focus() { compose.onNodeWithContentDescription("Browse workspace").performClick();compose.onNodeWithTag("drawer-focus").performClick() }
+    private fun focus() { compose.onNodeWithContentDescription("Browse workspace").performClick();compose.onNodeWithTag("drawer-focus").performScrollTo().performClick() }
     private fun text(value: String): SemanticsNodeInteraction {
         dismissEmulatorSystemDialog()
         return compose.onNodeWithText(value, useUnmergedTree = true)
@@ -100,7 +100,7 @@ class GalleryDeviceTest {
         check(fixtureFile.length() in 1..8*1024*1024)
         val fixture = WireJson.parseToJsonElement(fixtureFile.readText()).jsonObject
         val seed = WireJson.decodeFromJsonElement<Snapshot>(fixture.getValue("snapshot"))
-        val transport = GalleryTransport(seed, original.state.value.cache.keys!!, fixture.getValue("stale_error").jsonObject,WireJson.decodeFromJsonElement<List<HouseholdPerson>>(fixture.getValue("people")))
+        val transport = GalleryTransport(seed, original.state.value.cache.keys!!, fixture.getValue("stale_error").jsonObject,WireJson.decodeFromJsonElement<List<HouseholdPerson>>(fixture.getValue("people")),fixture.getValue("apk_update").jsonObject)
         val model = Workspace(transport, app.vault, { UUID.randomUUID().toString() }, app.scope)
         runBlocking { model.initialize();model.preferences(model.state.value.cache.preferences.copy(backgroundSync=false,reminders=false,liveUpdates=false)) }
         model.state.value.cache.snapshot?.let { transport.snapshot = it }
@@ -150,8 +150,8 @@ class GalleryDeviceTest {
             }
             fun widgetPreview() {
                 scenario.onActivity { activity -> activity.setContent { androidx.compose.material3.MaterialTheme { androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xff171b1b)).padding(start=24.dp,end=24.dp,top=56.dp,bottom=24.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
-                    androidx.compose.material3.Text("Home widget · private default", color=androidx.compose.ui.graphics.Color.White)
-                    androidx.compose.ui.viewinterop.AndroidView(factory = { context -> PlannerWidget.views(context, model.state.value.cache, true).apply(context, android.widget.FrameLayout(context)) }, modifier=androidx.compose.ui.Modifier.fillMaxWidth().height(250.dp))
+                    androidx.compose.material3.Text("Home widget · titles hidden", color=androidx.compose.ui.graphics.Color.White)
+                    androidx.compose.ui.viewinterop.AndroidView(factory = { context -> PlannerWidget.views(context, model.state.value.cache.copy(preferences=Preferences(widgetTitles=false)), true).apply(context, android.widget.FrameLayout(context)) }, modifier=androidx.compose.ui.Modifier.fillMaxWidth().height(250.dp))
                     androidx.compose.material3.Text("Home widget · titles enabled", color=androidx.compose.ui.graphics.Color.White)
                     androidx.compose.ui.viewinterop.AndroidView(factory = { context -> PlannerWidget.views(context, model.state.value.cache.copy(preferences=Preferences(widgetTitles=true)), true).apply(context, android.widget.FrameLayout(context)) }, modifier=androidx.compose.ui.Modifier.fillMaxWidth().height(280.dp))
                 } } } }
@@ -162,8 +162,9 @@ class GalleryDeviceTest {
                 fun widgetSettings() {
                     compose.onNodeWithContentDescription("Workspace menu").performClick(); text("Settings & widgets").performClick(); awaitText("Settings")
                     text("Alerts and home screen").performScrollTo(); shot("24-background-settings")
+                    text("Detailed reminder notifications").performScrollTo(); shot("45-independent-visibility")
                     text("Alerts in other GrapheneOS profiles").performScrollTo().performClick(); shot("25-profile-help"); compose.onNode(hasText("Close") and hasAnyAncestor(hasAnyDescendant(hasText("GrapheneOS profile alerts"))),useUnmergedTree=true).performClick()
-                    text("Add the Field Notes widget from your launcher's widget picker. It opens this locked app and refreshes from the encrypted local cache.").performScrollTo()
+                    text("Add a Field Notes widget from your launcher's picker. It refreshes from the encrypted local cache; an optional app lock does not hide its schedule.").performScrollTo()
                     shot("09-settings-widgets"); text("Close").assertIsDisplayed().performClick(); compose.waitUntil(30_000){compose.onAllNodesWithText("Settings",useUnmergedTree=true).fetchSemanticsNodes().isEmpty()}
                 }
                 fun updatePreview(){
@@ -172,7 +173,7 @@ class GalleryDeviceTest {
                             androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
                                 Column(androidx.compose.ui.Modifier.padding(28.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
                                     androidx.compose.material3.Text("Settings",style=androidx.compose.material3.MaterialTheme.typography.headlineMedium)
-                                    org.fieldnotes.ui.AppUpdatesCard(org.fieldnotes.ui.DeviceActions(update=AppUpdateUi(installed="0.3.6",offered="0.4.0",available=true,ready=ready,message=if(ready)"Verified update 0.4.0. Android will ask before installing; your keys and edits are preserved." else "Update 0.4.0 is available from your paired server. Pairing and queued edits stay in place.")))
+                                    org.fieldnotes.ui.AppUpdatesCard(org.fieldnotes.ui.DeviceActions(update=AppUpdateUi(installed="0.5.0",offered="0.6.0",available=true,ready=ready,message=if(ready)"Verified update 0.6.0. Android will ask before installing; your keys and edits are preserved." else "Update 0.6.0 is available from your paired server. Pairing and queued edits stay in place.")))
                                 }
                             }
                         } } }
@@ -181,7 +182,7 @@ class GalleryDeviceTest {
                     }
                 }
                 fun libraryWalkthrough() {
-                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-lists").performClick(); awaitText("Groceries"); shot("16-collections")
+                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-lists").performScrollTo().performClick(); awaitText("Groceries"); shot("16-collections")
                     // Names can equal preset labels. Select the clickable card;
                     // the price checkbox is distinct from the rolling switch.
                     compose.onNode(hasClickAction() and hasText("Groceries")).performClick()
@@ -192,11 +193,11 @@ class GalleryDeviceTest {
                     shot("34-list-fields"); text("Cancel").performClick(); shot("35-grocery-list")
                     compose.onNodeWithContentDescription("Add").performClick(); awaitText("New item"); shot("36-list-item"); text("Close").performClick()
                     compose.onNodeWithContentDescription("Browse workspace").performClick()
-                    if(compose.onAllNodesWithTag("drawer-assignments").fetchSemanticsNodes().isEmpty())compose.onNodeWithTag("group-task views").performClick()
-                    compose.onNodeWithTag("drawer-assignments").performClick(); awaitText("Find assigned work"); shot("18-assignments")
-                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performClick(); shot("19-my-tasks")
-                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performClick(); shot("20-unassigned")
-                    compose.onNodeWithContentDescription("Add").performClick(); awaitText("New task"); shot("21-new-task"); text("Cancel").performClick()
+                    if(compose.onAllNodesWithTag("drawer-assignments").fetchSemanticsNodes().isEmpty())compose.onNodeWithTag("group-task views").performScrollTo().performClick()
+                    compose.onNodeWithTag("drawer-assignments").performScrollTo().performClick(); awaitText("Find assigned work"); shot("18-assignments")
+                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-my-tasks").performScrollTo().performClick(); shot("19-my-tasks")
+                    compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("drawer-unassigned").performScrollTo().performClick(); shot("20-unassigned")
+                    compose.onNodeWithContentDescription("Add").performClick(); awaitText("Task title · dates optional"); shot("21-new-task"); text("Cancel").performClick()
                     focus(); updatePreview(); widgetPreview()
                 }
                 if(args.getString("galleryMode")=="library") {
@@ -207,6 +208,7 @@ class GalleryDeviceTest {
                 if (args.getString("galleryMode") == "widget-preview") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; widgetPreview(); return }
                 if (args.getString("galleryMode") == "details") { runBlocking { model.pair(config.toString());model.login("owner","household-test-password-only");model.sync() }; awaitText("Calendar"); focus(); compose.onNodeWithTag("nav-calendar").assertExists(); widgetSettings(); widgetPreview(); return }
                 if (args.getString("galleryMode") == "light") { focus(); runBlocking { model.sync() }; shot("10-focus-paper"); return }
+                if(args.getString("galleryMode")!="workspace") {
                 awaitText("Enroll this phone"); shot("01-enroll")
                 runBlocking { model.beginEnrollment(Invitation(1,"https://192.168.1.10:9443/api/enrollment",config.text("ca_pem"),"a".repeat(64),"owner","owner",kotlinx.datetime.Clock.System.now().epochSeconds+600), "My GrapheneOS phone"); model.advanceEnrollment() }
                 awaitText("1234 ABCD"); shot("02-phone-confirmation")
@@ -216,7 +218,9 @@ class GalleryDeviceTest {
                 check(model.state.value.cache.preferences.connectionPaused)
                 text("Retry saved pairing").performScrollTo().performClick();awaitText("Ask your administrator to enter this phone's code.")
                 check(model.state.value.cache.keys==pairingKeys && model.state.value.cache.enrollment!!.claimSecret==pairingNonce)
-                runBlocking { model.cancelEnrollment(); model.pair(config.toString()); model.login("owner", "household-test-password-only"); model.sync() }
+                runBlocking { model.cancelEnrollment() }
+                }
+                runBlocking { model.pair(config.toString()); model.login("owner", "household-test-password-only"); model.sync() }
                 val image = seed.records.single { it.kind == "image" }
                 val imageScope = MessageDigest.getInstance("SHA-256").digest("${config.text("server_key")}:${seed.actor.user_id}".toByteArray()).joinToString("") { "%02x".format(it) }
                 runBlocking { app.vault.saveImage(imageScope, image.id, Base64.decode(fixture.text("image"), Base64.NO_WRAP)) }
@@ -224,13 +228,15 @@ class GalleryDeviceTest {
                 compose.onNodeWithTag("nav-tasks").performClick(); shot("04-tasks")
                 compose.onNodeWithTag("nav-calendar").performClick(); shot("05-calendar")
                 compose.onNodeWithContentDescription("Add").performClick(); awaitText("New calendar event"); shot("06-new-event"); text("Close").performClick()
-                compose.onNodeWithTag("nav-tasks").performClick(); search().performTextInput("shelves"); text("Plan the kitchen shelves").performClick(); awaitText("Task details"); shot("07-task-planning")
+                compose.onNodeWithTag("nav-tasks").performClick(); search().performTextInput("shelves"); search().performImeAction()
+                scrollTo("Plan the kitchen shelves")
+                compose.onNode(hasClickAction() and hasText("Plan the kitchen shelves")).performClick(); awaitText("Task details"); shot("07-task-planning")
                 scrollTo("Post comment"); shot("08-comments-attachments")
                 compose.onNodeWithContentDescription("Back").performClick(); widgetSettings()
                 compose.onNodeWithContentDescription("Browse workspace").performClick(); shot("12-workspace-navigation")
-                compose.onNodeWithTag("drawer-notes").performClick(); awaitText("Household reference"); shot("13-notes")
+                compose.onNodeWithTag("drawer-notes").performScrollTo().performClick(); awaitText("Household reference"); shot("13-notes")
                 text("Household reference").performClick(); awaitText("Shared note"); shot("14-shared-note"); compose.onNodeWithContentDescription("Back").performClick()
-                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("group-task views").performClick();compose.onNodeWithTag("drawer-inbox").performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
+                compose.onNodeWithContentDescription("Browse workspace").performClick(); compose.onNodeWithTag("group-task views").performScrollTo().performClick();compose.onNodeWithTag("drawer-inbox").performScrollTo().performClick(); awaitText("Check parcel delivery"); shot("15-inbox")
                 libraryWalkthrough()
             } finally {
                 scenario.onActivity {
@@ -245,7 +251,7 @@ class GalleryDeviceTest {
 
 /** Only in the instrumentation APK. Stable rendering data is intentionally
  * separate from the real JNI/WireGuard integration tests. */
-private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: JsonObject, private val stale: JsonObject,private val people:List<HouseholdPerson>) : Transport {
+private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: JsonObject, private val stale: JsonObject,private val people:List<HouseholdPerson>,private val apkUpdate:JsonObject) : Transport {
     private var connected = true
     override suspend fun keys() = deviceKeys
     override suspend fun configure(configuration: JsonObject) { connected = true }
@@ -259,9 +265,10 @@ private class GalleryTransport(var snapshot: Snapshot, private val deviceKeys: J
         check(connected) { "The private connection is unavailable. Your changes stay on this phone." }
         return when (path) {
             "/api/login" -> Reply(200, obj("token" to "documentation-only".j(), "actor" to WireJson.encodeToJsonElement(snapshot.actor)).toString())
-            "/api/head" -> Reply(200,obj("epoch" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"sequence" to snapshot.sequence.j()).toString())
+            "/api/head" -> Reply(200,obj("epoch" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"sequence" to snapshot.sequence.j(),"compatibility" to obj("server_version" to "0.6.0".j(),"protocol_min" to 1.j(),"protocol_max" to 1.j(),"minimum_client_code" to 10.j(),"recommended_client_code" to 12.j(),"features" to JsonArray(listOf(REMINDER_OPTIONS_FEATURE.j(),PLANNER_FEATURE.j())))).toString())
             "/api/people" -> Reply(200,obj("people" to WireJson.encodeToJsonElement(people)).toString())
             "/api/snapshot" -> Reply(200, WireJson.encodeToJsonElement(snapshot).toString())
+            "/api/device/update" -> Reply(200,apkUpdate.toString())
             "/api/commands" -> {
                 val command = WireJson.decodeFromJsonElement<Command>(checkNotNull(body))
                 if (command.expected_revision == 0L) Reply(409, stale.toString())

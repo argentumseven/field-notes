@@ -1,5 +1,8 @@
 # Calendar and scheduling
 
+Weeks and month headers start on Sunday on the website, app and launcher widgets.
+The web timeline and its sticky headings share one native scrollbar gutter.
+
 Calendar is the home view on Android and the LAN website. Android opens a day
 timeline; a desktop browser opens the week. Switch to Month for a larger date
 grid. Select a day or an hour slot; **New event** uses that selection. Today
@@ -64,3 +67,18 @@ alarms under Doze; this does not promise instant updates from a suspended or
 ended user profile. No Google Calendar permission, Play services, FCM or public
 calendar account is used. Normal uninstall removes the provider, its alarms and
 private per-widget preferences through Android's package cleanup.
+
+## Repeating events
+
+Use **Repeat** in the event form for every day, every other day, weekdays, selected
+weekdays, alternating weeks, monthly or individual dates. Custom intervals, an
+optional last day and skipped dates handle irregular schedules. Times follow
+the stored timezone across daylight-saving changes; missing month dates and
+nonexistent clock-change times are skipped. Start-only repeats need no end.
+A repeating event may span at most 31 days. Editing applies to the series; use
+skipped dates for exceptions. Phones need 0.6 for recurrence expansion and alerts;
+older compatible clients recommend updating and cannot overwrite series schedules
+through an editor that does not understand them.
+
+For an idea that only needs to return later, use **Later & reminders** instead
+of reserving calendar time. See [Household planning](PLANNER-0.6.md).

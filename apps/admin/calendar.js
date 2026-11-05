@@ -17,6 +17,9 @@ function calendarItems(day) {
     }))
     .concat(
       records("event")
+        .flatMap((e) =>
+          FieldRecurrence.instances(e, day, FieldPlanning.shiftDay(day, 1)),
+        )
         .filter((e) =>
           e.data.all_day
             ? day >= e.data.start_date && day < e.data.end_date
@@ -34,6 +37,13 @@ function calendarItems(day) {
               }),
         })),
     );
+  for (const note of records("note"))
+    if (
+      note.data.on_radar &&
+      note.data.remind_at >= start &&
+      note.data.remind_at < end
+    )
+      result.push({ record: note, label: "Follow up" });
   for (const record of [...records("task"), ...records("event")]) {
     const label = FieldReminders.windowLabel(record, day);
     if (!label) continue;
@@ -64,10 +74,10 @@ function renderCalendar(root) {
     (innerWidth < 760 ? "day" : "week");
   state.calendarView = view;
   const chosen = new Date(state.day + "T12:00:00"),
-    monday = new Date(chosen);
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    weekStart = new Date(chosen);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
   const days = Array.from({ length: view === "week" ? 7 : 1 }, (_, i) => {
-    const day = new Date(view === "week" ? monday : chosen);
+    const day = new Date(view === "week" ? weekStart : chosen);
     day.setDate(day.getDate() + i);
     return FieldPlanning.localDay(day);
   });
@@ -95,8 +105,8 @@ function renderCalendar(root) {
             day: "numeric",
             year: "numeric",
           }).formatRange(
-            monday,
-            new Date(new Date(monday).setDate(monday.getDate() + 6)),
+            weekStart,
+            new Date(new Date(weekStart).setDate(weekStart.getDate() + 6)),
           )
         : chosen.toLocaleDateString([], {
             weekday: "long",
@@ -177,7 +187,6 @@ function renderCalendar(root) {
     );
     headers.append(head);
   }
-  frame.append(headers);
   const floating = el("div", "calendar-floating-row");
   floating.style.gridTemplateColumns = headers.style.gridTemplateColumns;
   floating.append(el("span", "calendar-floating-label", "All day / tasks"));
@@ -205,7 +214,6 @@ function renderCalendar(root) {
       );
     floating.append(cell);
   }
-  frame.append(floating);
   const scroll = el("div", "calendar-scroller"),
     grid = el("div", "calendar-time-grid");
   grid.style.gridTemplateColumns = headers.style.gridTemplateColumns;
@@ -251,7 +259,7 @@ function renderCalendar(root) {
         () => {
           state.day = day;
           state.month = new Date(day + "T12:00");
-          eventEditor(undefined, FieldPlanning.localTime(at));
+          return eventEditor(undefined, FieldPlanning.localTime(at));
         },
         "calendar-hour-slot",
       );
@@ -353,7 +361,7 @@ function renderCalendar(root) {
     }
     grid.append(column);
   }
-  scroll.append(grid);
+  scroll.append(headers, floating, grid);
   frame.append(scroll);
   root.append(frame);
   const key = view + ":" + days[0];
@@ -374,13 +382,19 @@ function openCalendarRecord(record) {
   if (record.kind === "task") {
     state.selected = record.id;
     renderDetail();
-  } else eventEditor(record);
+  } else if (record.kind === "note") {
+    state.selected = record.id;
+    renderDetail();
+  } else
+    return eventEditor(
+      records("event").find((e) => e.id === record.id) || record,
+    );
 }
 function renderCalendarMonth(root) {
   const grid = el("div", "calendar-grid");
-  for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+  for (const d of ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])
     grid.append(el("div", "calendar-weekday", d));
-  const first = (state.month.getDay() + 6) % 7,
+  const first = state.month.getDay(),
     length = new Date(
       state.month.getFullYear(),
       state.month.getMonth() + 1,
@@ -388,10 +402,6 @@ function renderCalendarMonth(root) {
     ).getDate();
   for (let i = 0; i < 42; i++) {
     const n = i - first + 1;
-    if (n < 1 || n > length) {
-      grid.append(el("div", "calendar-blank"));
-      continue;
-    }
     const day = FieldPlanning.localDay(
         new Date(state.month.getFullYear(), state.month.getMonth(), n),
       ),
@@ -403,6 +413,7 @@ function renderCalendarMonth(root) {
           render();
         },
         "calendar-day" +
+          (n < 1 || n > length ? " outside" : "") +
           (day === state.day ? " selected" : "") +
           (day === FieldPlanning.localDay() ? " today" : ""),
       );
@@ -483,13 +494,15 @@ async function eventEditor(record, selectedTime) {
       },
     ),
     remindersDirty = !record || !!d.reminders;
-  let reminderOptions=FieldReminders.optionsFor(record,"event");
+  let reminderOptions = FieldReminders.optionsFor(record, "event"),
+    recurrence = d.recurrence ? structuredClone(d.recurrence) : null;
   await formDialog(
     record ? "Edit event" : "New event",
     "Times are local · " +
       Intl.DateTimeFormat().resolvedOptions().timeZone.replaceAll("_", " "),
     [
       { key: "title", label: "Event title", value: d.title, max: 240 },
+      categoryField(record),
       {
         key: "notes",
         label: "Notes",
@@ -579,6 +592,7 @@ async function eventEditor(record, selectedTime) {
         throw Error(
           "Choose an end time after the start. For an overnight event, change the end date too.",
         );
+      if (recurrence) FieldRecurrence.validate(recurrence);
       FieldReminders.validate(reminderSettings);
       FieldReminders.validateOptions(reminderOptions);
       await mutate(
@@ -586,6 +600,8 @@ async function eventEditor(record, selectedTime) {
         record?.id || uuid(),
         {
           title: v.title,
+          category: v.category,
+          recurrence,
           notes: v.notes,
           all_day: all,
           start_date: all ? v.start_date : "",
@@ -593,7 +609,7 @@ async function eventEditor(record, selectedTime) {
           starts_at: start,
           ends_at: end,
           ...(remindersDirty ? { reminders: reminderSettings } : {}),
-          reminder_options:reminderOptions,
+          reminder_options: reminderOptions,
         },
         record?.revision ?? null,
       );
@@ -660,6 +676,14 @@ async function eventEditor(record, selectedTime) {
         );
         $("#dialog-body").append(remove);
       }
+      FieldRecurrence.controls(
+        $("#dialog-body"),
+        recurrence,
+        () => nodes.start_date.value || state.day,
+        (value) => {
+          recurrence = value;
+        },
+      );
       FieldReminders.controls(
         $("#dialog-body"),
         reminderSettings,
@@ -668,7 +692,13 @@ async function eventEditor(record, selectedTime) {
           reminderSettings = v;
           remindersDirty = true;
         },
-        {value:reminderOptions,kind:"event",changed:v=>{reminderOptions=v;}},
+        {
+          value: reminderOptions,
+          kind: "event",
+          changed: (v) => {
+            reminderOptions = v;
+          },
+        },
       );
       let oldDate = nodes.start_date.value;
       nodes.start_date.onchange = () => {

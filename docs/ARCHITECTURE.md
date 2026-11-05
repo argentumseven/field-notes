@@ -26,7 +26,7 @@ the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 | `apps/mobile/src/androidMain/.../WeekCalendarWidget.kt` | Real seven-day launcher agenda and occupied-time bars, sharing the calendar lifecycle |
 | `apps/mobile/src/androidMain/.../AlarmPlaybackService.kt`, `AlarmAudio.kt` | Bounded local playback, visible Stop, durable temporary-volume restoration and recovery |
 | `apps/mobile/src/androidMain/` | Keystore vault, credential lock, offline camera scanner, widget, scheduler, manifests/resources |
-| `apps/mobile/src/jvmMain/` | JNI adapter shared by Android and actual JVM integration checks |
+| `apps/mobile/src/jvmMain/` | JNI adapter and bounded portable cipher/ZIP reader shared by Android and host checks |
 | `native/transport/`, `native/bridge/`, `native/android/` | Userspace WireGuard/HTTPS, key-bound tunnel enrollment, C ABI, JNI byte bridge |
 | `scripts/peer-agent.py` | Constrained root-side desired-peer reconciliation and acknowledgement |
 | `scripts/tls.py` | Host-only local CA/leaf issuance and renewal |
@@ -167,3 +167,23 @@ whole-file hash, installed signer and Android consent remain required.
 Future iOS work can share Kotlin domain/UI, but needs a native transport bridge,
 Keychain, background policy and widget implementation. An in-process VPN does
 not prevent iOS suspension or replace APNs wake-up capabilities.
+
+## Household planning and portable content
+
+`Recurrence.kt` and `apps/admin/recurrence.js` expand one stored event series
+inside a bounded display/reminder range, in its stored IANA wall-clock zone.
+Server validation and old-editor fences protect series schedules. List membership
+filters keep checklist entries outside standalone task views; category/store
+metadata is separate from priority, responsibility and working claims.
+
+`SharedActivity.kt` uses server-created sequence numbers, not phone time.
+Android persists an encrypted delivery intent before posting, reconciles mute
+choices and acknowledges its cursor afterward. Initial history and own writes
+are not replayed as new shared additions.
+
+Portable content uses an explicit capability-free manifest and framed AES-GCM.
+The web controller is `archive.js`; shared JVM cipher/ZIP parsing isolates format
+logic from Android document-picker/vault operations in `PortableFiles.kt`.
+Server `transfer.rs` handles previews, encrypted chunks, identity/content maps and
+atomic commit; `transfer/recovery.rs` handles explicit, idempotent recovery.
+[Format and transaction details](PORTABLE-FORMAT.md) and [user workflow](CONTENT-FILES.md).

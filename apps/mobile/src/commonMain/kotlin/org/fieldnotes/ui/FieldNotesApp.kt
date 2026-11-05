@@ -2,6 +2,7 @@
 package org.fieldnotes.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -56,7 +57,7 @@ import org.fieldnotes.domain.*
             when {
                 !state.ready -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Opening encrypted workspace"); state.error?.let { ErrorText(it); Button(onClick = { model.launch { model.initialize() } }) { Text("Retry") }; if(deviceActions.androidDelivery)SecondaryButton(onClick=deviceActions.appSettings){Text("Android app settings and removal")} } ?: CircularProgressIndicator() }
                 (state.cache.enrollment?.stage?.let { it != "sign_in" } == true) || state.cache.config == null -> EnrollmentScreen(model, state, invitationCode, scanInvitation, enrollmentPolling, invitationScanError, invitationSequence, copyText, chooseInvitationImage)
-                state.needsLogin -> LoginScreen(model, state, copyText)
+                state.needsLogin -> LoginScreen(model, state, copyText,deviceActions)
                 state.cache.snapshot == null -> Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.Center) { Text("Connected. Download your workspace."); state.error?.let { ErrorText(it) }; Button(onClick = { model.launch { model.sync() } }) { Text("Sync workspace") };if(deviceActions.androidDelivery)AppUpdatesCard(deviceActions) }
                 else -> WorkspaceScreen(model, state, copyText, attachImage, configureBackground, registerBack, imageContent,deviceActions,requestedPage,requestedDate,navigationSequence,requestedRecord)
             }
@@ -89,7 +90,7 @@ import org.fieldnotes.domain.*
             }
         }
     }
-    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().plannerScroll().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Brand(); Text("Enroll this phone", style = MaterialTheme.typography.headlineSmall)
         (error ?: state.error)?.let { ErrorText(it) }
         if (pending == null) {
@@ -130,10 +131,10 @@ import org.fieldnotes.domain.*
         HorizontalDivider(); Text("Your private key stays here. Field Notes uses its own WireGuard connection to the notes endpoint and keeps Android's VPN slot available.", style = MaterialTheme.typography.bodySmall)
     }
 }
-@Composable private fun LoginScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit) {
+@Composable private fun LoginScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit,device:DeviceActions) {
     var review by remember { mutableStateOf(false) }; var reset by remember { mutableStateOf(false) }; var newKeys by remember { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf(state.cache.snapshot?.actor?.name ?: "") }; var password by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(26.dp), verticalArrangement = Arrangement.Center) {
+    Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().plannerScroll().padding(26.dp), verticalArrangement = Arrangement.Center) {
         Brand(); Spacer(Modifier.height(28.dp)); Text("Sign in", style = MaterialTheme.typography.headlineMedium)
         Text("Use the account assigned to this enrolled phone.", Modifier.padding(vertical = 16.dp))
         if (state.cache.outbox.isNotEmpty()) Text("Your queued edits are kept. Sign in to the same account to reconcile them.")
@@ -143,6 +144,7 @@ import org.fieldnotes.domain.*
         state.error?.let { ErrorText(it) }
         if (state.cache.enrollment != null) SecondaryButton(onClick = { model.launch { model.enrollmentSignIn(false) } }) { Text("Back to enrollment") }
         Button(onClick = { busy = true; model.launch { try { model.login(name, password); model.sync() } finally { password = ""; busy = false } } }, Modifier.fillMaxWidth().padding(top = 20.dp), enabled = !busy && name.isNotBlank() && password.isNotEmpty()) { Text(if (busy) "Signing in…" else "Sign in") }
+        if(device.androidDelivery&&state.cache.snapshot!=null)DataTransferCard(state.cache,device)
         SecondaryButton(onClick = { review = true }) { Text("Review retained changes") }
         SecondaryButton(onClick = { reset = true }, enabled = state.cache.outbox.isEmpty() && state.cache.conflicts.isEmpty() && state.cache.drafts.isEmpty()) { Text("Enroll this phone again") }
     }
@@ -150,10 +152,13 @@ import org.fieldnotes.domain.*
     if (reset) ConfirmDialog("Set up pairing again?", "This clears downloaded cache and keeps your phone keys by default. Revoke the old server entry and remove its inactive pairing before creating a fresh invitation. Household content stays on the server.", "REENROLL", { reset = false }, extra={Row(verticalAlignment=Alignment.CenterVertically){Checkbox(newKeys,{newKeys=it});Text("Generate new phone keys too (only if needed)",Modifier.weight(1f))}}) { model.launch { model.resetConnection(newKeys) }; reset = false }
 }
 @Composable private fun WorkspaceScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit, attach: (String) -> Unit, background: (Preferences) -> Unit, registerBack: ((() -> Unit)?) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions,requestedPage:String?,requestedDate:String?,navigationSequence:Int,requestedRecord:String?) {
+    val focus=LocalFocusManager.current
     var selected by rememberSaveable { mutableStateOf<String?>(null) }; var page by rememberSaveable { mutableStateOf("Calendar") }
     var calendarDay by rememberSaveable { mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()) }
     LaunchedEffect(requestedDate,navigationSequence) { requestedDate?.let { runCatching { LocalDate.parse(it) }.getOrNull()?.let { day -> calendarDay=day.toString();page="Calendar" } } }
     var query by rememberSaveable { mutableStateOf("") }; var project by rememberSaveable { mutableStateOf<String?>(null) }
+    var filterCategory by rememberSaveable{mutableStateOf("")};var filterPerson by rememberSaveable{mutableStateOf("*")};var filterStatus by rememberSaveable{mutableStateOf("all")};var filterPriority by rememberSaveable{mutableStateOf(0)};var sortTasks by rememberSaveable{mutableStateOf("smart")}
+    var activeStore by remember(project) { mutableStateOf("") }
     var menu by remember { mutableStateOf(false) }; var projectsMenu by remember { mutableStateOf(false) }
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) };var eventStartClock by remember { mutableStateOf<String?>(null) }
     var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) }; var endpoint by remember { mutableStateOf(false) }
@@ -165,11 +170,11 @@ import org.fieldnotes.domain.*
             if(state.cache.snapshot?.records?.find { it.id==selected }?.kind!="event")selected=null
         }
     }
-    LaunchedEffect(requestedRecord,navigationSequence){if(requestedRecord!=null&&projectRecords(state.cache).any { it.record.id==requestedRecord })selected=requestedRecord}
+    LaunchedEffect(requestedRecord,navigationSequence){if(requestedRecord!=null){val row=projectRecords(state.cache).firstOrNull { it.record.id==requestedRecord }?.record;if(row?.kind in setOf("list","project")){project=requestedRecord;page="Tasks";selected=null}else if(row!=null)selected=requestedRecord}}
     var removeInstallation by remember { mutableStateOf(false) };var profileHelp by remember { mutableStateOf(false) }
     val rows = remember(state.cache) { projectRecords(state.cache) }; val projects = workspaceContainers(state.cache)
     val drawer=rememberDrawerState(DrawerValue.Closed);val uiScope=rememberCoroutineScope()
-    fun navigate(view:String,container:String?=null){page=view;project=container;query="";selected=null;uiScope.launch { drawer.close() }}
+    fun navigate(view:String,container:String?=null){focus.clearFocus();page=view;project=container;query="";selected=null;uiScope.launch { drawer.close() }}
     val actor = state.cache.snapshot!!.actor; val writable = actor.role != "viewer"
     val current = rows.firstOrNull { it.record.id == selected }
     var now by remember { mutableStateOf(Clock.System.now()) }
@@ -182,15 +187,15 @@ import org.fieldnotes.domain.*
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.error) { state.error?.let { snackbar.showSnackbar(it); model.clearError() } }
     if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound) { selected = null }
-    if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null})
+    if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null},device)
     else if (selected != null && current?.record?.kind == "task") {
         val list=projects.find { it.record.id==current.record.data.text("project_id")&&it.record.kind=="list" }?.record
         if(list!=null)ListItemDialog(model,state,list,current,device,attach,image){selected=null}
         else TaskScreen(model,state,current,{selected=null},attach,image,device)
     }
-    else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+    else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().plannerScroll().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Workspace",Modifier.padding(14.dp),style=MaterialTheme.typography.titleLarge)
-        DrawerGroup("Plan",listOf("Calendar","Tasks","Focus"),page,navigate={navigate(it)})
+        DrawerGroup("Plan",listOf("Calendar","Tasks","Focus","Later & reminders"),page,navigate={navigate(it)})
         DrawerGroup("Library",listOf("Lists","Projects","Notes"),page,navigate={navigate(it)})
         DrawerGroup("Task views",listOf("Inbox","My tasks","Assignments","Unassigned","Unscheduled","Waiting","Completed"),page,initiallyOpen=false,navigate={navigate(it)})
 
@@ -210,22 +215,22 @@ import org.fieldnotes.domain.*
         } }
     }) }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { NavigationBar(tonalElevation = 0.dp) {
         listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = page == label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
-    } }, floatingActionButton = { if (writable) ExtendedFloatingActionButton(onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page=="Notes")addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp)) {
+    } }, floatingActionButton = { if (writable) ExtendedFloatingActionButton(onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).imePadding().padding(horizontal = 18.dp)) {
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             Text(when { state.connectionPaused -> "Connection paused · cached work and reminders remain available"; state.syncing -> "Synchronizing…"; state.online -> "Synced · ${state.cache.outbox.size} queued"; else -> "Offline · ${state.cache.outbox.size} queued · starts provisional" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if(!state.cache.preferences.visibilityChoiceSeen&&(!state.cache.preferences.notificationTitles||!state.cache.preferences.widgetTitles))OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 Text("Make your schedule visible at a glance",style=MaterialTheme.typography.titleSmall)
                 Text("Show full reminder and widget details while unlocked. Lock-screen visibility and the optional app lock remain separate.",style=MaterialTheme.typography.bodySmall)
                 Button(onClick={model.launch{model.preferences(state.cache.preferences.copy(notificationTitles=true,widgetTitles=true,visibilityChoiceSeen=true))}}){Text("Show reminder and widget details")}
-                TextButton(onClick={model.launch{model.preferences(state.cache.preferences.copy(visibilityChoiceSeen=true))}}){Text("Keep current visibility")}
+                SecondaryButton(onClick={model.launch{model.preferences(state.cache.preferences.copy(visibilityChoiceSeen=true))}}){Text("Keep current visibility")}
             }}
             val issue=state.problem ?: device.warning.takeIf{it.isNotBlank()} ?: device.update.message.takeIf{device.update.problem} ?: reminderCompatibilityWarning(state.cache)
             val compat=state.cache.compatibility
             if(issue!=null||compat?.let{it.blocked||it.warning.isNotBlank()||it.version=="legacy"||it.recommendedClient>CURRENT_CLIENT_CODE}==true)OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
                 Text(if(issue!=null)"Needs attention" else "Version compatibility",style=MaterialTheme.typography.titleSmall)
                 Text(issue ?: compat!!.message,style=MaterialTheme.typography.bodySmall)
-                TextButton(onClick={settings=true}){Text("Review settings and updates")}
+                SecondaryButton(onClick={settings=true}){Text("Review settings and updates")}
             }}
             if (state.cache.conflicts.isNotEmpty()) SecondaryButton(onClick = { changes = true }) { Text("${state.cache.conflicts.size} changes need review") }
             if(device.update.available)SecondaryButton(onClick={settings=true}){Text("App update ${device.update.offered} available")}
@@ -235,38 +240,41 @@ import org.fieldnotes.domain.*
                 AssignmentRows(state.cache,query){selected=it}
             }
             else if(page in setOf("Collections","Lists","Projects")) {
-                LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp)) { for(kind in (if(page=="Lists")listOf("list") else if(page=="Projects")listOf("project") else listOf("list","project"))){item { Text(if(kind=="list")"Lists" else "Projects",Modifier.padding(vertical=16.dp),style=MaterialTheme.typography.titleMedium) };items(projects.filter { it.record.kind==kind },key={it.record.id}) { c->CollectionRow(state.cache,c,writable,{navigate("Tasks",c.record.id)},{editingContainer=c.record}) } } }
+                CollectionLibrary(state.cache,if(page=="Lists")listOf("list") else if(page=="Projects")listOf("project") else listOf("list","project"),writable,{navigate("Tasks",it)},{editingContainer=it})
             }
             else if(projects.any { it.record.id==project&&it.record.kind=="list" }) {
                 val list=projects.first { it.record.id==project }.record
-                Checklist(model,state,list,device,image,{selected=it},{editingContainer=list})
+                SecondaryButton(onClick={navigate("Lists")}){Text("‹ All lists")}
+                Checklist(model,state,list,device,image,{selected=it},{editingContainer=list},{activeStore=it})
             }
             else {
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page=="Notes")"Search notes" else "Search tasks") }, singleLine = true)
-                    if(page!="Notes") Box { OutlinedIconButton(onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
-                        DropdownMenuItem(text = { Text("All lists & projects") }, onClick = { project = null; projectsMenu = false })
+                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page in setOf("Notes","Later & reminders"))"Search notes" else "Search tasks") }, singleLine = true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
+                    if(page !in setOf("Notes","Later & reminders")) Box { OutlinedIconButton(onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
+                        DropdownMenuItem(text = { Text("All tasks") }, onClick = { project = null; projectsMenu = false })
                         projects.forEach { p -> DropdownMenuItem(text = { Text(p.record.data.text("title")) }, onClick = { project = p.record.id; projectsMenu = false }) }
                     } }
                 }
                 if (page == "Focus") Text("Ranked by priority, time and effort. Tap a task for the calculation.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 10.dp))
-                val filtered=workspaceTasks(state.cache,page,project,query,today,now.epochSeconds)
-                if(page=="Notes")NoteRows(state.cache,rows,query){selected=it}
-                else                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 90.dp)) {
+                val filters=TaskFilters(filterCategory,filterPerson,filterStatus,filterPriority,sortTasks)
+                if(page !in setOf("Notes","Later & reminders"))TaskFilterControls(state.cache,filters){filterCategory=it.category;filterPerson=it.person;filterStatus=it.status;filterPriority=it.priority;sortTasks=it.sort}
+                val filtered=filterTasks(workspaceTasks(state.cache,page,project,query,today,now.epochSeconds),filters)
+                if(page in setOf("Notes","Later & reminders"))NoteRows(state.cache,rows,query,page=="Later & reminders"){selected=it}
+                else                 VisibleLazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 90.dp)) {
                     if (filtered.isEmpty()) item { Text("No tasks in this view. Capture a task without creating a project first.", Modifier.padding(vertical = 24.dp)) }
-                    items(filtered, key = { it.record.id }) { task -> TaskCard(task,state.cache) { selected = task.record.id } }
+                    items(filtered, key = { it.record.id }) { task -> TaskCard(task,state.cache) { focus.clearFocus();selected = task.record.id } }
                 }
             }
         }
     }
     }
-    if (selected != null && current == null) AlertDialog(onDismissRequest = { selected = null }, title = { Text("Item removed") }, text = { Text("Retained edits are available under Retained changes.") }, confirmButton = { SecondaryButton(onClick = { selected = null; changes = true }) { Text("Review") } })
+    if (selected != null && current == null) EditorDialog(onDismissRequest = { selected = null }, title = { Text("Item removed") }, text = { Text("Retained edits are available under Retained changes.") }, confirmButton = { SecondaryButton(onClick = { selected = null; changes = true }) { Text("Review") } })
     if (addProject) CollectionDialog(model,state,null,"project",{addProject=false})
     if(addList)CollectionDialog(model,state,null,"list",{addList=false})
-    if(addNote)NewNoteDialog(model,state){addNote=false;page="Notes";query=""}
+    if(addNote)NewNoteDialog(model,state,page=="Later & reminders",device){addNote=false;query=""}
     if(addTask) {
         val list=projects.find { it.record.id==project&&it.record.kind=="list" }?.record
-        if(list!=null)ListItemDialog(model,state,list,null,device,close={addTask=false}) else NewTaskDialog(model,state,project,page=="My tasks",device){addTask=false}
+        if(list!=null)ListItemDialog(model,state,list,null,device,initialStore=activeStore.takeUnless{it=="*"}.orEmpty(),close={addTask=false}) else NewTaskDialog(model,state,project,page=="My tasks",device){addTask=false}
     }
     editingContainer?.let { c->CollectionDialog(model,state,c,c.kind){editingContainer=null} }
     if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock) { addEvent = false }
@@ -279,10 +287,10 @@ import org.fieldnotes.domain.*
             SecondaryButton(onClick={settings=false}){Text("Close")}
         }
         HorizontalDivider()
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).plannerScroll().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             ConnectionControls(model,state); Text("${actor.name} · ${actor.role}"); Text("Server: ${state.cache.config?.text("endpoint")}")
             SecondaryButton(onClick = { endpoint = true },modifier=Modifier.fillMaxWidth()) { Text("Edit server endpoint") }
-            if(device.androidDelivery)AppUpdatesCard(device)
+            if(device.androidDelivery){AppUpdatesCard(device);DataTransferCard(state.cache,device)}
             if(device.androidDelivery)SettingSwitch("Automatically prepare app updates","Download and verify updates from this paired server in the background. Android still asks before installation; interrupted transfers resume.",state.cache.preferences.autoDownloadUpdates){val p=state.cache.preferences.copy(autoDownloadUpdates=it);model.launch{model.preferences(p)}}
             if(device.androidDelivery){
                 Text("Alerts and home screen",style=MaterialTheme.typography.titleMedium)
@@ -305,6 +313,7 @@ import org.fieldnotes.domain.*
             }
             Text("Appearance",style=MaterialTheme.typography.titleMedium)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(theme in listOf("system","light","dark"))FilterChip(state.cache.preferences.theme==theme,{model.launch { model.preferences(state.cache.preferences.copy(theme=theme)) }},{Text(theme.replaceFirstChar { it.uppercase() })})}
+            SettingSwitch("Shared additions","Name the person and item when someone adds a task, note, event or list item. Bulk additions use one expandable alert; list settings can mute its item alerts.",state.cache.preferences.sharedAdditions){val p=state.cache.preferences.copy(sharedAdditions=it);model.launch{model.preferences(p)}}
             SettingSwitch("Auto-refresh while open","Check for household changes without pressing refresh.",state.cache.preferences.autoRefresh){val p=state.cache.preferences.copy(autoRefresh=it);model.launch{model.preferences(p)}}
             Text("Visibility and app lock",style=MaterialTheme.typography.titleMedium)
             Text("App locking, notification details and home-screen details are independent.",style=MaterialTheme.typography.bodySmall)
@@ -323,7 +332,7 @@ import org.fieldnotes.domain.*
         }
         }
     }
-    if(profileHelp)AlertDialog(onDismissRequest={profileHelp=false},title={Text("GrapheneOS profile alerts")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
+    if(profileHelp)EditorDialog(onDismissRequest={profileHelp=false},title={Text("GrapheneOS profile alerts")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)){
         Text("Leave the Field Notes profile running and allow it to run in the background. In that profile, enable GrapheneOS notification forwarding to the active profile.")
         Text("Use the 30-second profile test, switch profiles before it fires, then check the receiving profile's forwarded-notification sound and Do Not Disturb settings. Forwarding hides task contents.")
         Text("Forwarded alerts use the receiving profile’s Other users system channel, which controls their sound and volume. Per-event tones apply in the profile running Field Notes.")
@@ -338,6 +347,7 @@ import org.fieldnotes.domain.*
         else Icon(if(d.text("status")=="done")Icons.Outlined.Done else Icons.Outlined.PlayArrow,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.primary)
         Column(Modifier.padding(horizontal = 12.dp).weight(1f)) {
             Text(d.text("title"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            RecordBadges(task.record,cache.snapshot?.records?.firstOrNull { it.id==d.text("project_id") })
             Text(buildList { add(priorityName(d.number("priority", 3).toInt())); if (d.text("due").isNotBlank()) add("Due ${d.text("due")}"); if (task.record.flag("blocked")) add("Blocked"); if (task.record.flag("pinned")) add("Pinned"); if (task.pending) add("Queued"); if(d.text("assignee").isNotBlank())add("For "+personName(cache,d.text("assignee"))); if (d.text("claimant").isNotBlank()) add("Working: "+personName(cache,d.text("claimant"))) }.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(recordHistory(cache,task.record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -351,6 +361,7 @@ import org.fieldnotes.domain.*
     var title by remember(task.id) { mutableStateOf(draft?.data?.text("title") ?: task.data.text("title")) }
     var notes by remember(task.id) { mutableStateOf(draft?.data?.text("notes") ?: task.data.text("notes")) }
     var due by remember(task.id) { mutableStateOf(draft?.data?.text("due") ?: task.data.text("due")) }
+    var category by remember(task.id){mutableStateOf((draft?.data?:task.data).text("category","general"))}
     var container by remember(task.id) { mutableStateOf((draft?.data?:task.data).text("project_id")) };var containerMenu by remember { mutableStateOf(false) }
     var priority by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("priority", 3).toInt()) }
     var planned by remember(task.id) { mutableStateOf((draft?.data ?: task.data).text("planned_for")) }
@@ -368,15 +379,16 @@ import org.fieldnotes.domain.*
     val writable = state.cache.snapshot!!.actor.role != "viewer"
     fun fields():JsonObject {
         val data=obj("title" to title.j(),"notes" to notes.j(),"due" to due.j(),"project_id" to container.j(),"priority" to priority.j(),"planned_for" to planned.j(),"estimate_minutes" to (effort.toIntOrNull()?:0).j(),"pinned" to JsonPrimitive(pinned),"blocked" to JsonPrimitive(blocked))
-        return if(state.cache.people.isEmpty())data else JsonObject(data+("assignee" to if(assignee.isBlank())JsonNull else assignee.j()))
+        val assigned=if(state.cache.people.isEmpty())data else JsonObject(data+("assignee" to if(assignee.isBlank())JsonNull else assignee.j()))
+        return if(state.cache.supportsPlannerV3())JsonObject(assigned+("category" to category.j())) else assigned
     }
     fun retain() { dirty = true; val captured = fields(); val base = revision; model.launch { model.saveDraft(task.id, base, captured, basis) } }
     LaunchedEffect(draft?.revision) { if (dirty && draft != null && draft.dependsOn == null) revision = draft.revision }
     LaunchedEffect(task.revision, visible.pending) {
-        if (!dirty && !visible.pending && !staleWorkspace) { container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision }
+        if (!dirty && !visible.pending && !staleWorkspace) { category=task.data.text("category","general");container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision }
     }
     Scaffold(topBar = { TopAppBar(title = { Text(if (visible.pending) "Pending confirmation" else "Task details") }, navigationIcon = { OutlinedIconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } }) }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        VisibleLazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.error?.let { message->item { ErrorText(message) } }
             if (staleWorkspace) item { ErrorText("The server was reset or restored. Reopen this task before making new changes; your old drafts are retained.") }
             item { Text(recordHistory(state.cache,task,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant);SecondaryButton(onClick={reminderDialog=true}){Text("Reminders & sound")} }
@@ -391,6 +403,7 @@ import org.fieldnotes.domain.*
               if(state.cache.people.isEmpty())Text("Update the server to enable assignments.",style=MaterialTheme.typography.bodySmall) }
             item { OutlinedTextField(notes, { if (it.length <= 16384) { notes = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Notes") }, minLines = 5, enabled = writable && !saving && !staleWorkspace) }
             item { Box { SecondaryButton(onClick={containerMenu=true},enabled=writable&&!staleWorkspace){Text("Keep in: "+(workspaceContainers(state.cache).firstOrNull { it.record.id==container }?.record?.data?.text("title")?:"Inbox"))};DropdownMenu(containerMenu,{containerMenu=false}){DropdownMenuItem(text={Text("Inbox")},onClick={container="";containerMenu=false;retain()});workspaceContainers(state.cache).forEach { c->DropdownMenuItem(text={Text(c.record.data.text("title")+" · "+c.record.kind)},onClick={container=c.record.id;containerMenu=false;retain()})}} } }
+            if(state.cache.supportsPlannerV3())item{CategoryPicker(category,writable&&!saving&&!staleWorkspace){category=it;retain()}}
             item { DateField("Due date", due, writable && !saving && !staleWorkspace) { due = it; retain() } }
             item { DateField("Planned day", planned, writable && !saving && !staleWorkspace) { planned = it; retain() } }
             item { Text("Priority", style = MaterialTheme.typography.labelLarge); FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { (1..4).forEach { p -> FilterChip(selected = priority == p, onClick = { priority = p; retain() }, label = { Text(priorityName(p)) }, enabled = writable && !saving && !staleWorkspace) } } }
@@ -401,7 +414,7 @@ import org.fieldnotes.domain.*
                 OutlinedCard { Column(Modifier.padding(16.dp)) {
                     Text("This task changed on another device. Your draft is kept.", fontWeight = FontWeight.Medium)
                     Text("Server title: ${task.data.text("title")}\nAssigned to: ${task.data.text("assignee").let { if(it.isBlank())"Unassigned" else personName(state.cache,it) }}\nServer notes: ${task.data.text("notes")}", Modifier.padding(vertical = 12.dp))
-                    SecondaryButton(onClick = { container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision; dirty = false; model.launch { model.discardDraft(task.id) } }) { Text("Use server version") }
+                    SecondaryButton(onClick = { category=task.data.text("category","general");container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision; dirty = false; model.launch { model.discardDraft(task.id) } }) { Text("Use server version") }
                     SecondaryButton(onClick = { revision = task.revision; retain() }) { Text("Keep draft for a new save") }
                 } }
             }
@@ -442,7 +455,7 @@ import org.fieldnotes.domain.*
 @Composable private fun ChangesSheet(model: Workspace, state: WorkspaceState, close: () -> Unit, copy: (String) -> Unit) {
     var discard by remember { mutableStateOf<String?>(null) }; var discardAll by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = close) {
-        LazyColumn(Modifier.fillMaxWidth().fillMaxHeight(.85f), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        VisibleLazyColumn(Modifier.fillMaxWidth().fillMaxHeight(.85f), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item { Text("Retained changes", style = MaterialTheme.typography.headlineSmall); Text("These drafts stay encrypted on this device. Reapply only after reviewing the current server state.") }
             if (state.cache.outbox.isNotEmpty()) item {
                 Text("${state.cache.outbox.size} queued changes", fontWeight = FontWeight.Medium)
@@ -475,7 +488,12 @@ import org.fieldnotes.domain.*
     if (discardAll) ConfirmDialog("Discard all retained changes?", "Copy unsynchronized text first. Pending image uploads will also be lost. An attempted command may already exist on the server; this only discards local retry/draft copies.", "DISCARD", { discardAll = false }) { model.launch { model.discardRetainedChanges() }; discardAll = false }
     discard?.let { id -> ConfirmDialog("Discard this retained change?", "Only this local copy will be removed. It cannot be recovered from the server if it was never accepted.", "DISCARD", { discard = null }) { model.launch { model.resolve(id, false) }; discard = null } }
 }
-@Composable private fun Brand() { Text("Field Notes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
+@Composable private fun Brand() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Image(LauncherMark, contentDescription = null, modifier = Modifier.size(30.dp))
+        Text("Field Notes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+    }
+}
 @Composable private fun ErrorText(text: String) { Text(text, Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.error) }
 @Composable private fun SettingSwitch(title: String, detail: String, enabled: Boolean, change: (Boolean) -> Unit) { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(detail, style = MaterialTheme.typography.bodySmall) }; Switch(enabled, change,modifier=Modifier.semantics{contentDescription=title}) } }
 @Composable private fun TextDialog(title: String, label: String, close: () -> Unit, confirmLabel: String = "Create", initial: String = "", maxLength: Int = 160, submit: suspend (String) -> Unit) {
@@ -483,14 +501,14 @@ import org.fieldnotes.domain.*
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text(title) }, text = {
+    EditorDialog(onDismissRequest = { if (!busy) close() }, title = { Text(title) }, text = {
         Column { OutlinedTextField(text, { if (it.length <= maxLength) text = it }, label = { Text(label) }, enabled = !busy); error?.let { ErrorText(it) } }
     }, confirmButton = {
         Button(onClick = { busy = true; error = null; scope.launch { try { submit(text.trim()) } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message ?: "The change could not be saved." } finally { busy = false } } }, enabled = text.isNotBlank() && !busy) { Text(confirmLabel) }
     }, dismissButton = { SecondaryButton(onClick = close, enabled = !busy) { Text("Cancel") } })
 }
 @Composable private fun ConfirmDialog(title: String, detail: String, expected: String, close: () -> Unit, extra:@Composable ()->Unit = {}, submit: () -> Unit) {
-    AlertDialog(onDismissRequest=close,title={Text(title)},text={Column { Text(detail);extra() }},confirmButton={Button(onClick=submit,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=MaterialTheme.colorScheme.onError)){Text(when(expected){"DELETE"->"Delete";"REVOKE"->"Revoke and remove";"REENROLL"->"Set up again";else->"Discard"})}},dismissButton={SecondaryButton(onClick=close){Text("Keep it")}})
+    EditorDialog(onDismissRequest=close,title={Text(title)},text={Column { Text(detail);extra() }},confirmButton={Button(onClick=submit,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=MaterialTheme.colorScheme.onError)){Text(when(expected){"DELETE"->"Delete";"REVOKE"->"Revoke and remove";"REENROLL"->"Set up again";else->"Discard"})}},dismissButton={SecondaryButton(onClick=close){Text("Keep it")}})
 }
 
 @Composable private fun ConnectionControls(model:Workspace,state:WorkspaceState){

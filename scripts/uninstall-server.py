@@ -70,8 +70,15 @@ def preflight(host, record, purge):
             if file.name=='downloads' and file.is_dir() and not file.is_symlink():
                 from android_artifact import FILES
                 if file.stat().st_uid!=host.owner or file.stat().st_mode&0o022:raise ValueError('Unsafe Android download directory')
-                for artifact in file.iterdir():
-                    if artifact.name not in FILES or artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_uid!=host.owner or artifact.stat().st_mode&0o022:raise ValueError('Unexpected Android download file; review before removal')
+                folders=[file]
+                if (file/'legacy').exists() or (file/'legacy').is_symlink():
+                    legacy=file/'legacy'
+                    if legacy.is_symlink() or not legacy.is_dir() or legacy.stat().st_uid!=host.owner or legacy.stat().st_mode&0o022:raise ValueError('Unsafe compatibility APK directory')
+                    folders.append(legacy)
+                for folder in folders:
+                    for artifact in folder.iterdir():
+                        if folder==file and artifact.name=='legacy':continue
+                        if artifact.name not in FILES or artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_uid!=host.owner or artifact.stat().st_mode&0o022:raise ValueError('Unexpected Android download file; review before removal')
                 continue
             if file.name=='__pycache__' and file.is_dir() and not file.is_symlink():
                 modules={pathlib.Path(name).stem for name in PROGRAMS if name.endswith('.py')}

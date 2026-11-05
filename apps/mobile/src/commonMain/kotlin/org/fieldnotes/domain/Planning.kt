@@ -47,7 +47,7 @@ fun rankTask(task: Record, today: LocalDate, nowSeconds: Long, userId: String): 
 
 fun focusTasks(cache: Cache, today: LocalDate, nowSeconds: Long): List<Pair<VisibleRecord, TaskRank>> {
     val user = cache.snapshot?.actor?.user_id ?: return emptyList()
-    return projectRecords(cache).filter { it.record.kind == "task" }.map { it to rankTask(it.record, today, nowSeconds, user) }
+    return plannerTasks(cache).map { it to rankTask(it.record, today, nowSeconds, user) }
         .filter { it.second.eligible }
         .sortedWith(compareByDescending<Pair<VisibleRecord, TaskRank>> { it.first.record.flag("pinned") }
             .thenByDescending { it.second.score }.thenBy { it.first.record.data.number("created_at", Long.MAX_VALUE) }.thenBy { it.first.record.id })
@@ -58,13 +58,14 @@ fun calendarEntries(records: List<Record>, day: LocalDate, zone: TimeZone): List
     val key = day.toString()
     val start = day.atStartOfDayIn(zone).epochSeconds
     val end = day.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
-    return records.mapNotNull { record ->
+    return records.flatMap { eventInstances(it,day,day.plus(1,DateTimeUnit.DAY),zone) }.mapNotNull { record ->
         val d = record.data
         val entry=when (record.kind) {
             "task" -> {
                 val labels = buildList { if (d.text("planned_for") == key) add("Planned"); if (d.text("due") == key) add("Due") }
                 if (labels.isEmpty()) null else CalendarEntry(record, labels)
             }
+            "note"->d.number("remind_at").takeIf {record.flag("on_radar")&&it in start until end}?.let { CalendarEntry(record,listOf("Follow up")) }
             "event" -> {
                 if (record.flag("all_day")) {
                     if (key >= d.text("start_date") && key < d.text("end_date")) CalendarEntry(record, listOf("All day")) else null
@@ -79,7 +80,7 @@ fun calendarEntries(records: List<Record>, day: LocalDate, zone: TimeZone): List
 
 fun monthCells(month: LocalDate): List<LocalDate?> {
     val first = LocalDate(month.year, month.monthNumber, 1)
-    val offset = first.dayOfWeek.isoDayNumber - 1
+    val offset = first.dayOfWeek.isoDayNumber % 7
     val length = first.plus(1, DateTimeUnit.MONTH).toEpochDays() - first.toEpochDays()
     return List(42) { i -> if (i in offset until offset + length) first.plus(i - offset, DateTimeUnit.DAY) else null }
 }

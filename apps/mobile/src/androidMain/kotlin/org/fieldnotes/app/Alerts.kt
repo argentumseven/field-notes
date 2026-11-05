@@ -39,6 +39,10 @@ object Alerts {
                     lockscreenVisibility = Notification.VISIBILITY_PRIVATE
                 })
         }
+        connectionChannel(context)
+    }
+    internal fun connectionChannel(context:Context) {
+        val manager=context.getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(CONNECTION) == null) manager.createNotificationChannel(
             NotificationChannel(CONNECTION, "Private background connection", NotificationManager.IMPORTANCE_LOW).apply {
                 setSound(null, null)

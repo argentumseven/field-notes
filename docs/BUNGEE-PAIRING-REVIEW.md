@@ -1,5 +1,24 @@
 # Pairing and failure handling compared with Bungee
 
+## APK signing follow-up — 2026-11-05
+
+Read [Bungee main at b432110](https://github.com/argentumseven/bungee/tree/b432110de97555545af92e935311c95b56d644e2),
+including [6fa8af3's signing changes](https://github.com/argentumseven/bungee/commit/6fa8af3).
+The relevant lesson is a single stable public APK identity, independently
+verified artifact metadata and preservation of existing local phone identities.
+Field Notes keeps its already published certificate pin and the exact GitHub
+APK in ordinary server bundles. A household with a different original signer
+can retain a separately signed compatibility APK, selected by the phone's
+installed certificate. Its private signing key stays outside bundles and Git.
+Current/ahead phones do not raise repeated mismatch alarms about an older
+offered APK; newer mismatched updates remain blocked with a visible explanation.
+Pairing is never cleared to work around an APK certificate mismatch.
+
+The review used source only. No Bungee source/assets were copied, and Bungee
+itself was not built or executed. Field Notes' own signer-selection, real APK
+signature verification, upgrade-preservation and private-download checks are
+recorded in [VALIDATION.md](VALIDATION.md).
+
 ## Tunnel bootstrap correction, November 2
 
 Rechecked current main at `a6dbb71f6d24df1474665a7243bc61c87e0530d1`, especially

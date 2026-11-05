@@ -5,7 +5,8 @@ import kotlinx.datetime.LocalDate
 fun workspaceContainers(cache: Cache) = projectRecords(cache).filter { it.record.kind in setOf("list", "project") }.sortedBy { it.record.data.text("title").lowercase() }
 fun workspaceTasks(cache: Cache, view: String, container: String?, query: String, today: LocalDate, now: Long): List<VisibleRecord> {
     val actor=cache.snapshot?.actor?.user_id ?: return emptyList()
-    val tasks=if(view=="Focus") focusTasks(cache,today,now).map { it.first } else projectRecords(cache).filter { it.record.kind=="task" }.sortedWith(compareBy<VisibleRecord> { it.record.data.text("status")=="done" }.thenBy { it.record.data.number("priority",3) }.thenBy { it.record.data.number("created_at") }.thenBy { it.record.id })
+    val source=if(container==null)plannerTasks(cache) else projectRecords(cache).filter { it.record.kind=="task" }
+    val tasks=if(view=="Focus") focusTasks(cache,today,now).map { it.first } else source.sortedWith(compareBy<VisibleRecord> { it.record.data.text("status")=="done" }.thenBy { it.record.data.number("priority",3) }.thenBy { it.record.data.number("created_at") }.thenBy { it.record.id })
     return tasks.filter { row -> val d=row.record.data
         (container==null||d.text("project_id")==container) && (d.text("title")+" "+d.text("notes")).contains(query,true) && when(view) {
             "My tasks" -> d.text("status")!="done" && (d.text("assignee")==actor||d.text("claimant")==actor)

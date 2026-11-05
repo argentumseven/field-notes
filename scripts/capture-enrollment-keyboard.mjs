@@ -15,10 +15,16 @@ try {
  await call(['shell','wm','size','540x1200']);await call(['shell','wm','density','210']);
  await call(['shell','settings','put','secure','show_ime_with_hard_keyboard','1']);
  await call(['shell','input','keyevent','KEYCODE_WAKEUP']);await call(['shell','wm','dismiss-keyguard']);
+ await call(['shell','cmd','statusbar','collapse']);
  await call(['shell','pm','clear','org.fieldnotes.app']);
+ for(const pkg of ['org.fieldnotes.app','org.fieldnotes.app.test'])await call(['shell','cmd','package','compile','-m','speed',pkg],360000);
  const output=await call(['shell','am','instrument','-w','-e','class','org.fieldnotes.app.EnrollmentDeviceTest#phoneNameTrustAndRequestStayAboveTheRealKeyboard','-e','fieldNotesEnrollmentCapture','synthetic-only','org.fieldnotes.app.test/androidx.test.runner.AndroidJUnitRunner'],600000);
  await writeFile('dist/android-test-results/enrollment-keyboard.txt',output);
- if(!/OK \(1 test\)/.test(output)||output.includes('FAILURES!!!'))throw Error(output);
+ if(!/OK \(1 test\)/.test(output)||output.includes('FAILURES!!!')) {
+  const failure=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/enrollment-keyboard-failure.png'],{encoding:'buffer',maxBuffer:8*1024*1024}).catch(()=>null);
+  if(failure?.stdout?.length)await writeFile('dist/android-test-results/enrollment-keyboard-failure.png',failure.stdout);
+  throw Error(output);
+ }
  const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/enrollment-keyboard.png'],{encoding:'buffer',maxBuffer:8*1024*1024});
  if(!stdout.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))throw Error('Missing Android keyboard PNG.');
  await mkdir('docs/screenshots/android',{recursive:true});await writeFile('docs/screenshots/android/29-enrollment-keyboard.png',stdout);

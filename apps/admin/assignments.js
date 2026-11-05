@@ -1,7 +1,7 @@
 // Responsibility is independent of the exclusive active-work claim.
 function assignmentOptions(current = "") {
   const options = [
-    ["", "Unassigned"],
+    ["", "Everyone · unassigned"],
     ...(state.people || [])
       .filter((p) => p.can_assign)
       .map((p) => [p.id, p.name]),

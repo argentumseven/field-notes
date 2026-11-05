@@ -10,11 +10,11 @@ Light/Dark preference.
 | Type | Initially visible fields |
 | --- | --- |
 | General | Notes |
-| Groceries | Quantity and notes; price off |
+| Groceries | Quantity, store and notes; price off |
 | Online shopping | Quantity, web link and attached images; price optional |
 | Custom | Choose the fields yourself |
 
-Expand **Customize fields** to add/remove quantity, notes, web link, price,
+Expand **Customize fields** to add/remove quantity, store, notes, web link, price,
 images, assignee, due date, planned day, priority or effort. Name and checked
 state are always present. Changing the visible fields preserves existing item
 values and reminder rules; hidden prices/links are not silently erased. Prices
@@ -47,3 +47,19 @@ with server timestamps. Comments and attachments update the parent task's last
 activity without changing its content revision. Old records created before this
 metadata existed may lack a creator/time; those show unavailable values instead
 of inventing history. Queued local changes remain visibly queued until accepted.
+
+## Store groups, filters and notices
+
+Existing field choices stay unchanged across updates; enable Store in List settings
+for an older grocery list. Hidden fields keep their stored values.
+
+List items stay in their list rather than Tasks/Focus/Assignments. Store is a
+first-class grocery field: group all stores or select one, then add an item with
+that store prefilled. Search titles and all item text; filter checked state and
+sort by the enabled fields. Clear checked affects the filtered view only.
+
+List settings separately offer **Notify when items are added** and **Scheduled
+item reminders**. Both preserve saved rules and contents when off. A phone also
+has a global shared-additions switch. Notices name who added what and to which
+list; larger batches are grouped. Initial history and your own additions do not
+produce a backlog of alerts.

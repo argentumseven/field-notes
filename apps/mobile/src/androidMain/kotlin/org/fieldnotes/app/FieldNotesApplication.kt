@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
+import androidx.work.Configuration
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,12 +15,17 @@ import org.fieldnotes.platform.AndroidTransport
 import org.fieldnotes.platform.AndroidVault
 import java.util.UUID
 
-class FieldNotesApplication : Application() {
+class FieldNotesApplication : Application(), Configuration.Provider {
+    // WorkManager's automatic ContentProvider initializer blocks application
+    // startup. Keep its existing database/jobs, initializing on demand on IO.
+    override val workManagerConfiguration:Configuration
+        get()=Configuration.Builder().build()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     lateinit var transport: AndroidTransport
     lateinit var vault: AndroidVault
     lateinit var model: Workspace
     val updates by lazy { ApkUpdates(this) }
+    val files by lazy { PortableFiles(this) }
     @Volatile var uiVisible=false
     val deliveryError=MutableStateFlow<String?>(null)
     val deliveryPersistenceError=MutableStateFlow<String?>(null)
@@ -52,6 +58,6 @@ class FieldNotesApplication : Application() {
         }, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_USER_UNLOCKED) }, ContextCompat.RECEIVER_NOT_EXPORTED)
         // StateFlow conflates new states while this work completes. Do not cancel
         // reconciliation between saving its intent and installing the OS alarms.
-        scope.launch { initialized.await(); model.state.collect { delay(600); PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication);try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
+        scope.launch { initialized.await(); model.state.collect { delay(600); PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication);try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
     }
 }

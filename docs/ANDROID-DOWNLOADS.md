@@ -27,7 +27,7 @@ Google account, store or public service is required on the installed server or p
 
 The public APK uses the release variant and the pinned public certificate. A
 local development build, when explicitly requested, is written to
-`dist/android/field-notes-0.5.0-android-arm64-debug.apk`, with `.sha256` and
+`dist/android/field-notes-0.6.0-android-arm64-debug.apk`, with `.sha256` and
 `.signer.txt` alongside. This is a signed **development** build. Keep the same
 signing key for in-place updates; changing signers normally requires uninstall
 and loses phone-local keys and unsynchronized edits. Never uninstall over retained
@@ -104,7 +104,7 @@ bash scripts/setup/cloud.sh --server
 bash scripts/build/server.sh
 # Explicit custom build, with the original local signer retained:
 bash scripts/build/android.sh debug
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.5.0-android-arm64-debug.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.6.0-android-arm64-debug.apk \
   bash scripts/build/server.sh
 ```
 
@@ -149,8 +149,8 @@ The public release certificate is pinned in `release.json`. Build and package
 from a clean source tag, then queue the verified payload through GitHub Actions:
 
 ```bash
-python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.4.0-android-arm64-release.apk --output dist/android-release
-python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.4.0 --queue --apply
+python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.6.0-android-arm64-release.apk --output dist/android-release
+python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.6.0 --queue --apply
 ```
 
 The existing tag must already be pushed and point to this clean checkout on
@@ -165,3 +165,27 @@ compares all assets, and marks the verified release as latest.
 `--latest` makes a normal GitHub Release so `/releases/latest/download/field-notes.apk`
 resolves. The release notes still identify development builds; this label is not
 a security-audit or production-readiness claim.
+
+## Original-signature compatibility APK
+
+When a household already has custom-signed phones, source upgrade fetches and
+verifies the public APK, then signs a **separate** compatibility copy with the
+original protected key. Public assets stay byte-identical to GitHub. The key
+never enters either download folder or server bundle. New phones use the main
+public download; existing custom phones use the clearly labeled compatibility
+button. The optional files are:
+
+```text
+/downloads/legacy/field-notes.apk
+/downloads/legacy/field-notes.apk.sha256
+/downloads/legacy/field-notes.apk.signer.txt
+```
+
+Phones from 0.6 report their installed certificate in authenticated metadata
+requests, so their paired server chooses the matching public or compatibility
+APK. Older metadata clients receive the compatibility copy when present; an
+older public-signed phone on a mixed installation may need one manual install
+of the matching public 0.6 APK. Neither case requires uninstalling or re-pairing.
+If the original custom key is missing, Android cannot accept a replacement
+certificate; preserve the app and its data while recovering that key.
+Compatibility APKs remain household-local and are refused by public publishing.

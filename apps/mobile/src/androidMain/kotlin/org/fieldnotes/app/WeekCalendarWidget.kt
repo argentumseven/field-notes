@@ -19,7 +19,7 @@ class WeekCalendarWidget:CalendarWidget() {
                   first:LocalDate=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,
                   today:LocalDate=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,
                   zone:TimeZone=TimeZone.currentSystemDefault(),interactive:Boolean=true):RemoteViews {
-            val start=first.minus(first.dayOfWeek.isoDayNumber-1,DateTimeUnit.DAY)
+            val start=first.minus(first.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY)
             val p=widgetPalette(context,cache);val reveal=widgetMayShowTitles(cache,unlocked,authenticated)
             val records=if(reveal)widgetRecords(cache) else emptyList()
             val root=RemoteViews(context.packageName,R.layout.week_calendar_widget)

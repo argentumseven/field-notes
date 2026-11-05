@@ -16,6 +16,9 @@ const launcherOnly=process.argv.includes('--launcher-only');
 const detailsOnly=process.argv.includes('--details-only');
 const widgetOnly=process.argv.includes('--widget-preview-only');
 const resumeLibrary=process.argv.includes('--resume-library');
+const resumeWorkspace=process.argv.includes('--resume-workspace');
+// Capture a configured phone using the real, locally verified bundled APK offer.
+process.env.FIELD_NOTES_DOWNLOADS ||= resolve('dist/server/linux-'+(process.arch==='x64'?'x86_64':'aarch64')+'/downloads');
 if(!serial.startsWith('emulator-'))throw Error('Only a disposable emulator is supported.');
 async function call(args,timeout=120000){return(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;}
 const avd=(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()||(await call(['shell','getprop','ro.kernel.qemu.avd_name'])).trim();
@@ -49,11 +52,12 @@ async function launcher(){
 if(launcherOnly){try{await launcher();}finally{await call(['shell','wm','size','reset']);await call(['shell','wm','density','reset']);await restoreTimeout();}process.exit(0);}
 await call(['install','-r','dist/android-emulator/FieldNotes-debug.apk']);
 await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
-if(!resumeLibrary)await call(['shell','pm','clear','org.fieldnotes.app']);
+if(!resumeLibrary&&!resumeWorkspace)await call(['shell','pm','clear','org.fieldnotes.app']);
 else {
  const saved=(await call(['shell','run-as','org.fieldnotes.app','ls','files/gallery'])).trim().split(/\s+/);
- if(!['01-enroll.png','02-phone-confirmation.png','03-focus.png','16-collections.png'].every(name=>saved.includes(name)))throw Error('Resume requires existing synthetic captures from this disposable fixture.');
+ if(!(resumeWorkspace?['01-enroll.png','02-phone-confirmation.png','26-pairing-paused.png']:['01-enroll.png','02-phone-confirmation.png','03-focus.png','16-collections.png']).every(name=>saved.includes(name)))throw Error('Resume requires existing synthetic captures from this disposable fixture.');
 }
+await call(['shell','pm','grant','org.fieldnotes.app','android.permission.POST_NOTIFICATIONS']);
 for(const pkg of ['org.fieldnotes.app','org.fieldnotes.app.test']){
  const result=await call(['shell','cmd','package','compile','-m','speed',pkg],360000);if(!result.includes('Success'))throw Error('Emulator AOT preparation failed.');
 }
@@ -65,6 +69,8 @@ try{
  hub=spawn(resolve('dist/testhub'),['--backend',f.device,'--peer-file',peerFile,'--config-file',configFile],{stdio:['ignore','ignore','pipe']});
  let config;for(let i=0;i<100;i++){try{config=await readFile(configFile);break;}catch{}await delay(50);}if(!config)throw Error('Test hub did not start.');
  const snapshot=(await f.request('/api/snapshot',{token:f.owner})).data;
+ const update=await f.request('/api/device/update',{token:f.owner,base:f.device});
+ assert.equal(update.status,200);assert.equal(update.data.available,true,'Build the matching server bundle or set FIELD_NOTES_DOWNLOADS before capturing a configured phone.');
  const stale=await f.request('/api/commands',{token:f.owner,body:{operation_id:randomUUID(),epoch:snapshot.epoch,generation:snapshot.generation,action:'task.update',target:f.ids.shelves,expected_revision:0,data:{title:'A stale edit'}}});
  assert.equal(stale.status,409);
  const image=snapshot.records.find(r=>r.kind==='image');
@@ -72,7 +78,7 @@ try{
  // Real authorized server snapshot/image and a real stale response. The test
  // connection renders them deterministically; this is not a tunnel test.
  const people=(await f.request("/api/people",{token:f.owner})).data.people;
- const uiFixture=Buffer.from(JSON.stringify({snapshot,people,image:imageBytes.data.toString('base64'),stale_error:stale.data}));
+ const uiFixture=Buffer.from(JSON.stringify({snapshot,people,apk_update:update.data,image:imageBytes.data.toString('base64'),stale_error:stale.data}));
  // Stream the synthetic JSON into this debug app's private test file. Putting
  // image-bearing fixtures in an am instrument argument exceeds ADB's 64 KiB
  // service-command limit. No production permission or parser is relaxed.
@@ -81,7 +87,7 @@ try{
   const child=spawn(adb,['-s',serial,'shell','-T',"run-as org.fieldnotes.app sh -c 'cat > files/gallery-fixture.json'"],{stdio:['pipe','ignore','pipe']});
   let error='';child.stderr.on('data',b=>error+=b);child.on('error',reject);child.on('close',code=>code===0?resolve():reject(Error('Writing the test fixture failed: '+error)));child.stdin.end(uiFixture);
  });
- for(const mode of (widgetOnly?['widget-preview']:detailsOnly?['details']:resumeLibrary?['library','light']:['dark','light'])){
+ for(const mode of (widgetOnly?['widget-preview']:detailsOnly?['details']:resumeLibrary?['library','light']:resumeWorkspace?['workspace','light']:['dark','light'])){
   if(mode==='light')await call(['shell','cmd','uimode','night','no']);
   await call(['shell','input','keyevent','KEYCODE_WAKEUP']);
   await call(['shell','wm','dismiss-keyguard']);
@@ -92,7 +98,7 @@ try{
   if(!/OK \(1 test\)/.test(result)||result.includes('FAILURES!!!'))throw Error(result);
  }
  const names=(await call(['shell','run-as','org.fieldnotes.app','ls','files/gallery'])).trim().split(/\s+/);
- if(names.length!==(widgetOnly?1:detailsOnly?4:28)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
+ if(names.length!==(widgetOnly?1:detailsOnly?5:29)||names.some(n=>!/^\d\d-[a-z-]+\.png$/.test(n)))throw Error('Incomplete gallery: '+names.join(','));
  const captures=[],seen=new Map();
  for(const name of names){
   const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/gallery/'+name],{encoding:'buffer',maxBuffer:8*1024*1024});

@@ -208,10 +208,27 @@ class Workspace(
         return r
     }
     /** Fixed software routes share the normal connection and session fences. */
-    suspend fun softwareUpdate(path:String):Reply=connection.withLock {
+    suspend fun softwareUpdate(path:String,body:JsonObject?=null):Reply=connection.withLock {
         require(path=="/api/device/update" || path.matches(Regex("/api/device/update/chunks/[a-f0-9]{64}/[0-9]{1,4}"))){"Only the paired software endpoint is allowed"}
         check(!state.value.needsLogin&&cache.token!=null){"Sign in before checking updates"}
-        exchange(path,null,cache.token)
+        require(body==null||path=="/api/device/update"&&body.keys==setOf("installed_signer_sha256")&&body.text("installed_signer_sha256").matches(Regex("[a-f0-9]{64}"))){"Only the installed signing certificate may select the paired APK"}
+        exchange(path,body,cache.token)
+    }
+    /** Export holds the connection fence so sync/account changes cannot remove
+     * cached attachments midway through a local encrypted copy. */
+    suspend fun <T> portableSnapshot(block:suspend(Cache)->T):T=connection.withLock { block(cache) }
+    suspend fun transfer(action:String,body:JsonObject?=null,expectedBasis:Basis?=null,expectedActor:String?=null):JsonObject=connection.withLock {
+        require(action in setOf("export","recovered","prepare","review","image","commit","cancel","restore","discard"))
+        check((expectedBasis==null||cache.snapshot?.basis==expectedBasis)&&(expectedActor==null||cache.snapshot?.actor?.user_id==expectedActor)){"The workspace or account changed. Choose the file again; current data was kept."}
+        check(!state.value.needsLogin&&cache.token!=null){"Sign in to the paired server before importing."}
+        val result=request("/api/transfer/$action",body)
+        if(action=="recovered")update {it.copy(recoveredImports=result["items"]!!.jsonArray.map{item->item.jsonObject})}
+        result
+    }
+    suspend fun transferMedia(id:String):Reply=connection.withLock {
+        require(id.matches(Regex("[a-f0-9-]{36}")))
+        check(!state.value.needsLogin&&cache.token!=null){"Sign in to retrieve this attachment."}
+        exchange("/api/transfer/media/$id",null,cache.token)
     }
     private suspend fun request(path: String, body: JsonObject? = null, token: String? = cache.token): JsonObject {
         val r=exchange(path,body,token)
@@ -225,7 +242,7 @@ class Workspace(
         val old = cache.snapshot?.actor?.user_id
         check(old == null || old == actor.user_id || (cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty())) { "Retained edits belong to another account. Sign in to that account before switching." }
         if (old != null && old != actor.user_id) vault.clearImages()
-        update { it.copy(token = r.text("token"), enrollment = null, snapshot = if (old == actor.user_id) it.snapshot else null, people = if(old == actor.user_id)it.people else emptyList()) }
+        update { it.copy(token = r.text("token"), enrollment = null, snapshot = if (old == actor.user_id) it.snapshot else null, people = if(old == actor.user_id)it.people else emptyList(),recoveredImports=if(old==actor.user_id)it.recoveredImports else emptyList()) }
         _state.update { it.copy(needsLogin = false, error = null) }
     }
     suspend fun removeInstallation() = connection.withLock {
@@ -241,7 +258,7 @@ class Workspace(
         check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Resolve queued changes, drafts and conflicts before signing out." }
         request("/api/logout", obj())
         vault.clearImages()
-        update { it.copy(token = null, snapshot = null, people = emptyList(), reminded = emptySet()) }
+        update { it.copy(token = null, snapshot = null, people = emptyList(), reminded = emptySet(),recoveredImports=emptyList()) }
         _state.update { it.copy(needsLogin = true, online = false) }
     }
     fun enqueueAsync(action: String, target: String, data: JsonObject, revision: Long?, basis: Basis? = null) = scope.launch {
@@ -268,6 +285,18 @@ class Workspace(
             val checked=projectRecords(c).filter { it.record.kind=="task"&&it.record.data.text("project_id")==listId&&it.record.data.text("status")=="done" }
             check(c.outbox.size+c.conflicts.size+checked.size<=500) { "Synchronize pending work before clearing this many items." }
             val commands=checked.map { row -> Pending(Command(newId(),snap.epoch,snap.generation,"task.delete",row.record.id,row.record.revision,obj()),c.outbox.lastOrNull { it.command.target==row.record.id }?.command?.operation_id) }
+            c.copy(outbox=c.outbox+commands)
+        }
+    }
+    suspend fun clearCheckedItems(items:List<Record>,basis:Basis) {
+        update { c ->
+            val snap=c.snapshot ?: error("Synchronize first.")
+            check(snap.basis==basis){"The workspace changed. Reopen this list before clearing items."}
+            check(snap.actor.role!="viewer"){"Your role is read-only."}
+            val rows=projectRecords(c).map { it.record };val ids=items.map { it.id }.toSet()
+            check(ids.size==items.size&&items.all { r->r.kind=="task"&&r.data.text("status")=="done"&&isChecklistItem(r,rows) }){"Choose checked list items."}
+            check(c.outbox.size+c.conflicts.size+items.size<=500){"Synchronize pending work before clearing this many items."}
+            val commands=items.map { row->Pending(Command(newId(),snap.epoch,snap.generation,"task.delete",row.id,row.revision,obj()),c.outbox.lastOrNull { it.command.target==row.id }?.command?.operation_id) }
             c.copy(outbox=c.outbox+commands)
         }
     }
@@ -332,7 +361,7 @@ class Workspace(
                     d.epoch != fresh.epoch || d.generation != fresh.generation ||
                         (d.target !in ids && c.outbox.none { it.command.target == d.target && it.command.action.endsWith(".create") && it.command.epoch == fresh.epoch && it.command.generation == fresh.generation })
                 }
-                c.copy(snapshot = fresh, people = directory, directoryRevision=directoryReply.number("revision"), drafts = c.drafts - orphaned.map { it.target }.toSet(), conflicts = c.conflicts + orphaned.map { d ->
+                c.copy(snapshot = fresh, people = directory, recoveredImports=if(c.snapshot?.basis==fresh.basis)c.recoveredImports else emptyList(), directoryRevision=directoryReply.number("revision"), drafts = c.drafts - orphaned.map { it.target }.toSet(), conflicts = c.conflicts + orphaned.map { d ->
                     Conflict(Command(newId(), d.epoch, d.generation, d.action, d.target, d.revision, d.data), "The server item was removed or restored. Copy this draft to a new item if needed.")
                 })
             }
@@ -342,6 +371,7 @@ class Workspace(
                 val fence = when {
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
+                    c.data.keys.any { it in setOf("recurrence","category","store","on_radar","remind_at","notify_additions","item_reminders") }&&!cache.supportsPlannerV3()->"This saved edit uses newer planner fields. Update the paired server; the complete edit is kept in Retained changes."
                     item.dependsOn != null -> "An earlier queued edit was rejected. Review this dependent draft."
                     else -> null
                 }

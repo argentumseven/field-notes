@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/dev-env.sh
+python3 tools/sync-brand-icons.py --check
 python3 scripts/check-versions.py
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings

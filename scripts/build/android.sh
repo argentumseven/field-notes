@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source scripts/dev-env.sh
+python3 tools/sync-brand-icons.py --check
 mode=${1:-debug}
 [[ $mode == debug || $mode == release ]] || { echo 'Usage: android.sh [debug|release]' >&2; exit 1; }
 [[ -x "$FIELD_NOTES_TOOLS/jdk/bin/javac" ]] || bash scripts/setup/jdk.sh

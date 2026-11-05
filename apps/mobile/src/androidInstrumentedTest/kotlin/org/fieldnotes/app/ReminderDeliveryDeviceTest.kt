@@ -31,10 +31,12 @@ class ReminderDeliveryDeviceTest {
         val key=customAlerts(event,now,zone).first { it.profile?.sound=="bell" }.key
         val deadline=System.currentTimeMillis()+90_000
         while(System.currentTimeMillis()<deadline&&manager.activeNotifications.none { it.notification.channelId=="fn-reminder-v1-urgent-bell-100-true" }) Thread.sleep(250)
-        val posted=manager.activeNotifications.filter { it.tag?.startsWith("field-notes:")==true }
+        // Connection/health notices have independent titles; inspect the actual
+        // reminder channels rather than a notification left by another fixture.
+        val posted=manager.activeNotifications.filter { it.tag?.startsWith("field-notes:")==true&&it.notification.channelId.startsWith("fn-reminder-v1-") }
         assertTrue(posted.any { it.notification.channelId=="fn-reminder-v1-urgent-bell-100-true" })
         assertTrue(posted.any { it.notification.channelId=="fn-reminder-v1-quiet" })
-        assertTrue(posted.all { it.notification.extras.getString("android.title")=="Home maintenance check-in" })
+        assertTrue("Posted channels/titles: "+posted.map { it.notification.channelId+": "+it.notification.extras.getString("android.title") },posted.all { it.notification.extras.getString("android.title")=="Home maintenance check-in" })
         assertTrue(posted.all { it.notification.extras.getString("android.bigText")!!.contains("start only") })
         assertTrue(posted.all { it.notification.extras.getString("android.bigText")!!.contains("For Morgan") })
         assertTrue(posted.all { it.notification.publicVersion.extras.getString("android.title")=="Field Notes alert" })

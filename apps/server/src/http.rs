@@ -468,12 +468,39 @@ async fn android_download_info(State(app): State<App>) -> Json<Value> {
         |d| d.metadata(),
     ))
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdateClient {
+    installed_signer_sha256: String,
+}
 async fn device_update_info(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
+    device_update_metadata(app, h, None).await
+}
+async fn device_update_offer(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(client): Json<UpdateClient>,
+) -> Result<Json<Value>, Fault> {
+    if client.installed_signer_sha256.len() != 64
+        || !client
+            .installed_signer_sha256
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(Fault(400, "Invalid installed APK certificate".into()));
+    }
+    device_update_metadata(app, h, Some(client.installed_signer_sha256)).await
+}
+async fn device_update_metadata(
+    app: App,
+    h: HeaderMap,
+    signer: Option<String>,
+) -> Result<Json<Value>, Fault> {
     let token = credential(&h, true)?;
     blocking(app.clone(), move |s| s.actor(&token).map(|_| ())).await?;
     let mut info = app.downloads.as_ref().map_or(
         json!({"available":false,"error":app.downloads_error}),
-        |d| d.update_metadata(),
+        |d| d.update_for_signer(signer.as_deref()),
     );
     info["compatibility"] = crate::store::Store::compatibility();
     Ok(Json(info))
@@ -498,6 +525,16 @@ async fn android_apk(State(app): State<App>) -> Result<Response, Fault> {
         .file("field-notes.apk")
         .await
 }
+async fn android_legacy(
+    State(app): State<App>,
+    Path(name): Path<String>,
+) -> Result<Response, Fault> {
+    app.downloads
+        .as_ref()
+        .ok_or(Fault(404, "Android download unavailable".into()))?
+        .legacy_file(&name)
+        .await
+}
 async fn android_checksum(State(app): State<App>) -> Result<Response, Fault> {
     app.downloads
         .as_ref()
@@ -511,6 +548,85 @@ async fn android_signer(State(app): State<App>) -> Result<Response, Fault> {
         .ok_or(Fault(404, "Android download unavailable".into()))?
         .file("field-notes.apk.signer.txt")
         .await
+}
+async fn transfer_export(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, app.device)?;
+    Ok(Json(
+        blocking(app, move |s| s.transfer_export(&token)).await?,
+    ))
+}
+async fn transfer_recovered(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, app.device)?;
+    Ok(Json(
+        blocking(app, move |s| s.transfer_recovered(&token)).await?,
+    ))
+}
+async fn transfer_media(
+    State(app): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Response, Fault> {
+    let token = credential(&h, app.device)?;
+    let bytes = blocking(app, move |s| s.transfer_recovered_media(&token, &id)).await?;
+    Ok(([("content-type", "application/octet-stream")], bytes).into_response())
+}
+async fn transfer_post(
+    State(app): State<App>,
+    h: HeaderMap,
+    Path(action): Path<String>,
+    Json(input): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, app.device)?;
+    Ok(Json(
+        blocking(app, move |s| match action.as_str() {
+            "prepare" => s.transfer_prepare(&token, &input),
+            "review" => s.transfer_review(&token, &input),
+            "image" => s.transfer_image(&token, &input),
+            "commit" => s.transfer_commit(&token, &input),
+            "cancel" => s.transfer_cancel(&token, &input),
+            "restore" => s.transfer_restore(&token, &input),
+            "discard" => s.transfer_discard(&token, &input),
+            _ => Err(Fault(404, "Transfer action not found".into())),
+        })
+        .await?,
+    ))
+}
+async fn transfer_guard(State(app): State<App>, request: Request<Body>, next: Next) -> Response {
+    use futures_util::StreamExt;
+    static GATE: std::sync::OnceLock<Arc<Semaphore>> = std::sync::OnceLock::new();
+    let permit = match GATE
+        .get_or_init(|| Arc::new(Semaphore::new(1)))
+        .clone()
+        .try_acquire_owned()
+    {
+        Ok(p) => p,
+        Err(_) => {
+            return Fault(
+                429,
+                "Another archive transfer is active; retry shortly".into(),
+            )
+            .into_response()
+        }
+    };
+    let token = match credential(request.headers(), app.device) {
+        Ok(t) => t,
+        Err(e) => return e.into_response(),
+    };
+    if let Err(error) = blocking(app, move |s| s.actor(&token).map(|_| ())).await {
+        return error.into_response();
+    }
+    let (parts, body) = next.run(request).await.into_parts();
+    let stream = futures_util::stream::try_unfold(
+        (body.into_data_stream(), permit),
+        |(mut body, permit)| async move {
+            match body.next().await {
+                Some(Ok(bytes)) => Ok(Some((bytes, (body, permit)))),
+                Some(Err(error)) => Err(error),
+                None => Ok(None),
+            }
+        },
+    );
+    Response::from_parts(parts, Body::from_stream(stream))
 }
 async fn approve(
     State(app): State<App>,
@@ -636,9 +752,21 @@ pub fn router(app: App) -> Router {
         .route("/api/head", get(head))
         .route("/api/commands", post(command))
         .route("/api/images/{id}", get(image));
+    routes = routes.merge(
+        Router::new()
+            .route("/api/transfer/export", get(transfer_export))
+            .route("/api/transfer/recovered", get(transfer_recovered))
+            .route("/api/transfer/media/{id}", get(transfer_media))
+            .route("/api/transfer/{action}", post(transfer_post))
+            .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
+            .route_layer(middleware::from_fn_with_state(app.clone(), transfer_guard)),
+    );
     if app.device {
         routes = routes
-            .route("/api/device/update", get(device_update_info))
+            .route(
+                "/api/device/update",
+                get(device_update_info).post(device_update_offer),
+            )
             .route(
                 "/api/device/update/chunks/{digest}/{index}",
                 get(device_update_chunk),
@@ -655,6 +783,7 @@ pub fn router(app: App) -> Router {
             .route("/downloads/field-notes.apk", get(android_apk))
             .route("/downloads/field-notes.apk.sha256", get(android_checksum))
             .route("/downloads/field-notes.apk.signer.txt", get(android_signer))
+            .route("/downloads/legacy/{name}", get(android_legacy))
             .route("/api/account/password", post(change_password))
             .route("/api/enrollment/invitations", post(invite))
             .route("/api/enrollment/tunnel-invitations", post(tunnel_invite))
@@ -704,6 +833,42 @@ pub fn router(app: App) -> Router {
                     (
                         [("content-type", "text/javascript; charset=utf-8")],
                         include_str!("../../admin/reminders.js"),
+                    )
+                }),
+            )
+            .route(
+                "/archive.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/archive.js"),
+                    )
+                }),
+            )
+            .route(
+                "/archive-zip.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/vendor/fflate-0.8.2.js"),
+                    )
+                }),
+            )
+            .route(
+                "/record-types.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/record-types.js"),
+                    )
+                }),
+            )
+            .route(
+                "/recurrence.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/recurrence.js"),
                     )
                 }),
             )
@@ -761,6 +926,15 @@ pub fn router(app: App) -> Router {
                     (
                         [("content-type", "text/css; charset=utf-8")],
                         include_str!("../../admin/app.css"),
+                    )
+                }),
+            )
+            .route(
+                "/field-notes-icon.svg",
+                get(|| async {
+                    (
+                        [("content-type", "image/svg+xml")],
+                        include_str!("../../admin/field-notes-icon.svg"),
                     )
                 }),
             );

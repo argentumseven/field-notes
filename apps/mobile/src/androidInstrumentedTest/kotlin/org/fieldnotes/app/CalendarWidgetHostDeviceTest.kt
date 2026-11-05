@@ -37,7 +37,7 @@ class CalendarWidgetHostDeviceTest {
         fun nodes(text:String):List<AccessibilityNodeInfo> {
             val found=mutableListOf<AccessibilityNodeInfo>()
             fun visit(node:AccessibilityNodeInfo) {
-                if(node.text?.contains(text)==true)found+=node
+                if(node.isVisibleToUser&&node.text?.contains(text)==true)found+=node
                 for(i in 0 until node.childCount)node.getChild(i)?.let(::visit)
             }
             instrumentation.uiAutomation.windows.forEach { it.root?.let(::visit) }
@@ -49,7 +49,7 @@ class CalendarWidgetHostDeviceTest {
         fun described(value:String):List<AccessibilityNodeInfo> {
             val found=mutableListOf<AccessibilityNodeInfo>()
             fun visit(node:AccessibilityNodeInfo) {
-                if(node.contentDescription?.contains(value)==true)found+=node
+                if(node.isVisibleToUser&&node.contentDescription?.contains(value)==true)found+=node
                 for(i in 0 until node.childCount)node.getChild(i)?.let(::visit)
             }
             instrumentation.uiAutomation.windows.forEach { it.root?.let(::visit) }
@@ -87,7 +87,7 @@ class CalendarWidgetHostDeviceTest {
             instrumentation.uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
             var page=0;var nextSwipe=System.currentTimeMillis()+8000
             waitFor("visible month") {
-                if(described(friendlyDate(today)).any { it.contentDescription?.contains("1 scheduled")==true })true else {
+                if(described(if(weekly)"Next week" else "Next month").isNotEmpty()&&described(friendlyDate(today)).any { it.contentDescription?.contains("1 scheduled")==true })true else {
                     if(page<6&&System.currentTimeMillis()>=nextSwipe) { val m=app.resources.displayMetrics;instrumentation.uiAutomation.executeShellCommand("input swipe ${m.widthPixels*9/10} ${m.heightPixels/3} ${m.widthPixels/10} ${m.heightPixels/3} 250").close();page++;nextSwipe=System.currentTimeMillis()+5000 };false
                 }
             }

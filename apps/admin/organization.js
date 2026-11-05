@@ -13,6 +13,7 @@ async function newStandaloneTask() {
     "Capture everything you need in one step. Dates stay optional.",
     [
       { key: "title", label: "Task title", max: 240 },
+      categoryField(),
       {
         key: "notes",
         label: "Notes",
@@ -36,7 +37,7 @@ async function newStandaloneTask() {
         key: "assignee",
         label: "Assigned to",
         options: assignmentOptions(),
-        value: state.page === "mine" ? state.actor.user_id : "",
+        value: "",
         required: false,
       },
       {
@@ -91,14 +92,102 @@ async function newStandaloneTask() {
   );
 }
 
+function noteFollowUpControls(parent, initial = {}, changed = () => {}) {
+  const section = el("section", "repeat-editor"),
+    choice = el("label", "dialog-choice"),
+    enabled = el("input");
+  enabled.type = "checkbox";
+  enabled.checked = !!initial.on_radar;
+  choice.append(enabled, document.createTextNode("Keep in Later & reminders"));
+  section.append(choice);
+  const when = initial.remind_at ? new Date(initial.remind_at * 1000) : null,
+    date = input(
+      "Remind on · optional",
+      initial.followup?.date || (when ? FieldPlanning.localDay(when) : ""),
+      "date",
+    ),
+    time = input(
+      "At",
+      initial.followup?.time ||
+        (when ? FieldPlanning.localTime(when) : "09:00"),
+      "time",
+    );
+  date.node.required = false;
+  time.node.required = false;
+  if (initial.followup) enabled.checked = initial.followup.onRadar;
+  const fields = el("div", "view-filters");
+  fields.append(
+    addField(el("div"), date).parentElement,
+    addField(el("div"), time).parentElement,
+  );
+  section.append(fields);
+  const quick = el("div", "repeat-presets");
+  for (const [days, label] of [
+    [1, "Tomorrow"],
+    [7, "In a week"],
+    [null, "Someday · no reminder"],
+  ])
+    quick.append(
+      button(label, () => {
+        enabled.checked = true;
+        date.node.value =
+          days === null
+            ? ""
+            : FieldPlanning.shiftDay(FieldPlanning.localDay(), days);
+        render();
+        changed();
+      }),
+    );
+  section.append(
+    quick,
+    el(
+      "p",
+      "muted",
+      "An idea can stay undated. A reminder brings it back without blocking calendar time. Everyone receives new reminders by default.",
+    ),
+  );
+  const render = () => {
+    fields.hidden = quick.hidden = !enabled.checked;
+    time.node.disabled = !enabled.checked || !date.node.value;
+  };
+  enabled.onchange = () => {
+    render();
+    changed();
+  };
+  date.node.onchange = () => {
+    render();
+    changed();
+  };
+  time.node.onchange = changed;
+  parent.append(section);
+  render();
+  return {
+    raw: () => ({
+      onRadar: enabled.checked,
+      date: date.node.value,
+      time: time.node.value,
+    }),
+    value: () => ({
+      on_radar: enabled.checked,
+      remind_at:
+        enabled.checked && date.node.value
+          ? FieldPlanning.scheduledInstant(
+              date.node.value,
+              time.node.value || "09:00",
+              initial.remind_at,
+            )
+          : 0,
+    }),
+  };
+}
 async function newNote() {
-  let created;
+  const later = state.page === "later";
+  let follow;
   await formDialog(
-    "New note",
-    "A shared reference, idea or piece of information that does not need to become a task.",
+    later ? "New reminder note" : "New note",
+    "Keep the idea and context together. Dates are optional.",
     [
       { key: "title", label: "Note title", max: 240 },
-      { key: "pinned", label: "Pin note", type: "checkbox", value: false },
       {
         key: "body",
         label: "Content",
@@ -106,23 +195,33 @@ async function newNote() {
         required: false,
         max: 16384,
       },
+      categoryField(),
     ],
     async (v) => {
-      created = await mutate("note.create", uuid(), v, null);
+      await mutate("note.create", uuid(), { ...v, ...follow.value() }, null);
     },
-    "Create note",
+    later ? "Create reminder note" : "Create note",
+    () => {
+      follow = noteFollowUpControls($("#dialog-body"), { on_radar: later });
+    },
   );
-  state.page = "notes";
+  state.page = later ? "later" : "notes";
   state.query = "";
   state.project = null;
   state.selected = null;
   render();
 }
 function renderNotes(root) {
+  state.noteViews ||= {};
+  const view = (state.noteViews[state.page] ||= {
+    category: "",
+    sort: "updated",
+    when: "all",
+  });
   const tools = el("div", "toolbar"),
     search = el("input");
   search.type = "search";
-  search.placeholder = "Search notes";
+  search.placeholder = "Search note titles and content";
   search.value = state.query;
   search.setAttribute("aria-label", "Find a note");
   search.oninput = () => {
@@ -132,21 +231,82 @@ function renderNotes(root) {
   tools.append(search);
   if (mayWrite()) tools.append(button("New note", newNote, "primary"));
   root.append(tools);
+  const filters = el("div", "view-filters");
+  const choice = (label, options, value, change) => {
+    const node = select(label, options, value),
+      box = el("label");
+    box.append(node.label, node.node);
+    node.node.onchange = () => {
+      change(node.node.value);
+      draw();
+    };
+    filters.append(box);
+  };
+  choice(
+    "Category",
+    [["*", "All categories"], ...Object.entries(recordCategories)],
+    view.category || "*",
+    (value) => (view.category = value === "*" ? "" : value),
+  );
+  choice(
+    "Sort by",
+    [
+      ["updated", "Recently changed"],
+      ["title", "Name A–Z"],
+      ["reminder", "Reminder time"],
+      ["created", "Recently added"],
+    ],
+    view.sort,
+    (value) => (view.sort = value),
+  );
+  if (state.page === "later")
+    choice(
+      "Show",
+      [
+        ["all", "All ideas & reminders"],
+        ["undated", "Undated ideas"],
+        ["upcoming", "Upcoming reminders"],
+        ["overdue", "Needs follow-up"],
+      ],
+      view.when,
+      (value) => (view.when = value),
+    );
+  root.append(filters);
   const list = el("div", "notes-list");
   root.append(list);
   function draw() {
     list.replaceChildren();
     const notes = records("note")
+      .filter((n) => state.page !== "later" || n.data.on_radar)
+      .filter(
+        (n) =>
+          !view.category || (n.data.category || "general") === view.category,
+      )
+      .filter(
+        (n) =>
+          state.page !== "later" ||
+          view.when === "all" ||
+          (view.when === "undated" && !n.data.remind_at) ||
+          (view.when === "upcoming" && n.data.remind_at > Date.now() / 1000) ||
+          (view.when === "overdue" &&
+            n.data.remind_at > 0 &&
+            n.data.remind_at <= Date.now() / 1000),
+      )
       .filter((n) =>
         (n.data.title + " " + n.data.body)
           .toLowerCase()
           .includes(state.query.toLowerCase()),
       )
-      .sort(
-        (a, b) =>
-          Number(!!b.data.pinned) - Number(!!a.data.pinned) ||
-          (b.data.updated_at || 0) - (a.data.updated_at || 0) ||
-          a.id.localeCompare(b.id),
+      .sort((a, b) =>
+        view.sort === "title"
+          ? a.data.title.localeCompare(b.data.title)
+          : view.sort === "reminder"
+            ? (a.data.remind_at || Infinity) - (b.data.remind_at || Infinity)
+            : view.sort === "created"
+              ? (b.data.created_at || 0) - (a.data.created_at || 0)
+              : Number(!!b.data.pinned) - Number(!!a.data.pinned) ||
+                (b.data.last_activity_at || b.data.updated_at || 0) -
+                  (a.data.last_activity_at || a.data.updated_at || 0),
       );
     if (!notes.length)
       list.append(
@@ -167,6 +327,7 @@ function renderNotes(root) {
       );
       row.dataset.taskId = n.id;
       row.append(
+        typeBadges(n),
         el("strong", "", n.data.title),
         el("span", "note-preview", n.data.body.slice(0, 180)),
         el(
@@ -176,6 +337,16 @@ function renderNotes(root) {
             new Date(n.data.updated_at * 1000).toLocaleDateString(),
         ),
       );
+      if (n.data.on_radar)
+        row.append(
+          el(
+            "span",
+            "badge",
+            n.data.remind_at
+              ? "Remind " + new Date(n.data.remind_at * 1000).toLocaleString()
+              : "Someday · no reminder",
+          ),
+        );
       row.append(historyNode(n));
       list.append(row);
     }
@@ -214,6 +385,15 @@ function renderNoteDetail(note) {
         String(!!draft.pinned),
       ),
     );
+  const category = addField(
+    detail,
+    select(
+      "Category",
+      Object.entries(recordCategories),
+      draft.category || "general",
+    ),
+  );
+  const follow = noteFollowUpControls(detail, draft, () => dirty());
   title.maxLength = 240;
   body.maxLength = 16384;
   body.rows = 16;
@@ -222,9 +402,11 @@ function renderNoteDetail(note) {
       ...draft,
       title: title.value,
       body: body.value,
+      category: category.value,
+      followup: follow.raw(),
       pinned: pinned.value === "true",
     });
-  for (const n of [title, body, pinned]) {
+  for (const n of [title, body, pinned, category]) {
     n.disabled = !mayWrite();
     n.oninput = dirty;
   }
@@ -255,7 +437,13 @@ function renderNoteDetail(note) {
           await mutate(
             "note.update",
             note.id,
-            { title: d.title, body: d.body, pinned: d.pinned },
+            {
+              title: d.title,
+              body: d.body,
+              pinned: d.pinned,
+              category: d.category,
+              ...follow.value(),
+            },
             d.baseRevision,
           );
           state.drafts.delete(note.id);

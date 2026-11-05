@@ -16,8 +16,17 @@ class PrivateUpdatesService:Service(){
     private var work:Job?=null
     private var wake:PowerManager.WakeLock?=null
     override fun onBind(intent:Intent?)=null
+    override fun onCreate(){
+        super.onCreate()
+        // Meet Android's foreground deadline before other channel/binder setup
+        // or coroutine work. The full controls replace this minimal status below.
+        Alerts.connectionChannel(this)
+        startForeground(90,Notification.Builder(this,Alerts.CONNECTION)
+            .setSmallIcon(R.drawable.ic_field_notes).setContentTitle("Field Notes background updates")
+            .setContentText("Starting private updates…").setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_SECRET).setCategory(Notification.CATEGORY_SERVICE).build())
+    }
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
-        Alerts.channels(this)
         val open=PendingIntent.getActivity(this,91,Intent(this,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop=PendingIntent.getService(this,92,Intent(this,PrivateUpdatesService::class.java).setAction("stop"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification=NotificationCompat.Builder(this,Alerts.CONNECTION).setSmallIcon(R.drawable.ic_field_notes)
@@ -49,23 +58,8 @@ class PrivateUpdatesService:Service(){
                 // healthy. It cannot override stopped users, force-stop or DND.
                 if(wake==null)wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"fieldnotes:private-updates").also { it.setReferenceCounted(false) }
                 wake?.acquire(120_000)
-                val changed=app.model.poll()
+                app.model.poll()
                 val after=app.model.state.value
-                if(changed&&after.online&&!after.needsLogin){
-                    val old=before.cache.snapshot?.records.orEmpty().associateBy { it.id }
-                    val actor=after.cache.snapshot?.actor?.user_id
-                    val rows=after.cache.snapshot?.records.orEmpty().associateBy{it.id}
-                    val relevant=rows.values.filter { r->
-                        val parent=if(r.kind in setOf("comment","image"))rows[r.data.text("task_id")] ?: r else r
-                        r.revision!=(old[r.id]?.revision?:0L)&&r.data.text("updated_by").let { it.isNotBlank()&&it!=actor }&&
-                            (parent.kind !in setOf("task","event")||reminderRecipient(parent,actor.orEmpty()))
-                    }.map {r->if(r.kind in setOf("comment","image"))r.data.text("task_id") else r.id}.distinct()
-                    if(relevant.isNotEmpty()&&!app.uiVisible){
-                        val snap=after.cache.snapshot!!
-                        val notice=reminderNotice(after.cache,relevant.map {LocalAlert("change:$it",kotlinx.datetime.Clock.System.now().epochSeconds,it,"change")},kotlinx.datetime.TimeZone.currentSystemDefault())
-                        Alerts.post(this@PrivateUpdatesService,Alerts.UPDATES,"changes:${snap.epoch}:${snap.generation}:${snap.sequence}",notice.title,notice.summary,notice.target,notice.details)
-                    }
-                }
                 try { LocalAlarms.reconcile(this@PrivateUpdatesService) } catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention. Open Field Notes."}
                 if(after.online||after.cache.compatibility?.blocked==true)app.updates.checkForUpdate(automatic=true)
                 val status=when {after.cache.compatibility?.blocked==true->"App update required · saved work retained";after.problem!=null->"Needs attention · ${after.problem}";after.online->"Connected · ${after.cache.outbox.size} queued · private sync active";else->"Server unavailable · cached reminders continue · automatic retry"}

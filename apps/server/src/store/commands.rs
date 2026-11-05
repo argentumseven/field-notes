@@ -9,11 +9,11 @@ impl Store {
             &self.db,
             rusqlite::TransactionBehavior::Immediate,
         )?;
-        let result = self.command_inner(token, &c)?;
+        let result = self.command_inner(token, &c, false)?;
         tx.commit()?;
         Ok(result)
     }
-    fn command_inner(&self, token: &str, c: &Command) -> Result<Value> {
+    pub(super) fn command_inner(&self, token: &str, c: &Command, importing: bool) -> Result<Value> {
         let actor = self.actor(token)?;
         if actor.role == "viewer" {
             return fail(403, "Read-only role");
@@ -117,6 +117,9 @@ impl Store {
                     return fail(400, "Object kind mismatch");
                 }
                 Self::organized_record(&c.data, &mut record, &actor)?;
+                if record.kind == "note" {
+                    self.reminder_options(&c.data, &mut record, &actor)?;
+                }
             }
             "task.create" => {
                 fields(
@@ -134,6 +137,8 @@ impl Store {
                         "pinned",
                         "blocked",
                         "quantity",
+                        "store",
+                        "category",
                         "link_url",
                         "price",
                         "currency",
@@ -181,6 +186,8 @@ impl Store {
                         "pinned",
                         "blocked",
                         "quantity",
+                        "store",
+                        "category",
                         "link_url",
                         "price",
                         "currency",
@@ -303,55 +310,30 @@ impl Store {
                 Self::task(&self.record(&tid)?)?;
                 parent = Some(tid.clone());
                 let bytes = STANDARD
-                    .decode(text(&c.data, "bytes", 6_000_000)?)
+                    .decode(text(
+                        &c.data,
+                        "bytes",
+                        if importing { 11_200_000 } else { 6_000_000 },
+                    )?)
                     .map_err(|_| Fault(400, "Invalid image encoding".into()))?;
-                if bytes.len() > 4 * 1024 * 1024 {
-                    return fail(413, "Image must be smaller than 4 MiB");
-                }
-                let mut reader = image::ImageReader::new(Cursor::new(&bytes))
-                    .with_guessed_format()
-                    .map_err(|_| Fault(400, "Invalid image".into()))?;
-                if !matches!(
-                    reader.format(),
-                    Some(
-                        image::ImageFormat::Png
-                            | image::ImageFormat::Jpeg
-                            | image::ImageFormat::WebP
-                    )
-                ) {
-                    return fail(400, "Use PNG, JPEG, or WebP");
-                }
-                let mut limits = image::Limits::default();
-                limits.max_image_width = Some(4096);
-                limits.max_image_height = Some(4096);
-                limits.max_alloc = Some(64 * 1024 * 1024);
-                reader.limits(limits);
-                let image = reader
-                    .decode()
-                    .map_err(|_| Fault(400, "Image is invalid or exceeds decode limits".into()))?;
-                let mut normalized = Cursor::new(Vec::new());
-                image
-                    .write_to(&mut normalized, image::ImageFormat::Png)
-                    .map_err(|_| Fault(400, "Image normalization failed".into()))?;
-                if normalized.get_ref().len() > 8 * 1024 * 1024 {
-                    return fail(413, "Normalized image exceeds 8 MiB");
-                }
+                let normalized =
+                    media::normalize(&bytes, (if importing { 8 } else { 4 }) * 1024 * 1024)?;
                 let used: i64 = self.db.query_row(
                     "SELECT COALESCE(SUM(length(bytes)),0) FROM blobs",
                     [],
                     |r| r.get(0),
                 )?;
-                if used + normalized.get_ref().len() as i64 > 128 * 1024 * 1024 {
+                if used + normalized.bytes.len() as i64 > 128 * 1024 * 1024 {
                     return fail(413, "Image storage quota reached");
                 }
                 let encrypted = self
                     .vault
-                    .seal(&format!("blob:{}", record.id), normalized.get_ref())?;
+                    .seal(&format!("blob:{}", record.id), &normalized.bytes)?;
                 self.db.execute(
                     "INSERT INTO blobs VALUES(?,?)",
                     params![record.id, encrypted],
                 )?;
-                record.data = json!({"task_id":tid,"name":text(&c.data,"name",180)?,"author":actor.name,"author_id":actor.user_id,"width":image.width(),"height":image.height(),"size":normalized.get_ref().len(),"created_at":now()});
+                record.data = json!({"task_id":tid,"name":text(&c.data,"name",180)?,"author":actor.name,"author_id":actor.user_id,"width":normalized.width,"height":normalized.height,"size":normalized.bytes.len(),"original_sha256":crypto::digest(&bytes),"created_at":now()});
             }
             "event.create" | "event.update" => {
                 if record.kind != "event" {
@@ -410,6 +392,12 @@ impl Store {
             if record.revision == 0 {
                 record.data["created_by"] = json!(actor.user_id);
                 record.data["created_by_name"] = json!(actor.name);
+                let sequence: i64 = self.db.query_row(
+                    "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name='events'),0)+1",
+                    [],
+                    |r| r.get(0),
+                )?;
+                record.data["created_sequence"] = json!(sequence);
             }
             record.data["updated_by"] = json!(actor.user_id);
             record.data["updated_by_name"] = json!(actor.name);

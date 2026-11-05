@@ -38,6 +38,7 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
         if (path == "/api/login") return Reply(200, obj("token" to "new-token".j(), "actor" to WireJson.encodeToJsonElement(actor)).toString())
         if (expired) return Reply(401, obj("error" to "Session expired".j()).toString())
         if(path.startsWith("/api/device/update"))return Reply(200,"""{"available":false}""")
+        if(path.startsWith("/api/transfer/"))return Reply(200,"{}")
         if (path == "/api/device/revoke-self") return Reply(200,"""{"authorization_revoked":true}""")
         if (path == "/api/people" && !directoryAvailable) return Reply(404, """{"error":"Not available"}""")
         if (path == "/api/people") return Reply(200,obj("people" to WireJson.encodeToJsonElement(listOf(HouseholdPerson(actor.user_id,actor.name,true)))).toString())
@@ -62,6 +63,24 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aWaitingImportCannotSendItsFileAfterTheAccountOrWorkspaceChanges()=runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        val original=v.value;val basis=original.snapshot!!.basis;val user=actor.user_id
+        assertEquals(obj(),m.transfer("prepare",obj(),basis,user));t.requests.clear()
+        val held=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>()
+        val exporting=async {m.portableSnapshot {held.complete(Unit);release.await()}}
+        held.await()
+        v.value=original.copy(snapshot=original.snapshot!!.copy(actor=actor.copy(user_id="other-person")))
+        val signIn=async {m.initialize()};runCurrent()
+        val importing=async {runCatching {m.transfer("prepare",obj("manifest" to "Private archive".j()),basis,user)}}
+        runCurrent();release.complete(Unit);exporting.await();signIn.await()
+        assertIs<IllegalStateException>(importing.await().exceptionOrNull());assertTrue(t.requests.isEmpty())
+        v.value=original.copy(snapshot=original.snapshot!!.copy(generation=2));m.initialize()
+        assertFailsWith<IllegalStateException>{m.transfer("prepare",obj(),basis,user)}
+        assertTrue(t.requests.isEmpty());assertEquals(original.keys,v.value.keys)
+        assertEquals(original.outbox,v.value.outbox)
+    }
     @Test fun compatibleDriftAcceptsAdditiveDataAndIncompatibleServerRetainsTheOutbox()=runTest {
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
         t.additiveFields=true

@@ -4,10 +4,13 @@ mod auth;
 mod commands;
 mod enrollment;
 mod lists;
+mod media;
 mod organization;
 mod planning;
+mod recurrence;
 mod reminder_options;
 mod reminders;
+mod transfer;
 pub use enrollment::NetworkConfig;
 
 use crate::crypto::{self, Vault};

@@ -25,7 +25,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
     var addMenu by remember { mutableStateOf(false) }
     var soundFor by remember { mutableStateOf<String?>(null) }
     OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        TextButton(onClick={expanded=!expanded},modifier=Modifier.fillMaxWidth()) { Text("Reminders · ${value.alerts.size}"+(if(value.repeat!=null)" + recurring" else "")+if(expanded)" ▴" else " ▾") }
+        SecondaryButton(onClick={expanded=!expanded},modifier=Modifier.fillMaxWidth()) { Text("Reminders · ${value.alerts.size}"+(if(value.repeat!=null)" + recurring" else "")+if(expanded)" ▴" else " ▾") }
         if(expanded) {
             if(settings.advanced)ReminderAudienceEditor(settings)
             else Text("Basic reminders remain compatible with this server. Update the paired server to choose people, longer sounds and alarm mode.",style=MaterialTheme.typography.bodySmall)
@@ -33,8 +33,8 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             value.alerts.forEach { rule -> Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 val p=settings.options.playback[rule.id]?.applyTo(rule.profile) ?: rule.profile
                 Column(Modifier.weight(1f)) { Text(if(rule.minutes_before==0)"At the start" else "${rule.minutes_before} min before");Text("${if(p.alarm)"Alarm" else p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
-                TextButton(onClick={soundFor=rule.id}){Text("Sound")}
-                TextButton(onClick={changed(value.copy(alerts=value.alerts.filterNot { it.id==rule.id }))}){Text("Remove")}
+                SecondaryButton(onClick={soundFor=rule.id}){Text("Sound")}
+                SecondaryButton(onClick={changed(value.copy(alerts=value.alerts.filterNot { it.id==rule.id }))}){Text("Remove")}
             } }
             Box { SecondaryButton(onClick={addMenu=true},enabled=value.alerts.size<8){Text("Add reminder")};DropdownMenu(addMenu,{addMenu=false}) {
                 for(minutes in listOf(0,5,10,15,30,60,120,1440))DropdownMenuItem(text={Text(if(minutes==0)"At the start" else if(minutes==1440)"1 day before" else "$minutes minutes before")},onClick={changed(value.copy(alerts=value.alerts+ReminderAlert(newId(),minutes)));addMenu=false})
@@ -49,7 +49,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                 }
                 if(rule.weekdays.isNotEmpty()) {
                     FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) { for(d in 1..7)FilterChip(d in rule.weekdays,{ val days=if(d in rule.weekdays)rule.weekdays-d else rule.weekdays+d;changed(value.copy(repeat=rule.copy(weekdays=days.ifEmpty { listOf(d) }.sorted()))) },{Text(DayOfWeek(d).name.take(3).lowercase().replaceFirstChar { it.uppercase() })}) }
-                    TextButton(onClick={changed(value.copy(repeat=rule.copy(weekdays=(1..7).toList())))}){Text("Every day")}
+                    SecondaryButton(onClick={changed(value.copy(repeat=rule.copy(weekdays=(1..7).toList())))}){Text("Every day")}
                     DateField("Last reminder day · optional",rule.ends_on){changed(value.copy(repeat=rule.copy(ends_on=it)))}
                 }
                 TimeField("From",rule.from,use24Hour){changed(value.copy(repeat=rule.copy(from=it)))}
@@ -96,7 +96,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
 }
 @Composable private fun SoundProfileDialog(initial:AlertProfile,preview:(AlertProfile)->Unit,settings:ReminderEditorSettings,close:()->Unit,save:(AlertProfile)->Unit) {
     var p by remember { mutableStateOf(initial) }
-    AlertDialog(onDismissRequest=close,title={Text("Sound & importance")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    EditorDialog(onDismissRequest=close,title={Text("Sound & importance")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Importance")
         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf("quiet","normal","urgent"))FilterChip(p.importance==level,{p=p.copy(importance=level,alarm=if(level=="quiet")false else p.alarm,unmute=if(level=="quiet")false else p.unmute)},{Text(level.replaceFirstChar { it.uppercase() })})}
         if(p.importance!="quiet") {
@@ -120,26 +120,26 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf(25,50,75,100))FilterChip(p.volume==level,{p=p.copy(volume=level)},{Text("$level%")})}
             Row(verticalAlignment=Alignment.CenterVertically){Switch(p.vibrate,{p=p.copy(vibrate=it)},modifier=Modifier.semantics {contentDescription="Vibration"});Text("Vibration",Modifier.padding(start=8.dp))}
             SecondaryButton(onClick={preview(p)}){Text("Preview sound")}
-            if(settings.advanced)TextButton(onClick={preview(p.copy(importance="quiet"))}){Text("Stop preview")}
+            if(settings.advanced)SecondaryButton(onClick={preview(p.copy(importance="quiet"))}){Text("Stop preview")}
         }
         Text("Alarm mode uses Android’s alarm audio stream. Preview uses the current volume. DND exceptions remain in Android Settings; profile forwarding uses the receiving profile’s channel.",style=MaterialTheme.typography.bodySmall)
-    }},confirmButton={Button(onClick={save(p)}){Text("Done")}},dismissButton={TextButton(onClick=close){Text("Cancel")}})
+    }},confirmButton={Button(onClick={save(p)}){Text("Done")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
 @Composable internal fun TaskReminderDialog(model:Workspace,state:WorkspaceState,record:Record,device:DeviceActions,close:()->Unit) {
-    val initial=reminderSet(record) ?: ReminderSet(if(record.data.text("due").isNotBlank())listOf(ReminderAlert(record.id,0)) else emptyList())
+    val initial=reminderSet(record) ?: ReminderSet(if(record.data.text("due").isNotBlank()||record.kind=="note"&&record.data.number("remind_at")>0)listOf(ReminderAlert(record.id,0)) else emptyList())
     var json by rememberSaveable(record.id){mutableStateOf(reminderData(initial).toString())};var error by remember{mutableStateOf<String?>(null)}
-    var optionsJson by rememberSaveable(record.id){mutableStateOf(reminderOptionsData(reminderOptions(record) ?: ReminderOptions(ReminderAudience("assigned"))).toString())}
+    var optionsJson by rememberSaveable(record.id){mutableStateOf(reminderOptionsData(reminderOptions(record) ?: ReminderOptions()).toString())}
     val options=SyncJson.decodeFromString<ReminderOptions>(optionsJson)
     val rules=WireJson.decodeFromString<ReminderSet>(json);val scope=rememberCoroutineScope();var busy by remember{mutableStateOf(false)};val basis=remember{state.cache.snapshot!!.basis}
     val day=runCatching{LocalDate.parse(record.data.text("due").ifBlank{record.data.text("planned_for")})}.getOrDefault(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date)
-    AlertDialog(onDismissRequest=close,title={Text("Reminders")},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
-        Text(record.data.text("title"));Text("Date reminders use 9 AM on the due or planned day. A recurring window works even without a due date.",style=MaterialTheme.typography.bodySmall)
+    EditorDialog(onDismissRequest=close,title={Text("Reminders")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)){
+        Text(record.data.text("title"));Text(if(record.kind=="note")"Reminders use this note’s follow-up time. Recurring windows also work for situational reminders." else "Date reminders use 9 AM on the due or planned day. A recurring window works even without a due date.",style=MaterialTheme.typography.bodySmall)
         ReminderEditor(rules,day,model::newId,device.use24Hour,device.previewSound,reminderEditorSettings(model,state,options,true){optionsJson=reminderOptionsData(it).toString()}){json=reminderData(it).toString()}
         error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
     }},confirmButton={Button(enabled=!busy,onClick={busy=true;scope.launch{try{
         validateReminders(rules);val extra=prunedReminderOptions(options,rules)
         val data=if(state.cache.supportsRemindersV2()){validateReminderOptions(extra);obj("reminders" to reminderData(rules),"reminder_options" to reminderOptionsData(extra))}else obj("reminders" to reminderData(rules))
-        model.enqueue("task.update",record.id,data,record.revision,basis);close();model.sync()
-    }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false}}}){Text("Save reminders")}},dismissButton={TextButton(onClick=close){Text("Cancel")}})
+        model.enqueue(record.kind+".update",record.id,data,record.revision,basis);close();model.sync()
+    }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false}}}){Text("Save reminders")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }

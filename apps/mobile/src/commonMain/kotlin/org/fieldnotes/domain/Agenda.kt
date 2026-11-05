@@ -3,14 +3,14 @@ package org.fieldnotes.domain
 import kotlinx.datetime.*
 
 data class AgendaItem(val id: String, val title: String, val at: Long, val label: String)
-data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String, val profile:AlertProfile?=null, val progressKey:String=if(target==null)kind else "$kind:$target")
+data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String, val profile:AlertProfile?=null, val progressKey:String=if(target==null)kind else "$kind:$target",val sourceAt:Long?=null)
 
 /** Home-screen agenda uses dates/events, independently of the Focus score. */
 fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): List<AgendaItem> {
     val user = cache.snapshot?.actor?.user_id ?: return emptyList()
     val today = now.toLocalDateTime(zone).date
     val end = today.plus(days, DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
-    return projectRecords(cache).mapNotNull { row ->
+    return projectRecords(cache).flatMap { row->eventInstances(row.record,today,today.plus(days,DateTimeUnit.DAY),zone).map { row.copy(record=it) } }.mapNotNull { row ->
         val r = row.record; val d = r.data
         if(!cache.preferences.widgetHousehold&&!reminderRecipient(r,user))return@mapNotNull null
         when (r.kind) {
@@ -32,6 +32,7 @@ fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): L
                 val start = d.number("starts_at"); val finish = d.number("ends_at")
                 if ((finish>0&&finish <= now.epochSeconds) || (finish==0L && start<today.atStartOfDayIn(zone).epochSeconds) || start >= end) null else AgendaItem(r.id, d.text("title"), start, if (start <= now.epochSeconds) "Now" else "Event")
             }
+            "note" -> d.number("remind_at").takeIf { r.flag("on_radar")&&it>0&&it<end }?.let { AgendaItem(r.id,d.text("title"),it,"Follow up") }
             else -> null
         }
     }.sortedWith(compareBy<AgendaItem> { it.label=="Overdue" }.thenBy { it.at }.thenBy { it.title }.thenBy { it.id })
@@ -47,9 +48,9 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone, seen:Set<String> = e
     val horizon = today.plus(8, DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
     fun morning(date: LocalDate) = LocalDateTime(date, LocalTime(9, 0)).toInstant(zone).epochSeconds
     val records = projectRecords(cache).map { it.record }
-    val alerts = records.mapNotNull { r ->
+    val alerts = records.flatMap { eventInstances(it,today.minus(1,DateTimeUnit.DAY),today.plus(9,DateTimeUnit.DAY),zone) }.mapNotNull { r ->
         val d = r.data
-        if(!reminderRecipient(r,actor))return@mapNotNull null
+        if(!reminderRecipient(r,actor)||!allowsItemReminders(cache,r))return@mapNotNull null
         if(d.containsKey("reminders"))return@mapNotNull null
         when (r.kind) {
             "task" -> {
@@ -59,20 +60,25 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone, seen:Set<String> = e
             }
             "event" -> if (r.flag("all_day")) {
                 val date = runCatching { LocalDate.parse(d.text("start_date")) }.getOrNull() ?: return@mapNotNull null
-                LocalAlert("day:${r.id}:$date", morning(date), r.id, "calendar")
+                LocalAlert("day:${r.id}:$date", morning(date), r.id, "calendar",sourceAt=morning(date))
             } else {
                 val start = d.number("starts_at")
                 if(d.number("ends_at")>0&&d.number("ends_at")<=now.epochSeconds)return@mapNotNull null
-                LocalAlert("event:${r.id}:$start", start - 600, r.id, "calendar")
+                LocalAlert("event:${r.id}:$start", start - 600, r.id, "calendar",sourceAt=start)
             }
             else -> null
         }
     }.filter { (it.at >= dayStart || it.kind=="calendar"&&it.at>=now.epochSeconds-86400) && it.at < horizon }
     val overdue = records.any { r -> r.kind == "task" && r.data.text("status") != "done" &&
-        !r.data.containsKey("reminders") && reminderRecipient(r,actor) && runCatching { LocalDate.parse(r.data.text("due")) < today }.getOrDefault(false) }
+        !r.data.containsKey("reminders") && reminderRecipient(r,actor) && allowsItemReminders(cache,r) && runCatching { LocalDate.parse(r.data.text("due")) < today }.getOrDefault(false) }
     val sources=sequence {
         yieldAll(alerts)
-        for(record in records)if(record.kind in setOf("event","task") && reminderRecipient(record,actor) && (record.kind!="task" || record.data.text("status")!="done"))yieldAll(customAlerts(record,now,zone))
+        for(record in records)if(record.kind in setOf("event","task","note") && reminderRecipient(record,actor) && allowsItemReminders(cache,record) && (record.kind!="task" || record.data.text("status")!="done") && (record.kind!="note"||record.flag("on_radar"))) {
+            if(record.kind=="note"&&!record.data.containsKey("reminders")) {
+                val at=record.data.number("remind_at")
+                if(at>=now.epochSeconds-600&&at<horizon)yield(LocalAlert("note:${record.id}:$at",at,record.id,"note",sourceAt=at))
+            }else yieldAll(customAlerts(record,now,zone))
+        }
         if(overdue)yield(LocalAlert("overdue:$today",morning(today),null,"overdue"))
     }
     val order=compareBy<LocalAlert> { it.at }.thenBy { it.key }

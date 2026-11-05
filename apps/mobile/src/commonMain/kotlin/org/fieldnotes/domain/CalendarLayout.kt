@@ -28,8 +28,9 @@ fun dayBlocks(records:List<Record>,day:LocalDate,zone:TimeZone):List<DayBlock> {
     }
     flush();return result
 }
-fun occupiedFraction(records:List<Record>,start:Long,end:Long):Double {
-    val spans=records.filter { it.kind=="event"&&!it.flag("all_day")&&it.data.number("ends_at")>start&&it.data.number("starts_at")<end }
+fun occupiedFraction(records:List<Record>,start:Long,end:Long,zone:TimeZone=TimeZone.currentSystemDefault()):Double {
+    val from=Instant.fromEpochSeconds(start).toLocalDateTime(zone).date;val until=Instant.fromEpochSeconds(end).toLocalDateTime(zone).date.plus(1,DateTimeUnit.DAY)
+    val spans=records.flatMap { eventInstances(it,from,until,zone) }.filter { it.kind=="event"&&!it.flag("all_day")&&it.data.number("ends_at")>start&&it.data.number("starts_at")<end }
         .map { maxOf(start,it.data.number("starts_at")) to minOf(end,it.data.number("ends_at")) }.filter { it.second>it.first }.sortedBy { it.first }
     var covered=0L;var last=start
     for((from,until) in spans){covered+=(until-maxOf(last,from)).coerceAtLeast(0);last=maxOf(last,until)}

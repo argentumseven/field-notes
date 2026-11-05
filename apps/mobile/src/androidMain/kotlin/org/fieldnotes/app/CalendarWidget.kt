@@ -73,7 +73,7 @@ open class CalendarWidget : AppWidgetProvider() {
         }.getOrDefault(LocalDate(today.year,today.monthNumber,1))
         private fun displayWeek(context:Context,id:Int,today:LocalDate):LocalDate = runCatching {
             LocalDate.parse(context.getSharedPreferences(PREFS,0).getString("week-$id",null) ?: "")
-        }.getOrDefault(today.minus(today.dayOfWeek.isoDayNumber-1,DateTimeUnit.DAY))
+        }.getOrDefault(today).let { it.minus(it.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY) }
         private fun widgetIds(context:Context):IntArray {
             val manager=context.getSystemService(AppWidgetManager::class.java)
             return manager.getAppWidgetIds(ComponentName(context,CalendarWidget::class.java))+manager.getAppWidgetIds(ComponentName(context,WeekCalendarWidget::class.java))

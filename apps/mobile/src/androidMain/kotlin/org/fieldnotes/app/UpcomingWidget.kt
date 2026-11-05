@@ -73,7 +73,13 @@ class UpcomingWidget : AppWidgetProvider() {
 
 class WidgetRefreshReceiver:BroadcastReceiver(){
     override fun onReceive(context:Context,intent:Intent){
-        WorkManager.getInstance(context).enqueueUniqueWork("field-notes-widget-refresh",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<WidgetRefreshWorker>().build())
+        val pending=goAsync();val app=context.applicationContext as FieldNotesApplication
+        app.scope.launch(kotlinx.coroutines.Dispatchers.IO){
+            try{WorkManager.getInstance(context).enqueueUniqueWork("field-notes-widget-refresh",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<WidgetRefreshWorker>().build())}
+            catch(e:kotlinx.coroutines.CancellationException){throw e}
+            catch(_:Exception){app.deliveryError.value="The widget refresh could not be scheduled. Open Field Notes; cached work is kept."}
+            finally{pending.finish()}
+        }
     }
 }
 class WidgetRefreshWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params){

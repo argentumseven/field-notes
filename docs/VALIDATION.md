@@ -1,5 +1,83 @@
 # Implementation and validation record
 
+## 0.6.0 household planner and portable content — 2026-11-05
+
+The active implementation is **0.6.0 / Android code 12**, protocol 1 and schema 2.
+New task/event/note reminders default to Everyone without changing existing
+personal choices. Typed rows, task filters, store-grouped list subviews, Later
+notes, irregular recurrence, granular household-addition notices and separate
+list notification switches are implemented on the shared client/server model.
+Phone and website headers reuse the APK launcher artwork from one source.
+
+Sunday-first web headings, all-day rows and hourly columns share one native
+scroll viewport. Chromium measures every column with 12 px and 28 px scrollbars
+at three scroll positions; corresponding edges differ by less than one pixel.
+Month cells form a continuous grid. The shared recurrence checks cover selected
+weekdays, alternating weeks/days, individual/excluded dates, month-end skips,
+spring clock gaps and the exact second autumn clock occurrence of a series anchor.
+
+Portable `.fieldnotes` files use bounded ZIP content inside framed AES-256-GCM
+encryption with PBKDF2-HMAC-SHA256 (600,000 iterations). Android and WebCrypto
+interoperate, including Unicode passphrases. Export includes cached offline
+images, queued changes and retained alternatives; connection credentials and
+keys are excluded. Imports validate complete files before staging, preserve
+current records, reuse source/content matches and retain differing versions.
+Receipt retries, recovered-copy restoration and repeated imports do not multiply
+active items. Normalized images retain a server-computed original digest to
+avoid false conflicts on re-import. Claims are not resurrected.
+
+Executed here: **60 real-process API/codec checks**, **13 Chromium workflows**,
+**79 shared Kotlin checks**,
+**117 Python checks**, **11 Rust checks**, Clippy, and Go vet/race. Coverage
+includes encrypted persistence/restart, simultaneous claims, revision and reset
+fences, HTTP/2 split cookies, permission failures, corrupt/truncated archives,
+image decoding limits, stale import previews, mapping/deduplication, transaction
+rollback, viewer restrictions and original-signer update selection. A queued
+phone import is rejected before transmitting content if its account/workspace
+changes while waiting for the connection fence.
+Archive person mapping also preserves creator-only and legacy assigned-task
+audiences instead of changing them to the importing person or Everyone.
+
+Actual Android checks exercised Keystore, enrollment/editor/IME layout, widgets,
+update verification and document export. An Android document export decrypted
+with WebCrypto and imported twice into the real Rust server with its offline
+image and retained command, without duplicate records or image conflicts.
+Two actual JNI → WireGuard → TLS → Rust checks include fixed portable routes.
+A same-signer code-5 → code-12 APK upgrade preserved the actual Keystore-backed
+identity, server binding and unacknowledged command without re-enrollment.
+The refreshed general gallery contains 30 distinct Android captures, including
+both themes, the APK/header icon, typed rows, store groups and the real launcher.
+Its configured-phone fixture uses a genuine bundled-APK offer and a notification
+permission grant. Focused calendar, open-keyboard and notification-shade captures
+are separate from that general gallery.
+The refreshed enrollment capture uses the real keyboard: the phone name, trust
+checkbox and request action remain visible above it. Its fixture closes the
+system notification shade before touching the app.
+Android startup traces also exposed WorkManager's automatic provider doing
+scheduler initialization on the main thread. The app now supplies its existing
+default configuration on demand; catch-up scheduling, cancellation and widget
+work requests initialize on IO. Worker/database names and saved jobs stay intact.
+The packaged-manifest check rejects the automatic initializer, and real Android
+delivery checks exercise persisted periodic work through the on-demand path.
+The private connection service posts a minimal native foreground notification
+in `onCreate`, before its full controls and other setup. Automatic UI startup
+waits through the first frame before starting Android's foreground deadline.
+
+The real offline container stack passed direct TLS 1.3, private enrollment and
+APK download, nonroot/read-only/capability/memory restrictions, separated private
+key mounts, denied management/LAN/peer access and outbound/DNS drop-counter
+checks. Password changes retained pairing, explicit phone sign-out revoked its
+session, and scoped removal left no owned deployment resources. The public
+signing certificate remains unchanged; compatibility APKs use only an explicitly
+provided original household key and never replace public release bytes.
+
+Evidence logs are under `dist/planner-v3-*`; these are local build artifacts,
+not committed household data. Current screenshots are linked in
+[WALKTHROUGH.md](WALKTHROUGH.md). No deployment to the home VM or physical
+GrapheneOS profile/sound/lockdown test was performed here. Emulator tests do not
+establish exact background timing or cross-user sound forwarding. Native iOS
+and desktop packages remain deferred.
+
 ## Shared public APK signing identity — 2026-11-04
 
 Standard source installation and server packaging now download the version-pinned
@@ -42,7 +120,7 @@ to conceal that mismatch.
 
 ## 0.5.0 personal reminders, loud alarms and week widgets
 
-The active implementation is **0.5.0 / Android code 11**, protocol 1 and schema 2.
+This historical baseline is **0.5.0 / Android code 11**, protocol 1 and schema 2.
 App credential locking is optional, independent of notification and widget
 details. New installations show details while unlocked; existing explicit off
 choices are preserved with a visible migration choice. Lock-screen disclosure

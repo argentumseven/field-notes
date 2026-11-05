@@ -17,7 +17,10 @@
 * {
   box-sizing: border-box;
 }
-a[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+a[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 html[data-theme="light"] {
   color-scheme: light;
   --bg: #f4f4ed;
@@ -181,22 +184,10 @@ p {
   letter-spacing: -0.4px;
 }
 .brand-mark {
-  width: 22px;
-  height: 27px;
-  border: 2px solid var(--accent);
-  border-radius: 2px;
-  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   display: block;
-}
-.brand-mark:after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  top: 7px;
-  height: 2px;
-  background: var(--accent);
-  box-shadow: 0 6px var(--accent);
 }
 .nav {
   display: flex;
@@ -501,6 +492,7 @@ figcaption {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0;
   border-top: 1px solid var(--border);
   border-left: 1px solid var(--border);
 }
@@ -577,7 +569,9 @@ dialog {
 dialog::backdrop {
   background: #0009;
 }
-dialog:has(.reminder-editor) { width: min(680px, 94vw); }
+dialog:has(.reminder-editor) {
+  width: min(680px, 94vw);
+}
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -926,19 +920,6 @@ button:not(:disabled):active,
   color: var(--bg);
 }
 
-/* Calendar identity: a binding at the top and one selected day, no stacked menu lines. */
-.brand-mark {
-  border-top-width: 6px;
-}
-.brand-mark:after {
-  left: 5px;
-  right: auto;
-  top: 7px;
-  width: 7px;
-  height: 7px;
-  border-radius: 1px;
-  box-shadow: none;
-}
 [hidden] {
   display: none !important;
 }
@@ -1258,8 +1239,12 @@ main {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
-.alarm-options[hidden] { display: none; }
-.alarm-options > p { grid-column: 1/-1; }
+.alarm-options[hidden] {
+  display: none;
+}
+.alarm-options > p {
+  grid-column: 1/-1;
+}
 .reminder-recipients {
   display: grid;
   gap: 8px;
@@ -1482,12 +1467,13 @@ main {
 }
 .calendar-grid {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 0;
   overflow: hidden;
   background: var(--panel);
 }
 .calendar-day {
   border-radius: 0;
+  margin: 0;
   padding: 10px;
   min-height: 105px;
   border: 0;
@@ -1500,6 +1486,178 @@ main {
 .calendar-preview {
   font-size: 11px;
   line-height: 1.7;
+}
+
+/* Continuous calendars, clear controls, and visible overflow in either theme. */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: var(--muted) var(--panel);
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border: 3px solid var(--panel);
+  border-radius: 8px;
+}
+:where(button, [role="button"], summary):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+button.quiet {
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+button:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.type-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.5;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--text);
+}
+.category-food {
+  border-inline-start: 3px solid #39966d;
+}
+.category-honey_do {
+  border-inline-start: 3px solid #b577c5;
+}
+.category-action {
+  border-inline-start: 3px solid #db9850;
+}
+.category-home {
+  border-inline-start: 3px solid #5d9ecc;
+}
+.calendar-day.outside {
+  color: var(--muted);
+  background: var(--bg);
+}
+.calendar-day.selected {
+  box-shadow: inset 0 3px var(--accent);
+}
+.calendar-day.today strong {
+  text-decoration: none;
+  border-bottom: 2px solid var(--accent);
+}
+.calendar-weekday {
+  background: var(--bg);
+  font-weight: 650;
+}
+.store-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 2px 8px;
+  border-bottom: 1px solid var(--border);
+  margin: 16px 0 10px;
+}
+.store-heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.view-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin: 12px 0;
+}
+.view-filters label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.view-filters input[type="search"] {
+  min-width: min(280px, 100%);
+}
+.checklist-open::after {
+  content: "Open item ›";
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 4px;
+}
+.collection-row::after {
+  content: "Open ›";
+  font-size: 12px;
+  color: var(--accent);
+}
+dialog {
+  padding: 0;
+  overflow: hidden;
+  max-height: 92dvh;
+}
+#dialog-form {
+  display: flex;
+  flex-direction: column;
+  max-height: 92dvh;
+  min-height: 0;
+}
+#dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  padding: 24px;
+}
+.dialog-actions {
+  flex: none;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+#dialog-error {
+  flex: none;
+  margin: 0;
+  padding: 0 20px 12px;
+  max-height: 100px;
+  overflow: auto;
+}
+.repeat-editor {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  margin-top: 14px;
+}
+.repeat-editor h3 {
+  margin: 0 0 10px;
+}
+.repeat-days,
+.repeat-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.repeat-days button[aria-pressed="true"] {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+.scroll-hint {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 24px 8px;
 }
 @media (max-width: 900px) {
   .shell {
@@ -1607,4 +1765,93 @@ main {
 .field-options .dialog-choice {
   margin: 10px 0;
   font-weight: 500;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+dialog,
+#dialog-form {
+  max-height: min(92dvh, calc(var(--available-height, 100dvh) - 16px));
+}
+
+/* One scroll viewport gives the headings and timeline the same native gutter. */
+.calendar-scroller {
+  height: min(75dvh, 820px);
+  min-height: 400px;
+  scrollbar-gutter: stable;
+  position: relative;
+}
+.calendar-day-headers {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 72px;
+  background: var(--panel);
+}
+.calendar-floating-row {
+  position: sticky;
+  top: 72px;
+  z-index: 4;
+}
+.calendar-hour-axis > span {
+  transform: none;
+  padding-top: 3px;
+  line-height: 1;
+}
+.transfer-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.transfer-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 22px;
+  margin: 12px 0;
+  display: grid;
+  gap: 14px;
+}
+.transfer-card h2,
+.transfer-card p {
+  margin: 0;
+}
+.transfer-card label {
+  display: grid;
+  gap: 7px;
+}
+.transfer-card input,
+.transfer-card select {
+  width: 100%;
+  min-width: 0;
+}
+.transfer-status {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+}
+.import-preview {
+  display: grid;
+  gap: 12px;
+}
+.recovered-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg);
+}
+.transfer-card details {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 12px;
+}
+.transfer-card summary {
+  cursor: pointer;
+  font-weight: 650;
 }

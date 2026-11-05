@@ -39,7 +39,8 @@ access only to the staged software file.
 An in-place Android update preserves app data, the Keystore alias, phone private
 key, PSK, pinned CA/server binding and pending edits. The app never calls reset,
 clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2**,
-**0.3.2 → 0.3.3** and **0.3.2/code 5 → 0.4.0/code 10** APK upgrades
+**0.3.2 → 0.3.3**, **0.3.2/code 5 → 0.4.0/code 10**, and
+**0.3.2/code 5 → 0.6.0/code 12** APK upgrades
 were exercised on the disposable AVD with the actual Keystore-backed vault and
 queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults
@@ -53,8 +54,8 @@ features. A newer app can keep syncing with an older server; unsupported editor
 controls stay disabled. A retained edit requiring a newer feature is explained
 in Retained changes. Incompatible protocol/minimum requirements stop uploads
 with a persistent warning and preserve the cache, outbox and keys. The current
-server recommends code 11 and supports the code-10 core during rollout. Update
-older clients before relying on personal reminder recipient controls.
+server recommends code 12 and supports the code-10 core during rollout. Update
+older clients before relying on repeat-event expansion and its reminders.
 
 A missing/corrupt/mismatched APK bundle or failed transfer produces a visible
 status; it does not take the notes server offline. A phone newer than the offered
@@ -63,7 +64,16 @@ match a server string. Metadata/signature/network failures are surfaced in
 Settings, the app's persistent status, widget footer and a notification when
 Android permits posting. The system cannot report a new error while force-stopped.
 
-## Planner version 0.5
+## Planner version 0.6
+
+Upgrade the paired server, then install its offered APK. This adds Everyone
+defaults, irregular repeat events, typed/filterable views, Later reminders,
+store-grouped groceries, addition notifications and portable content files.
+Existing personal audiences, explicit field choices, content, pending changes
+and identities are preserved. Archives are additive imports, not an upgrade
+step; an upgrade does not require exporting and reimporting your workspace.
+
+## Earlier planner version 0.5
 
 Upgrade the paired server for recipient controls and longer alarm settings.
 The phone's updater follows that server's signed APK bundle. The Week widget,
@@ -201,17 +211,17 @@ update route depend on a new content protocol it cannot yet speak.
 ## Upgrade an existing source installation
 
 For the standard Debian/Ubuntu installation, run as root from the existing
-checkout. This completes an earlier retained readiness record if needed, builds
-the next release using the public APK for public-signed installations (or the
-original cached development key for custom installations), verifies its signer,
-then backs up and upgrades the existing installation:
+checkout. Build and verify the next release, then back up and upgrade:
 
 ```bash
 cd /usr/local/src/field-notes &&
 git pull --ff-only &&
-python3 scripts/container-runtime.py check --complete-installation &&
 python3 scripts/upgrade-server.py --apply --build-from-source
 ```
+
+Do not gate recovery on an old readiness check. If the installed runtime is
+already broken, add `--recover-runtime` to that final command. This uses the
+existing installation inventory, identities and content; it is not a fresh install.
 
 No fresh-install wizard or new password is needed. A public-signed installation
 uses the matching GitHub release and requires no local Android signing key.
@@ -219,7 +229,21 @@ Existing custom development installations still require their original
 `FIELD_NOTES_TOOLS/android-user/debug.keystore`; the default build-cache root is
 the build user's `.cache/field-notes`. A missing custom key stops before building
 or stopping services. The final preview refuses a changed signer in either path.
-Custom release keys use the existing `--bundle` workflow instead. These rules
+The standard public APK stays unchanged. When needed, the original key signs a
+separate household-only compatibility APK. Installed phones select by certificate
+from 0.6 onward. Custom release keys can be supplied with
+`FIELD_NOTES_ANDROID_LEGACY_KEYSTORE`, `_SIGNER` and `_ALIAS`, with their passwords
+in `FIELD_NOTES_LEGACY_STORE_PASSWORD` / `FIELD_NOTES_LEGACY_KEY_PASSWORD`, or use
+an explicitly verified `--bundle`. These rules
 preserve existing phones; they cannot retroactively change an installed APK's
 certificate. Keep local unsynchronized work and pairing intact if a mismatch
 needs investigation.
+
+## Content safety in 0.6
+
+New portable tables are additive; routine upgrades retain the vault, cache,
+queues, account hashes, CA, hub/phone keys and chosen ports. Imports do not replace
+any of those. Both phone and website offer [encrypted content files](CONTENT-FILES.md),
+with duplicate suppression, retained alternatives, preview fences and transactional
+commits. Export before deliberately clearing retained work. Keep regular encrypted
+server backups as well.

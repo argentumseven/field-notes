@@ -19,14 +19,14 @@ try {
  await call(['shell','appops','set','org.fieldnotes.app','SCHEDULE_EXACT_ALARM','allow']);
  const packages=only==='CalendarWidgetHostDeviceTest'?['org.fieldnotes.app']:['org.fieldnotes.app','org.fieldnotes.app.test'];
  for(const pkg of packages)await call(['shell','cmd','package','compile','-m','speed',pkg],360000);
- const cases=[['InvitationQrImageDeviceTest',1,[]],['ReminderDeliveryDeviceTest',1,['-e','fieldNotesCalendarGallery','synthetic-only']],['CalendarExperienceDeviceTest',1,['-e','fieldNotesCalendarGallery','synthetic-only']],['CalendarWidgetHostDeviceTest',1,['-e','fieldNotesCalendarGallery','synthetic-only']]];
+ const cases=[['InvitationQrImageDeviceTest',1,[]],['ReminderDeliveryDeviceTest',1,['-e','fieldNotesCalendarGallery','synthetic-only']],['CalendarExperienceDeviceTest',1,['-e','fieldNotesCalendarGallery','synthetic-only']],['CalendarWidgetHostDeviceTest',2,['-e','fieldNotesCalendarGallery','synthetic-only']]];
  if(only&&!cases.some(([name])=>name===only))throw Error('Unknown scoped calendar check.');
  for(const [name,count,extra] of cases.filter(([name])=>!only||name===only)) {
   const output=await call(['shell','am','instrument','-w','-r','-e','class','org.fieldnotes.app.'+name,...extra,'org.fieldnotes.app.test/androidx.test.runner.AndroidJUnitRunner'],600000);
   await writeFile('dist/android-test-results/'+name+'.txt',output);
-  if(!output.includes(`OK (${count} test)`))throw Error(output);
+  if(!output.includes(`OK (${count} test${count===1?'':'s'})`))throw Error(output);
   console.log(name+' passed');
-  const captures=name==='CalendarExperienceDeviceTest'?['30-calendar-home','31-local-event','33-time-picker','40-reminder-rules','41-reminder-sound']:name==='CalendarWidgetHostDeviceTest'?['32-home-calendar']:[];
+  const captures=name==='CalendarExperienceDeviceTest'?['30-calendar-home','31-local-event','33-time-picker','40-reminder-rules','41-reminder-sound','44-long-alarm-controls','45-independent-visibility','50-sunday-week','51-sunday-month','52-repeat-event']:name==='CalendarWidgetHostDeviceTest'?['32-home-calendar','42-home-week']:name==='ReminderDeliveryDeviceTest'?['43-detailed-notifications']:[];
   for(const capture of captures) {
    const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/calendar-gallery/'+capture+'.png'],{encoding:'buffer',maxBuffer:8*1024*1024});
    await writeFile('docs/screenshots/android/'+capture+'.png',stdout);
