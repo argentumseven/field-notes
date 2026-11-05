@@ -1,0 +1,10 @@
+{
+  "version": "0.6.0",
+  "version_code": 12,
+  "architecture": "arm64-v8a",
+  "signing": "release",
+  "sha256": "047d4f14e002c44dbc2c91a4f43d49f90ebc8ed357f618f7eac748e5e7a5547f",
+  "signer_sha256": "e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488",
+  "source_commit": "a60005676fc0b8454768e20e704b845518338f3a",
+  "source_dirty": false
+}
