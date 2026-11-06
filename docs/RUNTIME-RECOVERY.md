@@ -27,8 +27,10 @@ the identical server executable and unchanged Android version code. It never
 substitutes a random image found under a mutable tag. Downgrades are refused.
 
 If no usable bundle exists, `--apply --build-from-source --recover-runtime`
-builds one with the original development APK key; it refuses to generate a
-replacement key. Operator-signed installs need a matching prebuilt bundle.
+builds one using the matching published APK for standard installations; no APK
+signing key is needed. An original custom-signed installation must retain its
+original signing key or supply a verified matching compatibility bundle. No
+replacement key is generated.
 
 The existing database, master key, initial account/APK metadata and complete
 service inventory must already exist. Recovery can finish an installation left
@@ -50,6 +52,14 @@ custom configuration directory). A failed start restores prior programs/settings
 and retains those backups. It does not restore old database bytes over changes
 accepted after startup. If the old images were already missing, rollback alone
 cannot make that previous runtime available.
+
+Normal upgrades now check for both old image IDs before building and immediately
+before stopping services. A missing pin stops that path with recovery guidance.
+Explicit recovery uses only the verified replacement image for its encrypted
+backup, with automatic Docker pulls disabled. A failure records its step and
+rollback status in a root-private `failure.json`; restored files are not reported
+as a healthy runtime unless the owned container health check passes. Older
+checkpoints created before this reporting fix may not contain that file.
 
 Image cleanup follows inventoried immutable IDs. A moved tag cannot authorize
 deleting an unrelated image; aliases owned by another user and containers using

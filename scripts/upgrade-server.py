@@ -5,14 +5,44 @@ Preview by default. Supports schema-2/protocol-1 releases only; no migration or 
 import argparse,copy,fcntl,hashlib,importlib.util,ipaddress,json,os,pathlib,pwd,re,shlex,shutil,ssl,subprocess,sys,tempfile,time,urllib.request,uuid
 sys.dont_write_bytecode=True
 from android_artifact import verify as verify_android
-from container_deployment import Engine,compose,validate
+from container_deployment import Engine,compose,validate,docker_failure
 from server_installation import Host,load,RECORD,uninstall_wrapper
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('field_notes_removal',HERE/'uninstall-server.py');removal=importlib.util.module_from_spec(spec);spec.loader.exec_module(removal)
 HELPERS=('uninstall-server.py','server_installation.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py')
 
-def build_from_source(host,record,root=HERE.parent,runner=subprocess.run,recover=False):
+def require_rollback_images(engine,settings):
+ """A normal upgrade must be able to back up and restart the old runtime."""
+ try:engine.verify_images(settings)
+ except (ValueError,subprocess.SubprocessError) as error:
+  reason=docker_failure(error) if isinstance(error,subprocess.SubprocessError) else 'Installed runtime images failed verification'
+  raise ValueError(reason+'. Normal upgrade requires both pinned rollback images; no services or data were changed. If the runtime is already stopped because its images are missing, use --recover-runtime with a verified compatible bundle. Do not reinstall or reset pairing.') from None
+
+def failure_reason(error):
+ """Never copy arbitrary command output, argv or exception text into a report."""
+ if isinstance(error,subprocess.SubprocessError):
+  if getattr(error,'field_notes_operation',None):return docker_failure(error)
+  if isinstance(error,subprocess.TimeoutExpired):return 'Host command timed out'
+  code=getattr(error,'returncode',None)
+  return 'Host command failed (exit '+str(code if isinstance(code,int) else 'unknown')+')'
+ if isinstance(error,PermissionError):return 'Filesystem permission denied'
+ if isinstance(error,OSError):return 'Filesystem operation failed (errno '+str(error.errno if isinstance(error.errno,int) else 'unknown')+')'
+ if isinstance(error,ValueError):return 'Validation or readiness check failed'
+ return 'Operation failed'
+
+def resume_previous_runtime(host,engine,settings):
+ engine.verify_images(settings)
+ host.command(['/usr/bin/systemctl','reset-failed','field-notes.service'])
+ host.command(['/usr/bin/systemctl','start','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
+ deadline=time.monotonic()+30
+ while True:
+  if engine.healthy(settings):return
+  if time.monotonic()>=deadline:raise ValueError('Previous runtime did not become healthy')
+  time.sleep(.5)
+
+def build_from_source(host,record,root=HERE.parent,runner=subprocess.run,recover=False,engine=None):
  if record is None or record['phase'] not in (('installed','installing') if recover else ('installed',)) or record['runtime']!='containers':raise ValueError('Complete the retained installation check before upgrading')
+ if not recover:require_rollback_images(engine or Engine(runner=host.runner),record['docker']['settings'])
  installed_folder=host.path(record['prefix']+'/downloads');installed=verify_android(installed_folder)
  release=json.loads((root/'release.json').read_text())
  env=os.environ.copy();env.setdefault('FIELD_NOTES_TOOLS',str(pathlib.Path(pwd.getpwuid(os.geteuid()).pw_dir)/'.cache/field-notes'))
@@ -45,7 +75,7 @@ def bundle_info(folder,current,recover=False):
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -119,6 +149,7 @@ def readiness(settings,apk,host):
 def apply(host,record,folder,engine=None,health=readiness,recover=False):
  folder=pathlib.Path(folder).resolve();plan=preview(record,folder,host,recover);engine=engine or Engine(runner=host.runner)
  removal.preflight(host,record,False);old=record['docker']['settings'];engine.objects(old)
+ if not recover:require_rollback_images(engine,old)
  config=host.path(record['config']);prefix=host.path(record['prefix'])
  master=config/'master.key';meta=master.stat()
  if master.is_symlink() or meta.st_uid not in (host.owner,record['uid']) or meta.st_mode&0o777 not in (0o600,0o640):raise ValueError('Recovery key ownership/mode requires review; never replace the key')
@@ -139,51 +170,73 @@ def apply(host,record,folder,engine=None,health=readiness,recover=False):
   (stage/'uninstall-server.sh').write_text(uninstall_wrapper(record['config']));(stage/'uninstall-server.sh').chmod(0o755)
   (stage/'upgrade-server.sh').write_text(wrapper(record['config']));(stage/'upgrade-server.sh').chmod(0o755)
   shutil.copytree(folder/'downloads',stage/'downloads')
+  # Recheck after loading/staging: do not stop a running service if an external
+  # image cleanup removed its rollback pins during preparation.
+  if not recover:require_rollback_images(engine,old)
+  step='stopping services'
   try:
    host.command(['/usr/bin/systemctl','stop','field-notes-peers.timer','field-notes-peers.service','field-notes-certificates.timer','field-notes-certificates.service'])
    host.command(['/usr/bin/systemctl','stop','field-notes'])
    engine.stop(old) # Recheck ownership, namespace membership and completed removal.
    if recover:
+    step='saving the raw recovery snapshot'
     # Keep quiesced encrypted database/WAL bytes before opening them with the
     # verified target. This snapshot is retained, never restored over new writes.
     host.check_tree(record['data'])
     if any(p.is_symlink() for p in host.path(record['data']).rglob('*')):raise ValueError('Review symlinks in the data directory before runtime recovery')
     shutil.copytree(host.path(record['data']),backup/'pre-recovery-state',symlinks=True)
     (backup/'pre-recovery-state').chmod(0o700)
+   step='preparing the encrypted backup'
    # Repair the earlier owner/group mode bug without generating/replacing any key.
    os.chown(master,record['uid'],record['gid']);master.chmod(0o600)
    destination=backup/'data';destination.mkdir(mode=0o700);os.chown(destination,record['uid'],record['gid'])
    backup_image=plan['settings']['images']['app'] if recover else old['images']['app']
-   engine.call(['run','--rm','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges:true','--user',f"{record['uid']}:{record['gid']}",'--mount',f"type=bind,src={host.path(record['data'])},dst=/state",'--mount',f'type=bind,src={master},dst=/key,readonly','--mount',f'type=bind,src={destination},dst=/backup',backup_image,'backup','--data','/state','--key-file','/key','--file','/backup/workspace.backup'],timeout=180)
+   step='creating the encrypted backup'
+   engine.call(['run','--rm','--pull=never','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges:true','--user',f"{record['uid']}:{record['gid']}",'--mount',f"type=bind,src={host.path(record['data'])},dst=/state",'--mount',f'type=bind,src={master},dst=/key,readonly','--mount',f'type=bind,src={destination},dst=/backup',backup_image,'backup','--data','/state','--key-file','/key','--file','/backup/workspace.backup'],timeout=180)
+   step='checking the encrypted backup'
    saved=destination/'workspace.backup'
    if saved.is_symlink() or not saved.is_file() or {p.name for p in destination.iterdir()}!={'workspace.backup'}:raise ValueError('Encrypted pre-upgrade backup was not produced safely')
    fd=os.open(saved,os.O_RDONLY|os.O_NOFOLLOW)
    try:os.fchown(fd,host.owner,host.owner);os.fchmod(fd,0o600)
    finally:os.close(fd)
    os.chown(destination,host.owner,host.owner)
+   step='writing the prepared checkpoint'
    # A durable checkpoint is kept outside the program directory. Keys/config are not regenerated.
    write(backup/'checkpoint.json',json.dumps({'installation':record['id'],'from':plan['from_version'],'to':plan['to_version'],'phase':'prepared'}).encode())
+   step='replacing programs and settings'
    displaced=backup/'displaced-programs';os.replace(prefix,displaced);os.replace(stage,prefix)
    settings=plan['settings'];write(config/'deployment.json',json.dumps(settings).encode());write(config/'compose.json',json.dumps(compose(settings)).encode())
    updated=copy.deepcopy(record);updated['docker']={'settings':settings,'tags':plan['tags']};host.write_record(updated)
+   step='starting the new runtime'
    host.command(['/usr/bin/systemctl','reset-failed','field-notes.service'])
    host.command(['/usr/bin/systemctl','start','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
+   step='checking the new runtime'
    health(settings,verify_android(folder/'downloads',plan['to_version']),host)
+   step='completing the checkpoint'
    if recover and updated['phase']=='installing':updated['phase']='installed';host.write_record(updated)
    write(backup/'checkpoint.json',json.dumps({'installation':record['id'],'from':plan['from_version'],'to':plan['to_version'],'phase':'completed'}).encode())
    # Keep old images available for explicit rollback. No shared cache is pruned.
    return {**plan,'backup':str(backup),'upgraded':True}
-  except Exception:
-   host.command(['/usr/bin/systemctl','stop','field-notes-peers.timer','field-notes-peers.service','field-notes-certificates.timer','field-notes-certificates.service'])
-   host.command(['/usr/bin/systemctl','stop','field-notes'])
-   engine.stop(plan['settings'])
-   if (backup/'displaced-programs').exists():
-    failed=backup/'failed-programs'
-    if prefix.exists():os.replace(prefix,failed)
-    os.replace(backup/'displaced-programs',prefix)
-   for name in ('deployment.json','compose.json',RECORD):write(config/name,(backup/name).read_bytes())
-   host.command(['/usr/bin/systemctl','start','field-notes','field-notes-peers.timer','field-notes-certificates.timer'])
-   raise ValueError('Upgrade failed; previous programs/settings were restored. Database and all identity keys were retained. Review '+str(backup)) from None
+  except Exception as error:
+   report={'step':step,'reason':failure_reason(error),'programs_settings_restored':False,'previous_runtime_healthy':False}
+   try:
+    host.command(['/usr/bin/systemctl','stop','field-notes-peers.timer','field-notes-peers.service','field-notes-certificates.timer','field-notes-certificates.service'])
+    host.command(['/usr/bin/systemctl','stop','field-notes'])
+    engine.stop(plan['settings'])
+    if (backup/'displaced-programs').exists():
+     failed=backup/'failed-programs'
+     if prefix.exists():os.replace(prefix,failed)
+     os.replace(backup/'displaced-programs',prefix)
+    for name in ('deployment.json','compose.json',RECORD):write(config/name,(backup/name).read_bytes())
+    report['programs_settings_restored']=True
+    resume_previous_runtime(host,engine,old)
+    report['previous_runtime_healthy']=True
+   except Exception as rollback_error:report['rollback_reason']=failure_reason(rollback_error)
+   status='previous programs/settings were restored; the previous runtime is healthy.' if report['previous_runtime_healthy'] else 'previous programs/settings were restored, but the previous runtime is not confirmed healthy.' if report['programs_settings_restored'] else 'rollback did not complete; keep the checkpoint for recovery.'
+   report_path=backup/'failure.json'
+   try:write(report_path,json.dumps(report,indent=2).encode())
+   except OSError:report_path=backup
+   raise ValueError('Upgrade failed during '+step+': '+report['reason']+'; '+status+' Database and all identity keys were retained. Review '+str(report_path)) from None
  finally:
   if stage.exists():shutil.rmtree(stage)
 
@@ -208,4 +261,5 @@ def main():
 
 if __name__=='__main__':
  try:main()
- except (OSError,ValueError,KeyError,TypeError,subprocess.SubprocessError) as error:raise SystemExit('Upgrade stopped: '+str(error))
+ except subprocess.SubprocessError as error:raise SystemExit('Upgrade stopped: '+failure_reason(error)) from None
+ except (OSError,ValueError,KeyError,TypeError) as error:raise SystemExit('Upgrade stopped: '+str(error)) from None

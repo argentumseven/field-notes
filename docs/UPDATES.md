@@ -182,6 +182,13 @@ The upgrader supports inventoried container installations with compatible
 downgrades and unreviewed schema changes are refused. It validates artifact
 checksums/version/signers, ownership, service hashes and Docker namespace scope;
 loads only local immutable images; and stages the new program/download files.
+Normal upgrades verify both installed image IDs before a source build and again
+before stopping services. If either pinned image is missing, the upgrade stops
+without stopping the existing service or touching household data. A stopped
+runtime with missing images needs explicit
+[runtime recovery](RUNTIME-RECOVERY.md), which can reuse the verified bundle
+already built. Rebuilding or resetting pairing is unnecessary when that bundle
+is usable. Backup containers never automatically pull an image.
 It stops the owned timers and active peer/certificate helpers before replacing
 the namespace, avoiding an in-flight helper acknowledging the old gateway.
 
@@ -198,11 +205,22 @@ When the host is outside its routed administrator CIDR, the probe runs in the
 owned gateway namespace and verifies the expected loopback HTTP 403; the
 operator completes browser login from an allowed client. No ACL exception is
 introduced. A
-normal backup/start/readiness failure restores the previous programs/settings
-and resumes the old service. It never restores an older database over accepted
-edits. Old images remain available for recovery; the current scoped uninstaller
+normal backup/start/readiness failure attempts to restore the previous programs/
+settings and resumes the old service only after verifying its pinned images.
+It resets systemd's failed-start limit and checks the owned container health.
+The result distinguishes restored files from a confirmed healthy runtime; a
+rollback failure is reported explicitly. It never restores an older database
+over accepted edits. Old images remain available for recovery; the current scoped uninstaller
 uses validated upgrade history to remove the installation's historical images
 as well, without global prune or removal of shared packages or other applications.
+
+After a failure in these steps, the root-private checkpoint includes
+`failure.json`: the failing step, a bounded reason, whether programs/settings
+were restored, whether the previous runtime passed its health check, and any
+rollback failure. It excludes raw command output, passwords, keys and content.
+The terminal points to this file. The `upgrade-<id>` path itself is a directory;
+use `ls -l` on it, or `cat /etc/field-notes/upgrade-<id>/failure.json` with the
+actual ID. Older failed upgrades may have no failure report or completed backup.
 
 Power loss, disk failure during rollback or a changed foreign namespace can
 require host recovery. Keep the checkpoint and do not purge/reinstall. Stop the

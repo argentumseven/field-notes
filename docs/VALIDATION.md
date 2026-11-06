@@ -1,5 +1,36 @@
 # Implementation and validation record
 
+## Upgrade rollback images and failure reports — 2026-11-06
+
+Normal upgrades check both installed immutable image IDs before a source build
+and again after staging, before stopping services. Missing or invalid images
+produce recovery guidance without changing service state or household data.
+Explicit recovery still uses the verified target image and retains a raw
+database/WAL snapshot. Backup containers disable image pulls. Compatible 0.6.0
+and 0.7.0 installations are recognized; same-version executable replacement,
+downgrades and unreviewed schema/protocol changes remain refused.
+
+Failures record a root-private `failure.json` with the failing step, bounded
+reason, program/settings restoration status and actual owned-container health
+result. The old service's failed-start limit is reset before restart. A failed
+rollback is reported without claiming successful restoration. Arbitrary command
+output, arguments, keys and content are excluded. Accepted database writes are
+never replaced with the pre-upgrade backup.
+
+All **125 Python checks** passed, including **23 upgrade checks** covering either
+missing old image, pre-build refusal, image loss during preparation, backup and
+readiness failure, command-output redaction, incomplete rollback, retained data
+and identities, explicit recovery and recent versions. A real local Docker check
+confirmed both missing-image guards, then created an encrypted backup in the
+immutable app image as a nonroot UID with networking disabled, a read-only root
+and no capabilities. Original logical rows and master-key bytes were unchanged;
+a separate fresh-directory restore retained content, password hashes and history
+and performed its expected epoch/session reset. The upgrade itself never restores
+over the live data directory. No privileged systemd upgrade was executed in this
+cloud environment. Android and the public signed APK are unchanged.
+The Linux x86_64 offline server archive rebuilt successfully; its checksum,
+packaged upgrade helper and unchanged public APK bytes were verified.
+
 ## Web sidebar expansion follow-up
 
 Expanded navigation now flows above its footer in one desktop sidebar scroll

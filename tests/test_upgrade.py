@@ -1,4 +1,4 @@
-import copy,hashlib,importlib.util,json,os,pathlib,sys,tempfile,types,unittest
+import copy,hashlib,importlib.util,json,os,pathlib,subprocess,sys,tempfile,types,unittest
 from unittest import mock
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 import server_installation as installation
@@ -18,10 +18,11 @@ class UpgradeHost(tree.Fixture):
   return super().run(args,**kwargs)
 
 class FakeEngine:
- def __init__(self):self.calls=[];self.fail_backup=False;self.foreign=False
+ def __init__(self):self.calls=[];self.fail_backup=False;self.foreign=False;self.missing_images=set();self.image_checks=[];self.runtime_healthy=True
  def call(self,args,**kw):
   self.calls.append(args)
   if args[0]=='run':
+   if isinstance(self.fail_backup,Exception):raise self.fail_backup
    if self.fail_backup:raise ValueError('injected backup failure')
    path=next(a for a in args if a.startswith('type=bind,src=') and a.endswith(',dst=/backup')).split('src=',1)[1].rsplit(',dst=',1)[0]
    (pathlib.Path(path)/'workspace.backup').write_bytes(b'Encrypted private backup fixture')
@@ -30,7 +31,14 @@ class FakeEngine:
   if self.foreign:raise ValueError('foreign namespace member')
   return {}
  def image_inventory(self,*a):return {}
- def verify_images(self,*a):pass
+ def verify_images(self,settings):
+  self.image_checks.append(copy.deepcopy(settings['images']))
+  for role,image in settings['images'].items():
+   if image in self.missing_images:
+    error=subprocess.CalledProcessError(1,['docker','image','inspect','PRIVATE-ARGV'],stderr='No such image: PRIVATE-OUTPUT')
+    error.field_notes_operation='Docker image inspect';error.field_notes_component=role
+    raise error
+ def healthy(self,*a):return self.runtime_healthy
  def stop(self,*a):self.objects(a[0]);self.calls.append(['stop-owned'])
 
 class Upgrade(unittest.TestCase):
@@ -46,10 +54,11 @@ class Upgrade(unittest.TestCase):
    return upgrade.apply(self.host,self.host.record,self.folder,self.engine,health,recover=True)
  def test_recovery_uses_verified_target_image_when_old_image_is_unavailable_and_retains_raw_snapshot(self):
   database=self.recovery_ready('installing');original=database.read_bytes();key=self.host.path(self.host.record['config']+'/master.key').read_bytes()
+  self.engine.missing_images.update(self.host.record['docker']['settings']['images'].values())
   result=self.execute_recovery();backup=pathlib.Path(result['backup'])
   command=next(c for c in self.engine.calls if c[0]=='run')
   self.assertEqual(command[command.index('backup')-1],result['settings']['images']['app'])
-  self.assertIn('--network=none',command);self.assertIn('--read-only',command)
+  self.assertIn('--network=none',command);self.assertIn('--read-only',command);self.assertIn('--pull=never',command)
   self.assertEqual((backup/'pre-recovery-state/field-notes.sqlite3').read_bytes(),original)
   self.assertEqual(database.read_bytes(),original);self.assertEqual(self.host.path(self.host.record['config']+'/master.key').read_bytes(),key)
   self.assertEqual(installation.load(self.host)['phase'],'installed');self.assertEqual(self.host.bungee.read_text(),'BUNGEE MUST SURVIVE\n')
@@ -84,14 +93,14 @@ class Upgrade(unittest.TestCase):
   installed=self.host.path(self.host.record['prefix']+'/downloads');installed.mkdir();artifacts.AndroidArtifact().bundle(installed)
   with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(pathlib.Path(self.tmp.name)/'tools')}):
    with self.assertRaisesRegex(ValueError,'Original Android signing key is missing'):
-    upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:self.fail('must not build'))
+    upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:self.fail('must not build'),engine=self.engine)
   self.assertFalse(self.engine.calls)
  def test_source_upgrade_uses_persistent_signer_and_checks_preview_before_apply(self):
   installed=self.host.path(self.host.record['prefix']+'/downloads');installed.mkdir();artifacts.AndroidArtifact().bundle(installed)
   tools=pathlib.Path(self.tmp.name)/'tools';key=tools/'android-user/debug.keystore';key.parent.mkdir(parents=True);key.write_bytes(b'private disposable signing fixture')
   calls=[]
   with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(tools)}),mock.patch.object(upgrade,'preview',return_value={}) as preview:
-   folder=upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:calls.append((a,k)))
+   folder=upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:calls.append((a,k)),engine=self.engine)
   self.assertEqual([row[0][0] for row in calls],[['bash','scripts/setup/cloud.sh','--server'],['bash','scripts/build/server.sh']])
   self.assertEqual(calls[1][1]['env']['FIELD_NOTES_ANDROID_LEGACY_KEYSTORE'],str(key))
   self.assertEqual(calls[1][1]['env']['FIELD_NOTES_ANDROID_LEGACY_SIGNER'],'a'*64)
@@ -102,7 +111,7 @@ class Upgrade(unittest.TestCase):
   release=json.loads((self.folder/'release.json').read_text());release['public_android_signer_sha256']=info['signer_sha256'];(self.folder/'release.json').write_text(json.dumps(release))
   tools=pathlib.Path(self.tmp.name)/'empty-tools';calls=[]
   with mock.patch.dict(os.environ,{'FIELD_NOTES_TOOLS':str(tools),'FIELD_NOTES_ANDROID_APK':'stale-other-signer.apk','FIELD_NOTES_ANDROID_DOWNLOADS':'stale-downloads'}),mock.patch.object(upgrade,'preview',return_value={}) as preview:
-   folder=upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:calls.append((a,k)))
+   folder=upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:calls.append((a,k)),engine=self.engine)
   self.assertEqual([row[0][0] for row in calls],[['bash','scripts/setup/cloud.sh','--server'],['bash','scripts/build/server.sh']])
   self.assertFalse((tools/'android-user/debug.keystore').exists())
   for _,kwargs in calls:self.assertNotIn('FIELD_NOTES_ANDROID_APK',kwargs['env']);self.assertNotIn('FIELD_NOTES_ANDROID_DOWNLOADS',kwargs['env'])
@@ -154,6 +163,82 @@ class Upgrade(unittest.TestCase):
   self.engine.fail_backup=True
   with self.assertRaises(ValueError):self.execute()
   self.assertIn('field-notes.service',self.host.running);self.assertEqual(self.host.path(self.host.record['prefix']+'/field-notes-server').read_text(),'installed program\n')
+  report_path=next(self.host.path(self.host.record['config']).glob('upgrade-*/failure.json'))
+  report=json.loads(report_path.read_text())
+  self.assertEqual(report['step'],'creating the encrypted backup');self.assertTrue(report['previous_runtime_healthy']);self.assertTrue(report['programs_settings_restored'])
+  self.assertEqual(report_path.stat().st_mode&0o777,0o600)
+  self.assertTrue(any(args==['/usr/bin/systemctl','reset-failed','field-notes.service'] for args,kw in self.host.calls))
+ def test_missing_either_old_image_refuses_before_services_backups_or_data_change(self):
+  old=self.host.record['docker']['settings'];original=self.host.path(self.host.record['config']+'/installation.json').read_bytes()
+  for role in ('app','gateway'):
+   with self.subTest(role=role):
+    self.engine.missing_images={old['images'][role]}
+    with self.assertRaisesRegex(ValueError,'Normal upgrade requires both pinned rollback images') as raised:self.execute()
+    self.assertIn(role,str(raised.exception));self.assertIn('--recover-runtime',str(raised.exception));self.assertNotIn('PRIVATE',str(raised.exception))
+    self.assertFalse(self.engine.calls)
+    self.assertFalse(any(args[:2] in (['/usr/bin/systemctl','stop'],['/usr/bin/systemctl','start']) for args,kw in self.host.calls))
+    self.assertFalse(list(self.host.path(self.host.record['config']).glob('upgrade-*')))
+    self.assertEqual(self.host.path(self.host.record['config']+'/installation.json').read_bytes(),original)
+ def test_missing_images_refuse_before_source_build_or_signing_key_changes(self):
+  self.engine.missing_images.update(self.host.record['docker']['settings']['images'].values())
+  with self.assertRaisesRegex(ValueError,'Normal upgrade requires both pinned rollback images'):
+   upgrade.build_from_source(self.host,self.host.record,self.folder,lambda *a,**k:self.fail('must not build'),engine=self.engine)
+  self.assertFalse(self.engine.calls)
+ def test_rollback_images_are_rechecked_after_target_staging_before_stopping_services(self):
+  old=self.host.record['docker']['settings'];verify=self.engine.verify_images;old_checks=0
+  def race(settings):
+   nonlocal old_checks
+   if settings['images']==old['images']:
+    old_checks+=1
+    if old_checks==2:self.engine.missing_images.add(old['images']['app'])
+   return verify(settings)
+  with mock.patch.object(self.engine,'verify_images',side_effect=race):
+   with self.assertRaisesRegex(ValueError,'Normal upgrade requires both pinned rollback images'):self.execute()
+  self.assertEqual(old_checks,2)
+  self.assertFalse(any(args[:2]==['/usr/bin/systemctl','stop'] for args,kw in self.host.calls))
+  self.assertFalse(any(args[0] in ('run','stop-owned') for args in self.engine.calls))
+  self.assertEqual(self.host.path(self.host.record['prefix']+'/field-notes-server').read_text(),'installed program\n')
+ def test_failure_reports_backup_step_and_safe_reason_without_command_output_or_keys(self):
+  error=subprocess.CalledProcessError(125,['docker','run','SECRET-ARGV'],stderr='permission denied: SECRET-OUTPUT')
+  error.field_notes_operation='Docker operation';self.engine.fail_backup=error
+  with self.assertRaisesRegex(ValueError,'creating the encrypted backup') as raised:self.execute()
+  report=next(self.host.path(self.host.record['config']).glob('upgrade-*/failure.json')).read_text()
+  for message in (str(raised.exception),report):
+   self.assertIn('permissions failure',message);self.assertNotIn('SECRET',message)
+  self.assertTrue(json.loads(report)['previous_runtime_healthy'])
+ def test_rollback_does_not_report_healthy_when_only_systemctl_start_succeeded(self):
+  self.engine.runtime_healthy=False;self.engine.fail_backup=True
+  with mock.patch.object(upgrade.time,'monotonic',side_effect=[0,31]):
+   with self.assertRaisesRegex(ValueError,'previous runtime is not confirmed healthy'):self.execute()
+  report=json.loads(next(self.host.path(self.host.record['config']).glob('upgrade-*/failure.json')).read_text())
+  self.assertTrue(report['programs_settings_restored']);self.assertFalse(report['previous_runtime_healthy']);self.assertIn('rollback_reason',report)
+ def test_missing_old_images_during_rollback_keep_newly_accepted_data_and_report_unhealthy(self):
+  data=self.host.path(self.host.record['data']+'/household.sqlite3');before=data.read_bytes()
+  def fail(*args):
+   data.write_bytes(before+b'ACCEPTED EDIT')
+   self.engine.missing_images.update(self.host.record['docker']['settings']['images'].values())
+   raise ValueError('new readiness failed')
+  with self.assertRaisesRegex(ValueError,'previous runtime is not confirmed healthy'):self.execute(fail)
+  report=json.loads(next(self.host.path(self.host.record['config']).glob('upgrade-*/failure.json')).read_text())
+  self.assertEqual(report['step'],'checking the new runtime');self.assertIn('pinned runtime image is missing',report['rollback_reason'])
+  self.assertEqual(data.read_bytes(),before+b'ACCEPTED EDIT')
+ def test_failed_rollback_keeps_checkpoint_and_does_not_claim_settings_restored(self):
+  def fail(*args):self.engine.foreign=True;raise ValueError('new readiness failed')
+  with self.assertRaisesRegex(ValueError,'rollback did not complete'):self.execute(fail)
+  checkpoint=next(self.host.path(self.host.record['config']).glob('upgrade-*/checkpoint.json'))
+  report=json.loads(checkpoint.with_name('failure.json').read_text())
+  self.assertFalse(report['programs_settings_restored']);self.assertFalse(report['previous_runtime_healthy'])
+  self.assertTrue((checkpoint.parent/'data/workspace.backup').is_file())
+ def test_recent_compatible_versions_are_supported_without_permitting_replacements_or_downgrades(self):
+  release_path=self.folder/'release.json';release=json.loads(release_path.read_text());release['version']='0.7.0';release_path.write_text(json.dumps(release))
+  info_path=self.folder/'downloads/android.json';info=json.loads(info_path.read_text());info['version']='0.7.0';info_path.write_text(json.dumps(info))
+  index_path=self.folder/'images.json';index=json.loads(index_path.read_text())
+  for role in index:index[role]['tag']='field-notes-'+role+':0.7.0'
+  index_path.write_text(json.dumps(index))
+  self.assertEqual(upgrade.bundle_info(self.folder,'0.6.0')[0]['version'],'0.7.0')
+  self.assertEqual(upgrade.bundle_info(self.folder,'0.7.0',recover=True)[0]['version'],'0.7.0')
+  with self.assertRaisesRegex(ValueError,'same-version replacements'):upgrade.bundle_info(self.folder,'0.7.0')
+  with self.assertRaisesRegex(ValueError,'downgrades'):upgrade.bundle_info(self.folder,'0.8.0',recover=True)
  def test_incompatible_schema_downgrade_corrupt_archive_and_foreign_namespace_refuse(self):
   release=self.folder/'release.json';original=release.read_text();data=json.loads(original);data['schema']=3;release.write_text(json.dumps(data))
   with self.assertRaises(ValueError):upgrade.preview(self.host.record,self.folder,self.host)
