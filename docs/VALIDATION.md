@@ -35,6 +35,24 @@ Fresh synthetic web/Android captures are indexed in [WALKTHROUGH.md](WALKTHROUGH
 These are automated/emulator checks, not a deployment to the home Debian VM or
 physical GrapheneOS profile, camera, VPN, background-delivery or alarm-volume tests.
 
+Delivery verified: [v0.9.0](https://github.com/argentumseven/field-notes/releases/tag/v0.9.0)
+publishes the clean tag `a73e0ee8a0acfb77b8f15df8b76831eba77f2542`, Android code 16,
+using the existing public signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+The four public assets were compared byte-for-byte with the packaged release;
+actual APK signature/package/ARM64 checks and the versioned/latest links passed.
+Public APK SHA-256:
+`334222c6ef71b683260a53d7587a2a940b99330ebc73b144570081b1b063d868`.
+
+The guarded AVD installed code 15, seeded actual Keystore-backed phone keys,
+server/CA/PSK binding and an unacknowledged command, then installed code 16 with
+`adb install -r`. Both instrumentation phases passed without clearing data or
+re-enrolling between versions. The ordinary Linux x86_64 server build, with no
+APK override, fetched that exact public APK. Its bundle version, executable
+project feature, current host-helper bytes and both archive checksums were
+verified; no private-key files are packaged. Local complete bundle SHA-256:
+`35188e1d82289f00d16d2c32c706d717c1366f5ccc0e99a2a9671d821334acc4`.
+
 ## 0.8.1 whole-item history — 2026-11-06
 
 Web and Android History show one entry per item, grouping task comments and

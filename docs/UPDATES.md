@@ -41,7 +41,7 @@ key, PSK, pinned CA/server binding and pending edits. The app never calls reset,
 clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2**,
 **0.3.2 → 0.3.3**, **0.3.2/code 5 → 0.4.0/code 10**, and
 **0.3.2/code 5 → 0.6.0/code 12**, and
-**0.3.2/code 5 → 0.7.0/code 13** APK upgrades
+**0.3.2/code 5 → 0.7.0/code 13**, and **0.8.1/code 15 → 0.9.0/code 16** APK upgrades
 were exercised on the disposable AVD with the actual Keystore-backed vault and
 queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults
