@@ -17,6 +17,26 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Expanding sidebar sections
+
+Plan, Library, Task views and Preferences keep their full content height when
+expanded. Lower sections move down; the entire desktop sidebar scrolls when
+needed, including Management and Sign out. Collapsing a section releases that
+space. Navigation and refresh preserve the sidebar's scroll position and open
+Preferences. Narrow web layouts continue to grow with the page.
+
+These captures use a real browser scrollbar, with all sections expanded. The
+second shows the lower controls after scrolling the sidebar; the workspace stays
+in place.
+
+![Expanded navigation with its own visible scrollbar](screenshots/web/64-sidebar-expanded.png)
+![Task views and management remain reachable together](screenshots/web/65-sidebar-scrolled.png)
+
+```bash
+source scripts/dev-env.sh
+FIELD_NOTES_CAPTURE_SIDEBAR=synthetic-only node --test tests/sidebar.browser.test.mjs
+```
+
 ## Change history on web and phone — 0.7
 
 Open **Library → History** on either client. These new captures show the same

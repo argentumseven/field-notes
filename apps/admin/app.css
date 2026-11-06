@@ -873,10 +873,15 @@ dialog.invitation-dialog {
     top: 0;
     height: 100dvh;
     min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  /* Scroll expanded groups and the footer together, rather than clipping the
+     navigation into the space left above a separate footer. */
+  .sidebar > * {
+    flex-shrink: 0;
   }
   .sidebar-scroll {
-    min-height: 0;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -981,6 +986,7 @@ button {
   letter-spacing: -0.6px;
 }
 .nav-group {
+  flex-shrink: 0;
   margin-bottom: 12px;
 }
 .nav-group > summary {

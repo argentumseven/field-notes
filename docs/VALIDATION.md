@@ -1,5 +1,26 @@
 # Implementation and validation record
 
+## Web sidebar expansion follow-up
+
+Expanded navigation now flows above its footer in one desktop sidebar scroll
+area, rather than squeezing navigation into a separate area above a fixed
+footer. Sections do not shrink; collapsing releases their space. A stable
+scrollbar gutter avoids width changes. Navigation and refresh retain the sidebar
+scroll position and open Preferences. The narrow web layout stays in page flow.
+This is a web-only change; Android code, APK version/signature, stored household
+data and the protocol are unchanged.
+
+The new real-server Chromium regression fails on the previous desktop layout
+and passes on the fix. It measures group/content/footer bounds at 1440×1080,
+1280×800, 1024×600 and 800×420, checks reachable controls without moving the
+planner, exercises keyboard expand/collapse/navigation and refresh, and checks
+390 px and 600 px web layouts for overlap and horizontal overflow. New
+[sidebar captures](WALKTHROUGH.md#expanding-sidebar-sections) include the actual
+browser scrollbar. All **18 Chromium workflows** passed with
+`source scripts/dev-env.sh; npm run test:browser`; the focused sidebar checks
+also passed with native scrollbars enabled. The optimized Linux server build
+passed. No home-server deployment or physical-phone check is implied.
+
 ## 0.7.0 household change history — 2026-11-05
 
 The active implementation is **0.7.0 / Android code 13**, protocol 1 and schema 2.

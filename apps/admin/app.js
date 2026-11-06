@@ -364,6 +364,10 @@ function render() {
     renderLogin();
     return;
   }
+  const previousSide = $(".sidebar"),
+    sidebarScrollTop = previousSide?.scrollTop ?? 0,
+    preferencesOpen =
+      previousSide?.querySelector(".preferences-nav")?.open ?? false;
   for (const u of state.images) URL.revokeObjectURL(u);
   state.images = [];
   const shell = el("div", "shell"),
@@ -459,6 +463,7 @@ function render() {
       ),
     );
   const settingsNav = el("details", "nav-group preferences-nav");
+  settingsNav.open = preferencesOpen;
   settingsNav.append(el("summary", "", "Preferences"));
   settingsNav.append(
     button("Change password", changeOwnPassword, "quiet"),
@@ -611,6 +616,7 @@ function render() {
   main.append(top);
   shell.append(side, main);
   $("#app").replaceChildren(shell);
+  side.scrollTop = sidebarScrollTop;
   updateSync();
   if (state.page === "history") {
     FieldHistory.render(main);
