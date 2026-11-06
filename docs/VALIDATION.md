@@ -41,6 +41,23 @@ GrapheneOS roaming/background delivery, or deployment to the home Debian VM.
 The remaining list UX findings are explicitly separated in
 [LIST-UX-REVIEW.md](LIST-UX-REVIEW.md).
 
+Delivery verified: [v0.9.1](https://github.com/argentumseven/field-notes/releases/tag/v0.9.1)
+publishes clean source `b3ca0865bfb8844afd388abcad5e1501b4b13b04`, Android
+code 17, with the unchanged public signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+All four downloaded public assets match the built release byte-for-byte.
+Actual signature/package/ARM64 verification passed, and the latest link points
+to this release. Public APK SHA-256:
+`25c64c58cfe19c2a4a9e9774d17b170d94751e1f5dff040895cf955863d1a81c`.
+
+The ordinary Linux x86_64 build, without APK/download overrides, fetched those
+same public bytes. The packaged executable contains the current scroll/live-list
+features and reports 0.9.1; host helpers match their source, the Debian guide uses
+a version-independent bundle prompt, both pinned image IDs are present, and all
+archive checksums pass. No private-key files are packaged. Local complete bundle
+SHA-256:
+`9c8dfa10f31e433b7e8a4279a31c9b62933183702e7e8b1fc7c6aedf050f19be`.
+
 ## 0.9.0 project continuity and reminder editing — 2026-11-06
 
 Household/honey-do is independent of hierarchy: standalone tasks, standalone
