@@ -43,7 +43,15 @@ through JNI → WireGuard → pinned TLS → Rust. The same-signer
 **0.3.2/code 5 → 0.7.0/code 13** upgrade retained its actual Keystore-backed
 identity, server/CA/PSK binding, original preferences and pending task command.
 No pairing purge, data copy or re-enrollment occurs between its upgrade phases.
-Final public artifact evidence is recorded after publication.
+The public [v0.7.0 release](https://github.com/argentumseven/field-notes/releases/tag/v0.7.0)
+was built from clean tagged source `62a3f8219bb9196ab53f645efded97ef3e2b1fa5`
+and published through the [verified prebuilt workflow](https://github.com/argentumseven/field-notes/actions/runs/42137186584).
+The final ARM64 release passed lint, all 83 shared checks, actual signature/
+package verification and 16 KiB page alignment. A fresh public download passed
+independent certificate/package verification. All four public files match the
+clean-tag build and offline Linux server archive byte for byte; no signing key
+is bundled. The public certificate remains unchanged. APK SHA-256:
+`293dbd44284f765e3ba6b4ffa7538aec3b57c9943d0c9ba024ef71a15d962b7e`.
 No home-VM deployment or physical GrapheneOS test is implied by these checks.
 See [HISTORY.md](HISTORY.md) and the [walkthrough](WALKTHROUGH.md).
 
