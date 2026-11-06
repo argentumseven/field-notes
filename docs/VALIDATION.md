@@ -1,5 +1,40 @@
 # Implementation and validation record
 
+## 0.9.0 project continuity and reminder editing — 2026-11-06
+
+Household/honey-do is independent of hierarchy: standalone tasks, standalone
+task lists, direct project tasks and project-linked work lists all retain their
+own identities. Reference/shopping lists do not count toward work progress.
+Web and Android derive matching rollups from the complete project, independently
+of visible filters. Project targets/coordinators are optional and do not rewrite
+task dates or assignments. Holds/finish/reopen, parent moves, claims, import and
+restore use server transaction guards; no cascade silently completes children.
+Project history captures both sides of new moves. Manifest v2 preserves the
+hierarchy while readers continue to accept v1, with repeated-import deduplication.
+
+The shared web recipient selector no longer collapses multi-select into Only me.
+Task, event and note choices survive save/reopen and exclude nonrecipients from
+projected alert rules. Android editors now hand durable changes to workspace-owned
+sync, which survives editor cancellation and waits for an overlapping poll.
+This covers reminder settings, events, list items, notes and collections.
+Grocery editors have no reminder/recipient/sound controls; legacy grocery reminder
+rules remain stored but do not deliver alerts. List addition notices remain separate.
+
+Verified: 92 API/codec/planning cases; all 26 browser cases (including a focused
+workflow rerun for automatic opening of newly created task details); 103 Kotlin
+host tests; 15 Rust tests plus clean clippy; 126 Python host-helper tests; and an
+actual JNI → WireGuard → TLS → Rust integration case. Shared JS/Kotlin project
+golden cases cover work/reference classification, counts, dates and group moves.
+The dedicated AOSP API-35 AVD's ProjectsDeviceTest also passed real project/task
+navigation, retained search context, recipient-chip save through the outbox and
+Keystore-backed cache, and the absence of grocery reminder controls. The first
+device run exposed the editor-cancellation bug; the corrected run passed.
+Rolling-list reuse is checked for both reference and work lists.
+
+Fresh synthetic web/Android captures are indexed in [WALKTHROUGH.md](WALKTHROUGH.md).
+These are automated/emulator checks, not a deployment to the home Debian VM or
+physical GrapheneOS profile, camera, VPN, background-delivery or alarm-volume tests.
+
 ## 0.8.1 whole-item history — 2026-11-06
 
 Web and Android History show one entry per item, grouping task comments and

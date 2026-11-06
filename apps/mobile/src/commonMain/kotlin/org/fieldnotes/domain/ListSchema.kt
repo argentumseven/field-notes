@@ -4,10 +4,10 @@ import kotlinx.serialization.json.*
 import kotlinx.datetime.toLocalDateTime
 
 val listFieldLabels = linkedMapOf("quantity" to "Quantity", "store" to "Store", "notes" to "Notes", "link_url" to "Web link", "price" to "Price", "images" to "Attached images", "assignee" to "Assigned to", "due" to "Due date", "planned_for" to "Planned day", "priority" to "Priority", "estimate_minutes" to "Effort")
-val listTemplates = linkedMapOf("general" to "General list", "groceries" to "Groceries", "shopping" to "Online shopping", "custom" to "Custom list")
-fun defaultListFields(template:String):Set<String> = when(template) { "groceries" -> setOf("quantity","store","notes"); "shopping" -> setOf("quantity","link_url","images"); "custom" -> emptySet(); else -> setOf("notes") }
+val listTemplates = linkedMapOf("general" to "General list", "tasks" to "Task list", "groceries" to "Groceries", "shopping" to "Online shopping", "custom" to "Custom list")
+fun defaultListFields(template:String):Set<String> = when(template) { "tasks"->setOf("notes","assignee","due","planned_for","priority","estimate_minutes","images"); "groceries" -> setOf("quantity","store","notes"); "shopping" -> setOf("quantity","link_url","images"); "custom" -> emptySet(); else -> setOf("notes") }
 fun listFields(record:Record):Set<String> = (record.data["fields"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }?.toSet() ?: defaultListFields(record.data.text("template","general"))
-fun listConfiguration(template:String, fields:Set<String>, perpetual:Boolean)=obj("template" to template.j(),"fields" to JsonArray(listFieldLabels.keys.filter { it in fields }.map { it.j() }),"perpetual" to JsonPrimitive(perpetual))
+fun listConfiguration(template:String, fields:Set<String>, perpetual:Boolean)=obj("template" to (if(template=="tasks")"general" else template).j(),"fields" to JsonArray(listFieldLabels.keys.filter { it in fields }.map { it.j() }),"perpetual" to JsonPrimitive(perpetual))
 fun priceLabel(data:JsonObject):String = data.text("price").takeIf { it.isNotBlank() }?.let { "${data.text("currency","USD")} $it" } ?: ""
 fun recordCreator(record:Record)=record.data.text("created_by").ifBlank { record.data.text("author_id") }
 fun recordHistory(cache:Cache,record:Record,zone:kotlinx.datetime.TimeZone):String {

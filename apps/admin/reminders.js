@@ -116,6 +116,15 @@
       section = el("details", "reminder-editor"),
       summary = el("summary"),
       body = el("div", "reminder-body");
+    const initialAudience = extension?.value.audience;
+    let recipientChoice =
+      initialAudience?.mode === "people"
+        ? initialAudience.people.length === 1
+          ? initialAudience.people[0] === state.actor.user_id
+            ? "self"
+            : "person:" + initialAudience.people[0]
+          : "people"
+        : initialAudience?.mode;
     section.append(summary, body);
     parent.append(section);
     const notify = () => {
@@ -323,20 +332,14 @@
           ...state.people.map((p) => ["person:" + p.id, p.name]),
           ["people", "Choose several people"],
         ];
-        const selected =
-          audience.mode === "people"
-            ? audience.people.length === 1
-              ? audience.people[0] === state.actor.user_id
-                ? "self"
-                : "person:" + audience.people[0]
-              : "people"
-            : audience.mode;
+        const selected = recipientChoice;
         const who = addField(
           recipients,
           select("Who receives reminders", options, selected),
         );
         who.onchange = () => {
           const choice = who.value;
+          recipientChoice = choice;
           extension.value.audience =
             choice === "everyone"
               ? { mode: "everyone", people: [] }

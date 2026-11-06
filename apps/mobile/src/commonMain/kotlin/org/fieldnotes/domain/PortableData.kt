@@ -11,7 +11,7 @@ fun portableManifest(cache:Cache):JsonObject {
     val rowIds=rows.map{it.id}.toSet()
     val orphanAttachments=rows.filter{it.kind in setOf("image","comment")&&it.data.text("task_id") !in rowIds}
     val orphans=orphanAttachments.map{it.id}.toSet()
-    val records=rows.filter{it.id !in orphans}.map { r->if(r.kind=="task"&&r.data.text("project_id").isNotEmpty()&&r.data.text("project_id") !in rowIds)r.copy(data=JsonObject(r.data+("project_id" to "".j()))) else r }
+    val records=rows.filter{it.id !in orphans}.map { r->if(r.kind in setOf("task","list")&&r.data.text("project_id").isNotEmpty()&&r.data.text("project_id") !in rowIds)r.copy(data=JsonObject(r.data+("project_id" to "".j()))) else r }
     val originals=snapshot.records.associateBy{it.id}
     val retained=mutableListOf<JsonElement>()
     fun retain(command:Command,reason:String){
@@ -32,7 +32,7 @@ fun portableManifest(cache:Cache):JsonObject {
     }
     retained+=cache.recoveredImports.map { item->obj("id" to item.getValue("id"),"title" to (item["title"]?:"Recovered change".j()),"payload" to item.getValue("payload"),"media_id" to if(item["has_image"]==JsonPrimitive(true))item.getValue("id") else JsonNull) }
     val people=(cache.people.map{obj("id" to it.id.j(),"name" to it.name.j())}+obj("id" to snapshot.actor.user_id.j(),"name" to snapshot.actor.name.j())).distinctBy{it.text("id")}
-    return obj("format" to "org.fieldnotes.archive".j(),"version" to 1.j(),"source" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"created_at" to Clock.System.now().epochSeconds.j(),"records" to JsonArray(records.map{WireJson.encodeToJsonElement(Record.serializer(),it)}),"people" to JsonArray(people),"media" to JsonArray(emptyList()),"retained" to JsonArray(retained))
+    return obj("format" to "org.fieldnotes.archive".j(),"version" to 2.j(),"source" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"created_at" to Clock.System.now().epochSeconds.j(),"records" to JsonArray(records.map{WireJson.encodeToJsonElement(Record.serializer(),it)}),"people" to JsonArray(people),"media" to JsonArray(emptyList()),"retained" to JsonArray(retained))
 }
 
 data class TransferUi(val busy:Boolean=false,val message:String="",val fileName:String="",val preview:JsonObject?=null,val reviewed:Boolean=false,val recovered:List<JsonObject> = emptyList())

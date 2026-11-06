@@ -29,11 +29,13 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
     var sent = mutableListOf<Command>()
     var results = mutableMapOf<String, JsonObject>()
     var recoveryReply:((JsonObject)->Reply)?=null
+    var beforeExchange:(suspend (String)->Unit)?=null
     var loseReply = false
     override suspend fun keys() = obj("private_key" to "private-test-key".j())
     override suspend fun configure(configuration: JsonObject) { configurations++;if(configureFailure)error("DNS unavailable") }
     override suspend fun stop() { stopped=true }
     override suspend fun exchange(path: String, token: String?, body: JsonObject?, serverKey: String?): Reply {
+        beforeExchange?.invoke(path)
         requests+=path
         if (networkFailure) error("Offline")
         if(path=="/api/recovery")return checkNotNull(recoveryReply){"Missing recovery fixture"}(checkNotNull(body))
@@ -65,6 +67,50 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun savedEditSyncWaitsForAnOverlappingPollInsteadOfDroppingTheRequest()=runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        val started=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>();var first=true
+        transport.beforeExchange={path->if(path=="/api/head"&&first){first=false;started.complete(Unit);release.await()}}
+        workspace.launch{workspace.poll()};runCurrent();assertTrue(started.isCompleted)
+        workspace.enqueue("task.update",task.id,obj("notes" to "Saved during poll".j()),task.revision)
+        workspace.requestSync();runCurrent();assertTrue(transport.sent.isEmpty())
+        release.complete(Unit);runCurrent()
+        assertEquals(1,transport.sent.size);assertTrue(workspace.state.value.cache.outbox.isEmpty());assertEquals("Saved during poll",vault.value.snapshot!!.records.single().data.text("notes"))
+    }
+    @Test fun savedEditSyncSurvivesEditorCancellationWithoutAutoRefresh()=runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        val editor=Job();val editorScope=CoroutineScope(editor+StandardTestDispatcher(testScheduler))
+        editorScope.launch {
+            workspace.enqueue("task.update",task.id,obj("notes" to "Saved before closing".j()),task.revision)
+            workspace.requestSync()
+            editor.cancel()
+        }
+        runCurrent()
+        assertTrue(editor.isCancelled);assertEquals(1,transport.sent.size);assertTrue(workspace.state.value.cache.outbox.isEmpty())
+        assertEquals("Saved before closing",vault.value.snapshot!!.records.single().data.text("notes"))
+        val reopened=model(vault,transport,backgroundScope);reopened.initialize();assertEquals("Saved before closing",reopened.state.value.cache.snapshot!!.records.single().data.text("notes"))
+    }
+    @Test fun offlineProjectListTaskChainKeepsParentDependenciesAndChildRevisions()=runTest {
+        val feature=obj("server_version" to "0.9.0".j(),"protocol_min" to 1.j(),"protocol_max" to 1.j(),"minimum_client_code" to 10.j(),"recommended_client_code" to CURRENT_CLIENT_CODE.j(),"features" to JsonArray(listOf(PROJECTS_FEATURE.j())))
+        val vault=MemoryVault();val transport=FakeTransport().also{it.compatibility=feature};val workspace=model(vault,transport,backgroundScope);workspace.initialize();workspace.poll()
+        workspace.enqueue("project.create","project",obj("title" to "Weekend".j()),null)
+        workspace.enqueue("list.create","list",obj("title" to "Honey-do".j(),"project_id" to "project".j(),"items_are_tasks" to JsonPrimitive(true)),null)
+        workspace.enqueue("task.create","child",obj("title" to "Fix hinge".j(),"project_id" to "list".j()),null)
+        val queued=vault.value.outbox;assertEquals(queued[0].command.operation_id,queued[1].parentCreation);assertEquals(queued[1].command.operation_id,queued[2].parentCreation)
+        val restarted=model(vault,transport,backgroundScope);restarted.initialize();restarted.sync()
+        assertTrue(vault.value.outbox.isEmpty());assertTrue(vault.value.conflicts.isEmpty())
+        assertEquals(listOf("project.create","list.create","task.create"),transport.sent.map{it.action});assertTrue(transport.sent.all{it.expected_revision==null})
+        assertEquals("list",vault.value.snapshot!!.records.first{it.id=="child"}.data.text("project_id"))
+    }
+    @Test fun failedProjectCreationRetainsItsWholeDependentGroupWithoutSendingOrphanRequests()=runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        workspace.enqueue("project.create","project",obj("title" to "Weekend".j()),null)
+        workspace.enqueue("list.create","list",obj("title" to "Group".j(),"project_id" to "project".j()),null)
+        workspace.enqueue("task.create","child",obj("title" to "Fix hinge".j(),"project_id" to "list".j()),null)
+        transport.rejection=409;workspace.sync();assertEquals(listOf("project.create"),transport.sent.map{it.action})
+        assertEquals(3,vault.value.conflicts.size);assertTrue(vault.value.outbox.isEmpty());assertEquals("Fix hinge",vault.value.conflicts.last().command.data.text("title"))
+    }
+
     @Test fun recoveryIntentIsDurableBeforeSendingAndLostRepliesCanBeConfirmedAfterRestart()=runTest {
         val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
         val preview=RecoveryPreview("preview",9999999999,"epoch",1,"version",1,"Saved state",false,change_count=1,changes=emptyList())
@@ -161,7 +207,8 @@ class WorkspaceTest {
         assertEquals(listOf(other.id),projectRecords(restarted.state.value.cache).filter { it.record.kind=="task" }.map { it.record.id })
     }
     @Test fun reusingCheckedItemsIsDurableAndKeepsContentAndRevisionDependencies()=runTest {
-        val list=Record("groceries","list",1,obj("title" to "Groceries".j(),"perpetual" to JsonPrimitive(true)))
+        for(workTasks in listOf(false,true)) {
+        val list=Record("groceries","list",1,obj("title" to "Rolling list".j(),"perpetual" to JsonPrimitive(true),"items_are_tasks" to JsonPrimitive(workTasks)))
         val item=task.copy(data=JsonObject(task.data+mapOf("project_id" to list.id.j(),"quantity" to "2".j(),"store" to "Costco".j())))
         val image=Record("image","image",1,obj("task_id" to item.id.j(),"name" to "Attached photo".j()))
         val other=item.copy(id="leave-unchecked")
@@ -179,6 +226,7 @@ class WorkspaceTest {
         assertEquals("todo",reopened.data.text("status"));assertEquals("Measure first",reopened.data.text("notes"));assertEquals("2",reopened.data.text("quantity"));assertEquals("Costco",reopened.data.text("store"))
         assertTrue(records.any { it.id==image.id });assertTrue(records.any { it.id==other.id })
         assertFails { restarted.reuseCheckedItems(listOf(completed),Basis("different",1)) }
+        }
     }
     @Test fun ddilRestartMergesDifferentItemsIntoARemotelyChangedListAndRetainsSameItemConflicts()=runTest {
         val list=Record("groceries","list",1,obj("title" to "Groceries".j()))

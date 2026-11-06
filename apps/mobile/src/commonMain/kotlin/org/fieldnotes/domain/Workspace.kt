@@ -359,7 +359,9 @@ class Workspace(
             val protectedData=if(parent!=null&&c.supportsRecovery())JsonObject(data+("parent_incarnation" to parent.data.number("recovery_incarnation").j()))else data
             val command = Command(newId(), stamp.epoch, stamp.generation, action, target, revision, protectedData)
             val predecessor = c.outbox.lastOrNull { it.command.target == target }?.command?.operation_id
-            c.copy(outbox = c.outbox + Pending(command, predecessor))
+            val parentId=if(action.startsWith("task.")||action.startsWith("list."))data.text("project_id") else data.text("task_id")
+            val parentCreate=if(action.endsWith(".create")&&parentId.isNotBlank())c.outbox.lastOrNull {it.command.target==parentId&&it.command.action.endsWith(".create")}?.command?.operation_id else null
+            c.copy(outbox = c.outbox + Pending(command, predecessor,parentCreation=parentCreate))
         }
     }
     /** Freeze the exact checked rows in one durable local write. Existing per-task
@@ -387,7 +389,7 @@ class Workspace(
             check(snap.basis==basis){"The workspace changed. Reopen this list before changing checked items."}
             check(snap.actor.role!="viewer"){"Your role is read-only."}
             val rows=projectRecords(c).map { it.record };val ids=items.map { it.id }.toSet()
-            check(items.isNotEmpty()&&ids.size==items.size&&items.all { r->r.kind=="task"&&r.data.text("status")=="done"&&isChecklistItem(r,rows) }){"Choose checked list items."}
+            check(items.isNotEmpty()&&ids.size==items.size&&items.all { r->r.kind=="task"&&r.data.text("status")=="done"&&rows.any{it.id==r.data.text("project_id")&&it.kind=="list"} }){"Choose checked list items."}
             check(c.outbox.size+c.conflicts.size+items.size<=500){"Synchronize pending work before changing this many items."}
             val commands=items.map { row->Pending(Command(newId(),snap.epoch,snap.generation,action,row.id,row.revision,obj()),c.outbox.lastOrNull { it.command.target==row.id }?.command?.operation_id) }
             c.copy(outbox=c.outbox+commands)
@@ -417,6 +419,9 @@ class Workspace(
     private fun report(e: Exception) { if (e is CancellationException) throw e; _state.update { it.copy(error = e.message ?: "Operation failed.",problem=e.message ?: "Operation failed.") } }
     fun clearError() { _state.update { it.copy(error = null) } }
     fun launch(block: suspend () -> Unit) = scope.launch { try { block() } catch (e: Exception) { report(e) } }
+    /** The queue is already durable. Its delivery belongs to the workspace,
+     * so closing an editor cannot cancel the sync that follows a successful save. */
+    fun requestSync() = launch { syncNow(waitForConnection=true) }
 
     private suspend fun rememberCompatibility(head:JsonObject) {
         val next=ServerCompatibility.read(head,Clock.System.now().epochSeconds)
@@ -455,8 +460,9 @@ class Workspace(
         return fresh
     }
 
-    suspend fun sync() {
-        if (!connection.tryLock()) return
+    suspend fun sync() = syncNow(waitForConnection=false)
+    private suspend fun syncNow(waitForConnection:Boolean) {
+        if (waitForConnection) connection.lock() else if (!connection.tryLock()) return
         if (cache.config == null || cache.token == null || !_state.value.ready) { connection.unlock(); return }
         _state.update { it.copy(syncing = true) }
         try {
@@ -470,6 +476,8 @@ class Workspace(
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
                     c.data.keys.any { it in setOf("recurrence","category","store","on_radar","remind_at","notify_additions","item_reminders") }&&!cache.supportsPlannerV3()->"This saved edit uses newer planner fields. Update the paired server; the complete edit is kept in Retained changes."
+                    (c.data.containsKey("items_are_tasks")||c.action.startsWith("list.")&&c.data.containsKey("project_id")||c.action.startsWith("project.")&&c.data.keys.any{it in setOf("status","due","assignee")})&&!cache.supportsProjects()->"This saved edit needs the newer project/work-list server. Update the server; its complete content is kept."
+                    item.parentCreation!=null->"The parent collection could not be created. Review its retained change before this child item."
                     item.dependsOn != null -> "An earlier queued edit was rejected. Review this dependent draft."
                     else -> null
                 }
@@ -483,7 +491,7 @@ class Workspace(
                         val deleted = record.data["deleted"] == JsonPrimitive(true)
                         val rows = snap.records.filterNot { it.id == record.id || (deleted && it.data.text("task_id") == record.id) } + if (deleted) emptyList() else listOf(record)
                         state.copy(snapshot = snap.copy(records = rows, sequence = result.number("sequence")), drafts = state.drafts.mapValues { (_, draft) -> if (draft.dependsOn == c.operation_id) draft.copy(revision = record.revision, dependsOn = null) else draft }, outbox = state.outbox.filterNot { it.command.operation_id == c.operation_id }.map { next ->
-                            if (next.dependsOn == c.operation_id) next.copy(dependsOn = null, command = next.command.copy(expected_revision = record.revision)) else next
+                            if (next.dependsOn == c.operation_id) next.copy(dependsOn = null, command = next.command.copy(expected_revision = record.revision)) else if(next.parentCreation==c.operation_id)next.copy(parentCreation=null) else next
                         })
                     }
                 } catch (e: ApiError) {

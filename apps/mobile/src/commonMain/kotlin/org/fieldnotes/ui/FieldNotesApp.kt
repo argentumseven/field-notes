@@ -158,6 +158,10 @@ import org.fieldnotes.domain.*
     var calendarView by rememberSaveable { mutableStateOf("Day") }
     var query by rememberSaveable { mutableStateOf("") }; var project by rememberSaveable { mutableStateOf<String?>(null) }
     var filterCategory by rememberSaveable{mutableStateOf("")};var filterPerson by rememberSaveable{mutableStateOf("*")};var filterStatus by rememberSaveable{mutableStateOf("all")};var filterPriority by rememberSaveable{mutableStateOf(0)};var sortTasks by rememberSaveable{mutableStateOf("smart")}
+    var taskContainer by remember {mutableStateOf<String?>(null)}
+    var projectList by remember {mutableStateOf<Pair<String,Boolean>?>(null)}
+    var historyTarget by remember {mutableStateOf<String?>(null)};var historyTitle by remember {mutableStateOf("")}
+    var projectViews by remember {mutableStateOf<Map<String,ProjectView>>(emptyMap())}
     var activeStore by remember(project) { mutableStateOf("") }
     var menu by remember { mutableStateOf(false) }; var projectsMenu by remember { mutableStateOf(false) }
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) };var eventStartClock by remember { mutableStateOf<String?>(null) }
@@ -173,6 +177,8 @@ import org.fieldnotes.domain.*
     LaunchedEffect(requestedRecord,navigationSequence){if(requestedRecord!=null){val row=projectRecords(state.cache).firstOrNull { it.record.id==requestedRecord }?.record;if(row?.kind in setOf("list","project")){project=requestedRecord;page="Tasks";selected=null}else if(row!=null)selected=requestedRecord}}
     var removeInstallation by remember { mutableStateOf(false) };var profileHelp by remember { mutableStateOf(false) }
     val rows = remember(state.cache) { projectRecords(state.cache) }; val projects = workspaceContainers(state.cache)
+    val activeContainer=projects.firstOrNull {it.record.id==project}?.record
+    val workClosed=activeContainer?.let {c->(c.kind=="project"||c.flag("items_are_tasks"))&&state.cache.projectGraph().project(c)?.data?.text("status")=="archived"} ?: false
     val drawer=rememberDrawerState(DrawerValue.Closed);val uiScope=rememberCoroutineScope()
     LaunchedEffect(requestedDate,navigationSequence) {
         val day=requestedDate?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
@@ -182,7 +188,7 @@ import org.fieldnotes.domain.*
             // An unsaved event editor is intentionally retained until closed.
         }
     }
-    fun navigate(view:String,container:String?=null){focus.clearFocus();page=view;project=container;query="";selected=null;uiScope.launch { drawer.close() }}
+    fun navigate(view:String,container:String?=null){focus.clearFocus();page=view;project=container;taskContainer=container;query="";selected=null;historyTarget=null;historyTitle="";uiScope.launch { drawer.close() }}
     val actor = state.cache.snapshot!!.actor; val writable = actor.role != "viewer"
     val current = rows.firstOrNull { it.record.id == selected }
     var now by remember { mutableStateOf(Clock.System.now()) }
@@ -198,8 +204,8 @@ import org.fieldnotes.domain.*
     if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null},device)
     else if (selected != null && current?.record?.kind == "task") {
         val list=projects.find { it.record.id==current.record.data.text("project_id")&&it.record.kind=="list" }?.record
-        if(list!=null)ListItemDialog(model,state,list,current,device,attach,image){selected=null}
-        else TaskScreen(model,state,current,{selected=null},attach,image,device)
+        if(list!=null&&!list.flag("items_are_tasks"))ListItemDialog(model,state,list,current,device,attach,image){selected=null}
+        else TaskScreen(model,state,current,{selected=null},attach,image,device){cid->navigate("Tasks",cid)}
     }
     else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().plannerScroll().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Workspace",Modifier.padding(14.dp),style=MaterialTheme.typography.titleLarge)
@@ -213,7 +219,7 @@ import org.fieldnotes.domain.*
             DropdownMenuItem(text = { Text("Retained changes (${state.cache.conflicts.size + state.cache.drafts.size})") }, onClick = { menu = false; changes = true })
             DropdownMenuItem(text = { Text("Settings & widgets") }, onClick = { menu = false; settings = true })
             if (writable) {
-                DropdownMenuItem(text={Text("New task")},onClick={menu=false;addTask=true})
+                DropdownMenuItem(text={Text("New task")},enabled=!workClosed,onClick={menu=false;addTask=true})
                 DropdownMenuItem(text={Text("New list")},onClick={menu=false;addList=true})
                 DropdownMenuItem(text={Text("New project")},onClick={menu=false;addProject=true})
                 DropdownMenuItem(text={Text("New note")},onClick={menu=false;addNote=true})
@@ -223,7 +229,7 @@ import org.fieldnotes.domain.*
         } }
     }) }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { NavigationBar(tonalElevation = 0.dp) {
         listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = page == label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
-    } }, floatingActionButton = { if (writable&&page!="History") ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
+    } }, floatingActionButton = { if (writable&&page!="History"&&!workClosed) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(horizontal = 18.dp)) {
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             Text(when { state.connectionPaused -> "Connection paused · cached work and reminders remain available"; state.syncing -> "Synchronizing…"; state.online -> "Synced · ${state.cache.outbox.size} queued"; else -> "Offline · ${state.cache.outbox.size} queued · starts provisional" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -245,7 +251,7 @@ import org.fieldnotes.domain.*
             else if(state.cache.recoveryNotice.isNotBlank())Text(state.cache.recoveryNotice)
             if(device.update.available)SecondaryButton(onClick={settings=true}){Text("App update ${device.update.offered} available")}
             if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it})
-            else if(page=="History") HistoryScreen(model,state,device.use24Hour){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
+            else if(page=="History") HistoryScreen(model,state,device.use24Hour,historyTarget,historyTitle,{historyTarget=null;historyTitle=""}){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
             else if(page=="Assignments") {
                 OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(top=12.dp),label={Text("Find assigned work")},singleLine=true)
                 AssignmentRows(state.cache,query){selected=it}
@@ -253,9 +259,13 @@ import org.fieldnotes.domain.*
             else if(page in setOf("Collections","Lists","Projects")) {
                 CollectionLibrary(state.cache,if(page=="Lists")listOf("list") else if(page=="Projects")listOf("project") else listOf("list","project"),writable,{navigate("Tasks",it)},{editingContainer=it})
             }
+            else if(state.cache.supportsProjects()&&projects.any{it.record.id==project&&it.record.kind=="project"}) {
+                val root=projects.first{it.record.id==project}.record
+                ProjectWorkspace(model,state,root,{selected=it},{navigate("Tasks",it)},{editingContainer=root},{work->projectList=root.id to work},{historyTarget=root.id;historyTitle=root.data.text("title");page="History"},{target->taskContainer=target;addTask=true},projectViews[root.id] ?: ProjectView(),{view->projectViews=(projectViews.filterKeys{it!=root.id}+ (root.id to view)).entries.toList().takeLast(64).associate{it.toPair()}},{taskContainer=it})
+            }
             else if(projects.any { it.record.id==project&&it.record.kind=="list" }) {
                 val list=projects.first { it.record.id==project }.record
-                SecondaryButton(onClick={navigate("Lists")}){Text("‹ All lists")}
+                SecondaryButton(onClick={if(list.data.text("project_id").isNotBlank())navigate("Tasks",list.data.text("project_id")) else navigate("Lists")}){Text(if(list.data.text("project_id").isNotBlank())"‹ "+(state.cache.projectGraph().project(list)?.data?.text("title") ?: "Project") else "‹ All lists")}
                 Checklist(model,state,list,device,image,{selected=it},{editingContainer=list},{activeStore=it})
             }
             else {
@@ -280,14 +290,15 @@ import org.fieldnotes.domain.*
     }
     }
     if (selected != null && current == null) EditorDialog(onDismissRequest = { selected = null }, title = { Text("Item removed") }, text = { Text("Retained edits are available under Retained changes.") }, confirmButton = { SecondaryButton(onClick = { selected = null; changes = true }) { Text("Review") } })
+    projectList?.let{(parent,work)->CollectionDialog(model,state,null,"list",{projectList=null},parent,work){id->projectList=null;navigate("Tasks",id)}}
     if (addProject) CollectionDialog(model,state,null,"project",{addProject=false})
     if(addList)CollectionDialog(model,state,null,"list",{addList=false})
     if(addNote)NewNoteDialog(model,state,page=="Later & reminders",device){addNote=false;query=""}
     if(addTask) {
         val list=projects.find { it.record.id==project&&it.record.kind=="list" }?.record
-        if(list!=null)ListItemDialog(model,state,list,null,device,initialStore=activeStore.takeUnless{it=="*"}.orEmpty(),close={addTask=false}) else NewTaskDialog(model,state,project,page=="My tasks",device){addTask=false}
+        if(list!=null&&!list.flag("items_are_tasks"))ListItemDialog(model,state,list,null,device,initialStore=activeStore.takeUnless{it=="*"}.orEmpty(),close={addTask=false}) else NewTaskDialog(model,state,taskContainer ?: project,page=="My tasks",device,onCreated={id,_->selected=id}){addTask=false}
     }
-    editingContainer?.let { c->CollectionDialog(model,state,c,c.kind){editingContainer=null} }
+    editingContainer?.let { c->CollectionDialog(model,state,c,c.kind,close={editingContainer=null}) }
     if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock) { addEvent = false }
     if (endpoint) TextDialog("Server endpoint", "Host:UDP port", { endpoint = false }, confirmLabel = "Update", initial = state.cache.config?.text("endpoint") ?: "", maxLength = 260) { model.updateEndpoint(it); endpoint = false; model.launch { model.sync() } }
     if (changes) ChangesSheet(model, state, { changes = false }, copy)
@@ -360,13 +371,14 @@ import org.fieldnotes.domain.*
         Column(Modifier.padding(horizontal = 12.dp).weight(1f)) {
             Text(d.text("title"), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             RecordBadges(task.record,cache.snapshot?.records?.firstOrNull { it.id==d.text("project_id") })
+            if(d.text("project_id").isNotBlank())Text(cache.projectGraph().path(d.text("project_id")),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text(buildList { add(priorityName(d.number("priority", 3).toInt())); if (d.text("due").isNotBlank()) add("Due ${d.text("due")}"); if (task.record.flag("blocked")) add("Blocked"); if (task.record.flag("pinned")) add("Pinned"); if (task.pending) add("Queued"); if(d.text("assignee").isNotBlank())add("For "+personName(cache,d.text("assignee"))); if (d.text("claimant").isNotBlank()) add("Working: "+personName(cache,d.text("claimant"))) }.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(recordHistory(cache,task.record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.Outlined.KeyboardArrowRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant)
     }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
-@Composable private fun TaskScreen(model: Workspace, state: WorkspaceState, visible: VisibleRecord, back: () -> Unit, attach: (String) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions=DeviceActions()) {
+@Composable private fun TaskScreen(model: Workspace, state: WorkspaceState, visible: VisibleRecord, back: () -> Unit, attach: (String) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions=DeviceActions(),openContainer:((String)->Unit)?=null) {
     var reminderDialog by remember { mutableStateOf(false) }
     val task = visible.record
     val draft = state.cache.drafts[task.id]
@@ -389,6 +401,9 @@ import org.fieldnotes.domain.*
     var comment by rememberSaveable(task.id) { mutableStateOf("") }
     var delete by remember { mutableStateOf(false) }
     val writable = state.cache.snapshot!!.actor.role != "viewer"
+    val workProject=state.cache.projectGraph().workProject(task)
+    val heldProject=workProject?.data?.text("status","active")?.let{it!="active"} ?: false
+    val finishedProject=workProject?.data?.text("status")=="archived"
     fun fields():JsonObject {
         val data=obj("title" to title.j(),"notes" to notes.j(),"due" to due.j(),"project_id" to container.j(),"priority" to priority.j(),"planned_for" to planned.j(),"estimate_minutes" to (effort.toIntOrNull()?:0).j(),"pinned" to JsonPrimitive(pinned),"blocked" to JsonPrimitive(blocked))
         val assigned=if(state.cache.people.isEmpty())data else JsonObject(data+("assignee" to if(assignee.isBlank())JsonNull else assignee.j()))
@@ -403,7 +418,7 @@ import org.fieldnotes.domain.*
         VisibleLazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.error?.let { message->item { ErrorText(message) } }
             if (staleWorkspace) item { ErrorText("The server was reset or restored. Reopen this task before making new changes; your old drafts are retained.") }
-            item { Text(recordHistory(state.cache,task,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant);SecondaryButton(onClick={reminderDialog=true}){Text("Reminders & sound")} }
+            item { Text(recordHistory(state.cache,task,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(supportsReminderEditor(state.cache,task))SecondaryButton(onClick={reminderDialog=true}){Text("Reminders & sound")} }
             item { OutlinedTextField(title, { if (it.length <= 240) { title = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Task title") }, enabled = writable && !saving && !staleWorkspace) }
             item { Box {
                 SecondaryButton(onClick={assigneeMenu=true},enabled=writable&&!saving&&!staleWorkspace&&state.cache.people.isNotEmpty()&&task.data.text("status")!="in_progress"){Text("Assigned to: "+if(assignee.isBlank())"Unassigned" else personName(state.cache,assignee))}
@@ -414,7 +429,8 @@ import org.fieldnotes.domain.*
             };if(task.data.text("status")=="in_progress")Text("Release the task before changing its assignment.",style=MaterialTheme.typography.bodySmall)
               if(state.cache.people.isEmpty())Text("Update the server to enable assignments.",style=MaterialTheme.typography.bodySmall) }
             item { OutlinedTextField(notes, { if (it.length <= 16384) { notes = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Notes") }, minLines = 5, enabled = writable && !saving && !staleWorkspace) }
-            item { Box { SecondaryButton(onClick={containerMenu=true},enabled=writable&&!staleWorkspace){Text("Keep in: "+(workspaceContainers(state.cache).firstOrNull { it.record.id==container }?.record?.data?.text("title")?:"Inbox"))};DropdownMenu(containerMenu,{containerMenu=false}){DropdownMenuItem(text={Text("Inbox")},onClick={container="";containerMenu=false;retain()});workspaceContainers(state.cache).forEach { c->DropdownMenuItem(text={Text(c.record.data.text("title")+" · "+c.record.kind)},onClick={container=c.record.id;containerMenu=false;retain()})}} } }
+            if(openContainer!=null)state.cache.projectGraph().project(task)?.let {root->item {SecondaryButton(onClick={openContainer(root.id)}){Text("Open project · "+root.data.text("title"))}}}
+            item { Box { SecondaryButton(onClick={containerMenu=true},enabled=writable&&!staleWorkspace){Text("Keep in: "+state.cache.projectGraph().path(container))};DropdownMenu(containerMenu,{containerMenu=false}){DropdownMenuItem(text={Text("Inbox")},onClick={container="";containerMenu=false;retain()});workspaceContainers(state.cache).forEach { c->DropdownMenuItem(text={Text(c.record.data.text("title")+" · "+c.record.kind)},onClick={container=c.record.id;containerMenu=false;retain()})}} } }
             if(state.cache.supportsPlannerV3())item{CategoryPicker(category,writable&&!saving&&!staleWorkspace){category=it;retain()}}
             item { DateField("Due date", due, writable && !saving && !staleWorkspace) { due = it; retain() } }
             item { DateField("Planned day", planned, writable && !saving && !staleWorkspace) { planned = it; retain() } }
@@ -434,11 +450,12 @@ import org.fieldnotes.domain.*
             item { Text(when { visible.pending -> "This change is provisional until the server accepts it."; task.data.text("claimant").isNotBlank() -> "This task is claimed. Server authorization decides who can release or finish it."; else -> "Status: ${task.data.text("status").replace('_', ' ')}" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             if(task.data.text("assignee").isNotBlank()&&task.data.text("assignee")!=state.cache.snapshot.actor.user_id&&task.data.text("status")=="todo")item { Text("Reassign this task to yourself before starting.",style=MaterialTheme.typography.bodySmall) }
             if(task.data.text("status")=="done"&&task.data.text("completed_by").isNotBlank())item { Text("Completed by "+personName(state.cache,task.data.text("completed_by")),style=MaterialTheme.typography.bodySmall) }
+            if(heldProject)item { Text(if(finishedProject)"This project is finished. Reopen it before reopening work." else "This project is on hold. Resume it before starting work.",style=MaterialTheme.typography.bodySmall) }
             if (writable && !staleWorkspace) item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val status = task.data.text("status")
-                if (status == "todo" && !task.flag("blocked") && (task.data.text("assignee").isBlank() || task.data.text("assignee")==state.cache.snapshot.actor.user_id)) SecondaryButton(onClick = { model.enqueueAsync("task.start", task.id, obj(), task.revision, basis) }) { Text("Start task") }
+                if (status == "todo" && !task.flag("blocked") && (task.data.text("assignee").isBlank() || task.data.text("assignee")==state.cache.snapshot.actor.user_id)) SecondaryButton(onClick = { model.enqueueAsync("task.start", task.id, obj(), task.revision, basis) },enabled=!heldProject) { Text("Start task") }
                 if (status == "in_progress") SecondaryButton(onClick = { model.enqueueAsync("task.release", task.id, obj(), task.revision, basis) }) { Text("Release") }
-                SecondaryButton(onClick = { model.enqueueAsync(if (status == "done") "task.reopen" else "task.complete", task.id, obj(), task.revision, basis) }) { Text(if (status == "done") "Reopen" else "Complete") }
+                SecondaryButton(onClick = { model.enqueueAsync(if (status == "done") "task.reopen" else "task.complete", task.id, obj(), task.revision, basis) },enabled=status!="done"||!finishedProject) { Text(if (status == "done") "Reopen" else "Complete") }
                 SecondaryButton(onClick = { delete = true },dangerous=true) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             } }
             item { HorizontalDivider(); Text("Images", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 14.dp)) }

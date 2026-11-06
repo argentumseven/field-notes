@@ -55,7 +55,7 @@ features. A newer app can keep syncing with an older server; unsupported editor
 controls stay disabled. A retained edit requiring a newer feature is explained
 in Retained changes. Incompatible protocol/minimum requirements stop uploads
 with a persistent warning and preserve the cache, outbox and keys. The current
-server recommends code 13 and supports the code-10 core during rollout. Update
+server recommends code 16 and supports the code-10 core during rollout. Update
 older clients before relying on repeat-event expansion and its reminders.
 
 A missing/corrupt/mismatched APK bundle or failed transfer produces a visible

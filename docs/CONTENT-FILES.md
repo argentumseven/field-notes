@@ -10,6 +10,9 @@ passphrase separately: neither the server nor a password reset can unlock this
 file for you. Exports include planner records, comments, images and retained
 alternatives. They exclude account passwords/hashes, login sessions, device
 pairing material, CA/master keys and APK signing keys.
+Project/task-list hierarchy, task/reference list choices and project state are
+included. New exports require Field Notes 0.9 or newer to import (content manifest
+version 2); existing version 1 files remain supported.
 
 The website exports the current server workspace. Android exports its cached
 workspace, projected offline changes and retained drafts/conflicts. Changes hidden

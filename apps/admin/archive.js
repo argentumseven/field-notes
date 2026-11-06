@@ -146,7 +146,7 @@ window.FieldArchive = (() => {
   function validate(manifest) {
     if (
       manifest?.format !== "org.fieldnotes.archive" ||
-      manifest.version !== 1 ||
+      ![1,2].includes(manifest.version) ||
       !uuid.test(manifest.source) ||
       !Number.isInteger(manifest.generation) ||
       manifest.generation < 1 ||

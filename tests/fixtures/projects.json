@@ -1,0 +1,199 @@
+{
+  "today": "2026-11-20",
+  "records": [
+    {
+      "id": "p",
+      "kind": "project",
+      "revision": 1,
+      "data": {
+        "title": "Bathroom repairs",
+        "category": "home",
+        "status": "active",
+        "due": "2026-11-21"
+      }
+    },
+    {
+      "id": "q",
+      "kind": "project",
+      "revision": 1,
+      "data": {
+        "title": "Garden",
+        "category": "food",
+        "status": "active"
+      }
+    },
+    {
+      "id": "w",
+      "kind": "list",
+      "revision": 1,
+      "data": {
+        "title": "Preparation",
+        "project_id": "p",
+        "category": "home",
+        "items_are_tasks": true
+      }
+    },
+    {
+      "id": "r",
+      "kind": "list",
+      "revision": 1,
+      "data": {
+        "title": "Parts",
+        "project_id": "p",
+        "template": "shopping"
+      }
+    },
+    {
+      "id": "legacy",
+      "kind": "list",
+      "revision": 1,
+      "data": {
+        "title": "Legacy checklist",
+        "category": "home"
+      }
+    },
+    {
+      "id": "loose",
+      "kind": "list",
+      "revision": 1,
+      "data": {
+        "title": "Weekend honey-do",
+        "items_are_tasks": true,
+        "category": "honey_do"
+      }
+    },
+    {
+      "id": "direct",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Book plumber",
+        "project_id": "p",
+        "category": "home",
+        "status": "todo",
+        "due": "2026-11-19",
+        "estimate_minutes": 30
+      }
+    },
+    {
+      "id": "done",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Inspect",
+        "project_id": "p",
+        "category": "home",
+        "status": "done"
+      }
+    },
+    {
+      "id": "later",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Paint",
+        "project_id": "w",
+        "category": "home",
+        "status": "todo",
+        "planned_for": "2026-11-25"
+      }
+    },
+    {
+      "id": "blocked",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Order parts",
+        "project_id": "w",
+        "category": "home",
+        "status": "todo",
+        "blocked": true,
+        "due": "2026-11-30",
+        "estimate_minutes": 15,
+        "assignee": "sophia"
+      }
+    },
+    {
+      "id": "doing",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Measure",
+        "project_id": "w",
+        "category": "home",
+        "status": "in_progress",
+        "estimate_minutes": 20,
+        "assignee": "alex"
+      }
+    },
+    {
+      "id": "shopping",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Screws",
+        "project_id": "r",
+        "category": "home",
+        "status": "todo",
+        "due": "2026-11-18",
+        "last_activity_at": 200
+      }
+    },
+    {
+      "id": "check",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Reference item",
+        "project_id": "legacy",
+        "status": "todo"
+      }
+    },
+    {
+      "id": "single",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Fix tap",
+        "category": "home",
+        "status": "todo"
+      }
+    },
+    {
+      "id": "list-task",
+      "kind": "task",
+      "revision": 1,
+      "data": {
+        "title": "Oil hinge",
+        "project_id": "loose",
+        "category": "honey_do",
+        "status": "todo"
+      }
+    }
+  ],
+  "expected": {
+    "total": 5,
+    "done": 1,
+    "open": 4,
+    "working": 1,
+    "waiting": 1,
+    "ready": 1,
+    "later": 1,
+    "overdue": 1,
+    "unassigned": 2,
+    "undated": 1,
+    "remaining_minutes": 65,
+    "unestimated": 1,
+    "after_target": 1,
+    "activity": 200
+  },
+  "planner": [
+    "blocked",
+    "direct",
+    "doing",
+    "done",
+    "later",
+    "list-task",
+    "single"
+  ]
+}

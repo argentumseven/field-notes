@@ -68,8 +68,10 @@ struct Job {
 
 fn allowed(kind: &str) -> &'static [&'static str] {
     match kind {
-        "project" => &["title", "notes", "category"],
+        "project" => &["title", "notes", "category", "status", "due", "assignee"],
         "list" => &[
+            "project_id",
+            "items_are_tasks",
             "title",
             "notes",
             "category",
@@ -143,10 +145,10 @@ fn content(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     if let Some(parent) =
-        parent.filter(|_| matches!(record.kind.as_str(), "task" | "comment" | "image"))
+        parent.filter(|_| matches!(record.kind.as_str(), "task" | "list" | "comment" | "image"))
     {
         data.insert(
-            if record.kind == "task" {
+            if matches!(record.kind.as_str(), "task" | "list") {
                 "project_id"
             } else {
                 "task_id"
@@ -155,7 +157,9 @@ fn content(
             json!(parent),
         );
     }
-    if record.kind == "task" && data.get("project_id").is_some_and(Value::is_null) {
+    if matches!(record.kind.as_str(), "task" | "list")
+        && data.get("project_id").is_some_and(Value::is_null)
+    {
         data.insert("project_id".into(), json!(""));
     }
     if let Some(id) = data
@@ -231,7 +235,7 @@ fn content_types(record: &Record) -> Result<()> {
             | "currency" | "due" | "planned_for" | "quadrant" | "category" | "template"
             | "start_date" | "end_date" | "name" => value.is_string(),
             "pinned" | "blocked" | "all_day" | "perpetual" | "notify_additions"
-            | "item_reminders" | "on_radar" => value.is_boolean(),
+            | "item_reminders" | "on_radar" | "items_are_tasks" => value.is_boolean(),
             "priority" | "estimate_minutes" => value.as_i64().is_some(),
             "starts_at" | "ends_at" | "remind_at" => value.is_null() || value.as_i64().is_some(),
             "assignee" | "project_id" | "task_id" => value.is_null() || value.is_string(),
@@ -259,9 +263,11 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
             json!({"notes":"","project_id":"","quadrant":"do","due":"","priority":3,"planned_for":"","estimate_minutes":0,"assignee":null,"pinned":false,"blocked":false,"quantity":"","store":"","link_url":"","price":"","currency":"USD","category":"general"})
         }
         "list" => {
-            json!({"notes":"","category":"general","template":"general","perpetual":true,"notify_additions":true,"item_reminders":true})
+            json!({"notes":"","category":"general","template":"general","perpetual":true,"notify_additions":true,"item_reminders":record.data["template"]!="groceries","project_id":"","items_are_tasks":false})
         }
-        "project" => json!({"notes":"","category":"general"}),
+        "project" => {
+            json!({"notes":"","category":"general","status":"active","due":"","assignee":null})
+        }
         "note" => {
             json!({"body":"","pinned":false,"category":"general","on_radar":false,"remind_at":0})
         }
@@ -335,7 +341,7 @@ impl Store {
         let m: Manifest = serde_json::from_value(value.clone())
             .map_err(|_| Fault(400, "Unsupported or malformed Field Notes archive".into()))?;
         if m.format != "org.fieldnotes.archive"
-            || m.version != 1
+            || ![1, 2].contains(&m.version)
             || m.generation < 1
             || m.records.len() > 10000
             || m.people.len() > 64
@@ -503,7 +509,7 @@ impl Store {
         }
         serde_json::to_value(Manifest {
             format: "org.fieldnotes.archive".into(),
-            version: 1,
+            version: 2,
             source: snapshot.epoch,
             generation: snapshot.generation,
             created_at: now(),
@@ -634,7 +640,8 @@ impl Store {
         }
         let mut ordered = m.records.clone();
         ordered.sort_by_key(|r| match r.kind.as_str() {
-            "project" | "list" => 0,
+            "project" => 0,
+            "list" => 1,
             "note" | "event" => 1,
             "task" => 2,
             _ => 3,
@@ -645,7 +652,7 @@ impl Store {
         let (mut new, mut skipped, mut recovered) = (0, 0, 0);
         let origin = format!("{}:{}", m.source, m.generation);
         for source in ordered {
-            let key = if source.kind == "task" {
+            let key = if matches!(source.kind.as_str(), "task" | "list") {
                 "project_id"
             } else if matches!(source.kind.as_str(), "comment" | "image") {
                 "task_id"
@@ -1105,6 +1112,15 @@ impl Store {
                 self.store_recovered(&actor, &origin, item, bytes.as_deref())?;
             }
         }
+        self.project_validate(&[])?;
+        let targets = plan
+            .entries
+            .iter()
+            .filter(|e| e.new)
+            .filter_map(|e| e.target.clone())
+            .collect::<BTreeSet<_>>();
+        let protected = self.recovery_capture(&actor, &targets, "import.create")?;
+        self.recovery_trim(&protected)?;
         Ok(())
     }
     fn validate_plan(&self, token: &str, m: &Manifest, plan: &Plan) -> Result<()> {

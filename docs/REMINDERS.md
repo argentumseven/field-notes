@@ -1,6 +1,6 @@
 # Reminders and sound
 
-Open an event, task or list item and expand **Reminders**. Add up to eight alerts
+Open an event, task or a non-grocery list item and expand **Reminders**. Add up to eight alerts
 relative to its start. A task date uses 9 AM locally; an event uses its chosen
 start. A repeat window works independently of a deadline, including undated
 tasks. Saving an explicit empty reminder set disables that item's reminders.
@@ -12,6 +12,15 @@ notes start with Everyone. Existing personal selections stay unchanged. This con
 alerts, not shared calendar visibility. A recipient's own enrolled instances
 can each alert; the app does not elect one of that person's phones. Existing
 events keep their previous household policy until changed.
+Selecting people does not itself create an alert; add a reminder or time window.
+The shared web selector keeps **Choose several people** open while you check or
+uncheck people, including when only one is currently selected. An empty selected
+audience cannot be saved. Grocery items have no reminder editor; list-level
+new-item notices remain independently configurable. Existing recipient choices
+are preserved instead of silently broadening who receives alerts.
+Saving submits a durable change even when the editor closes immediately. If the
+phone is offline, it remains queued and visible until connectivity returns;
+closing the editor does not abandon that delivery.
 
 Each alert has Quiet, Normal or Urgent importance, vibration and 25/50/75/100%
 relative sound levels. Eight original tones are available: Chime, Bell, Pulse,

@@ -47,7 +47,8 @@ fun rankTask(task: Record, today: LocalDate, nowSeconds: Long, userId: String): 
 
 fun focusTasks(cache: Cache, today: LocalDate, nowSeconds: Long): List<Pair<VisibleRecord, TaskRank>> {
     val user = cache.snapshot?.actor?.user_id ?: return emptyList()
-    return plannerTasks(cache).map { it to rankTask(it.record, today, nowSeconds, user) }
+    val graph=cache.projectGraph()
+    return plannerTasks(cache).filter {!graph.held(it.record)}.map { it to rankTask(it.record, today, nowSeconds, user) }
         .filter { it.second.eligible }
         .sortedWith(compareByDescending<Pair<VisibleRecord, TaskRank>> { it.first.record.flag("pinned") }
             .thenByDescending { it.second.score }.thenBy { it.first.record.data.number("created_at", Long.MAX_VALUE) }.thenBy { it.first.record.id })

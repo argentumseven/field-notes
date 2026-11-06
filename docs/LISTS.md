@@ -10,9 +10,19 @@ Light/Dark preference.
 | Type | Initially visible fields |
 | --- | --- |
 | General | Notes |
+| Task list | Notes, assignment, optional due/planned day, priority, effort and images |
 | Groceries | Quantity, store and notes; price off |
 | Online shopping | Quantity, web link and attached images; price optional |
 | Custom | Choose the fields yourself |
+
+Task lists contain work that also appears in Tasks and Assignments. Other lists
+are reference checklists whose items stay in that list. A list can be standalone
+or grouped under a project; its work contributes to that project's progress.
+See [Tasks and projects](PROJECTS.md) for Household/honey-do examples and safe moves.
+
+Grocery items do not offer scheduled reminders or recipient/sound controls.
+Existing saved grocery reminder values are retained but do not schedule alerts.
+**Notify when items are added** is still available on the list, independently.
 
 Expand **Customize fields** to add/remove quantity, store, notes, web link, price,
 images, assignee, due date, planned day, priority or effort. Name and checked

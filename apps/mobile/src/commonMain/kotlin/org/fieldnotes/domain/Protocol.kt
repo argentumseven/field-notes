@@ -21,7 +21,7 @@ fun JsonObject.number(key: String, default: Long = 0) = (get(key) as? JsonPrimit
 @Serializable data class Command(val operation_id: String, val epoch: String, val generation: Long, val action: String, val target: String, val expected_revision: Long?, val data: JsonObject)
 @Serializable data class Basis(val epoch: String, val generation: Long)
 val Snapshot.basis get() = Basis(epoch, generation)
-@Serializable data class Pending(val command: Command, val dependsOn: String? = null, val attempted: Boolean = false)
+@Serializable data class Pending(val command: Command, val dependsOn: String? = null, val attempted: Boolean = false,val parentCreation:String?=null)
 @Serializable data class Conflict(val command: Command, val reason: String)
 @Serializable data class Draft(val target: String, val epoch: String, val generation: Long, val revision: Long, val data: JsonObject, val dependsOn: String? = null, val action: String = "task.update")
 @Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = true, val liveUpdates: Boolean = true, val connectionPaused: Boolean = false, val autoRefresh:Boolean=true, val theme:String="system", val notificationTitles:Boolean=true,

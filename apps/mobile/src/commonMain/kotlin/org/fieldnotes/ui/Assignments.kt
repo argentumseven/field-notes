@@ -39,10 +39,10 @@ import org.fieldnotes.domain.*
     }
 }
 
-@Composable internal fun NewTaskDialog(model: Workspace, state: WorkspaceState, container: String?, mine: Boolean, device:DeviceActions=DeviceActions(), close: () -> Unit) {
+@Composable internal fun NewTaskDialog(model: Workspace, state: WorkspaceState, container: String?, mine: Boolean, device:DeviceActions=DeviceActions(), onCreated:((String,String)->Unit)?=null, close: () -> Unit) {
     val basis=remember { state.cache.snapshot!!.basis }
     val stale=basis!=state.cache.snapshot!!.basis
-    var category by rememberSaveable { mutableStateOf("general") }
+    var category by rememberSaveable { mutableStateOf(state.cache.projectGraph().byId[container]?.data?.text("category","general") ?: "general") };var ownCategory by rememberSaveable{mutableStateOf(false)}
     var title by rememberSaveable { mutableStateOf("") }
     var keepIn by rememberSaveable { mutableStateOf(container ?: "") }
     var assignee by rememberSaveable { mutableStateOf("") }
@@ -77,12 +77,12 @@ import org.fieldnotes.domain.*
                     }
                     DropdownMenu(collectionMenu, { collectionMenu = false }) {
                         DropdownMenuItem(text = { Text("Inbox") }, onClick = { keepIn = ""; collectionMenu = false })
-                        workspaceContainers(state.cache).forEach { row ->
-                            DropdownMenuItem(text = { Text(row.record.data.text("title")) }, onClick = { keepIn = row.record.id; collectionMenu = false })
+                        workspaceContainers(state.cache).filter{it.record.kind=="project"||it.record.flag("items_are_tasks")}.forEach { row ->
+                            DropdownMenuItem(text = { Text(row.record.data.text("title")) }, onClick = { keepIn = row.record.id;if(!ownCategory)category=row.record.data.text("category","general"); collectionMenu = false })
                         }
                     }
                 }
-                if(state.cache.supportsPlannerV3())CategoryPicker(category,!busy){category=it}
+                if(state.cache.supportsPlannerV3())CategoryPicker(category,!busy){category=it;ownCategory=true}
                 OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Notes")},minLines=2,enabled=!busy,modifier=Modifier.fillMaxWidth())
                 Text("Priority",style=MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp)){for(p in 1..4)FilterChip(priority==p,{priority=p},{Text(priorityName(p))},enabled=!busy)}
@@ -101,9 +101,11 @@ import org.fieldnotes.domain.*
                         val base = JsonObject(obj("title" to title.trim().j(), "project_id" to keepIn.j(),"notes" to notes.j(),"due" to due.j(),"planned_for" to planned.j(),"priority" to priority.j())+(if(remindersJson!=null){validateReminders(rules);mapOf("reminders" to reminderData(rules))}else emptyMap()))
                         val assigned = if (state.cache.people.isEmpty()) base else JsonObject(base + ("assignee" to if (assignee.isBlank()) JsonNull else assignee.j()))
                         val data=if(state.cache.supportsPlannerV3())JsonObject(assigned+("category" to category.j())) else assigned
-                        model.enqueue("task.create", model.newId(), data, null,basis)
+                        val id=model.newId()
+                        model.enqueue("task.create", id, data, null,basis)
+                        model.requestSync()
                         close()
-                        model.launch { model.sync() }
+                        onCreated?.invoke(id,keepIn)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         error = e.message ?: "The task could not be saved."

@@ -27,14 +27,21 @@ function listForTask(record) {
   return records("list").find((list) => list.id === record.data.project_id);
 }
 function isPlannerTask(record) {
-  return record.kind === "task" && !listForTask(record);
+  return (
+    record.kind === "task" &&
+    (!listForTask(record) || listForTask(record).data.items_are_tasks === true)
+  );
+}
+function canScheduleReminders(record) {
+  return listForTask(record)?.data.template !== "groceries";
 }
 function recordTypeLabel(record) {
+  if (record.kind === "list" && record.data.items_are_tasks) return "Task list";
   if (record.kind === "list")
     return listTemplates[record.data.template || "general"] || "List";
   if (record.kind === "task") {
     const list = listForTask(record);
-    return list
+    return list && !list.data.items_are_tasks
       ? list.data.template === "groceries"
         ? "Grocery item"
         : list.data.template === "shopping"

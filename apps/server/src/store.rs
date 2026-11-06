@@ -8,6 +8,7 @@ mod lists;
 mod media;
 mod organization;
 mod planning;
+mod projects;
 mod recovery;
 mod recurrence;
 mod reminder_options;
@@ -155,6 +156,8 @@ impl Store {
           CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,generation INTEGER NOT NULL,object_id TEXT NOT NULL,action TEXT NOT NULL,actor TEXT NOT NULL,at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY AUTOINCREMENT,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,at INTEGER NOT NULL,data BLOB NOT NULL);
           CREATE TABLE IF NOT EXISTS history_details(seq INTEGER PRIMARY KEY REFERENCES events(seq) ON DELETE CASCADE,parent_id TEXT,collection_id TEXT,data BLOB NOT NULL);
+          CREATE TABLE IF NOT EXISTS history_projects(seq INTEGER NOT NULL REFERENCES history_details(seq) ON DELETE CASCADE,project_id TEXT NOT NULL,PRIMARY KEY(seq,project_id));
+          CREATE INDEX IF NOT EXISTS history_projects_scope ON history_projects(project_id,seq);
           CREATE INDEX IF NOT EXISTS events_history ON events(generation,seq DESC);
           CREATE TABLE IF NOT EXISTS blobs(id TEXT PRIMARY KEY REFERENCES objects(id) DEFERRABLE INITIALLY DEFERRED,bytes BLOB NOT NULL);
           CREATE TABLE IF NOT EXISTS login_limits(key TEXT PRIMARY KEY,attempts INTEGER NOT NULL,until_time INTEGER NOT NULL);

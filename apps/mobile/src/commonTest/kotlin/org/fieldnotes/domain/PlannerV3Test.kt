@@ -55,6 +55,14 @@ class PlannerV3Test {
         val fieldsHidden=list.copy(data=JsonObject(list.data+("fields" to JsonArray(listOf("notes".j())))))
         assertFalse("store" in listFields(fieldsHidden),"Explicit field choices must override presets")
     }
+    @Test fun legacyGroceryRemindersAreSuppressedWithoutLosingTheSavedRules() {
+        val grocery=Record("grocery","list",1,obj("title" to "Food".j(),"template" to "groceries".j(),"item_reminders" to JsonPrimitive(true)))
+        val item=Record("item","task",1,obj("title" to "Bananas".j(),"project_id" to grocery.id.j(),"due" to "2026-11-05".j(),"reminders" to reminderData(ReminderSet(listOf(ReminderAlert("rule",0))))))
+        val c=cache(listOf(grocery,item));val now=Instant.parse("2026-11-05T12:00:00Z")
+        assertFalse(supportsReminderEditor(c,item));assertFalse(allowsItemReminders(c,item));assertTrue(localAlerts(c,now,zone).isEmpty());assertNotNull(reminderSet(item))
+        val custom=grocery.copy(data=JsonObject(grocery.data+("template" to "custom".j())))
+        assertTrue(supportsReminderEditor(cache(listOf(custom,item)),item));assertTrue(allowsItemReminders(cache(listOf(custom,item)),item))
+    }
     @Test fun additionsAreGranularRespectListMuteAndGroupBatchesWithoutSelfAlerts() {
         val list=Record("list","list",1,obj("title" to "Costco Shopping List".j(),"template" to "groceries".j()))
         fun item(id:String,seq:Long,creator:String="sophia")=Record(id,"task",1,obj("title" to (if(id=="banana")"Bananas" else id).j(),"project_id" to list.id.j(),"created_by" to creator.j(),"created_by_name" to "Sophia".j(),"created_sequence" to seq.j()))

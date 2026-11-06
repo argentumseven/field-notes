@@ -28,6 +28,10 @@ import org.fieldnotes.domain.*
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
             RecordBadges(record)
             Text(record.data.text("title"),style=MaterialTheme.typography.titleMedium)
+            if(record.kind=="project") {
+                val progress=cache.projectGraph().rollup(record,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())
+                Text("${progress.done}/${progress.total} tasks · ${projectStateLabel(record,progress)} · ${progress.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
+            }else if(record.data.text("project_id").isNotBlank())Text("In "+(cache.projectGraph().project(record)?.data?.text("title") ?: "Project"),style=MaterialTheme.typography.labelMedium)
             if(record.data.text("notes").isNotBlank())Text(record.data.text("notes"),style=MaterialTheme.typography.bodySmall)
             Text(recordHistory(cache,record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(writable)SecondaryButton(onClick=edit){Text(if(record.kind=="list")"List settings" else "Project settings")}
@@ -35,25 +39,41 @@ import org.fieldnotes.domain.*
     }
 }
 
-@Composable internal fun CollectionDialog(model:Workspace,state:WorkspaceState,record:Record?,kind:String,close:()->Unit) {
+@Composable internal fun CollectionDialog(model:Workspace,state:WorkspaceState,record:Record?,kind:String,close:()->Unit,initialProject:String?=null,initialWork:Boolean=false,onCreated:((String)->Unit)?=null) {
     var title by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("title") ?: "")}
     var notes by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("notes") ?: "")}
-    var template by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("template","general") ?: "general")}
+    var template by rememberSaveable(record?.id){mutableStateOf(if(record?.flag("items_are_tasks")==true||record==null&&initialWork)"tasks" else record?.data?.text("template","general") ?: "general")}
     var customize by rememberSaveable { mutableStateOf(record?.data?.text("template")=="custom") }
     var choices by remember { mutableStateOf(record?.let(::listFields) ?: defaultListFields(template)) }
-    var category by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("category","general") ?: "general")}
+    var category by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("category","general") ?: state.cache.projectGraph().byId[initialProject]?.data?.text("category","general") ?: "general")}
+    var parent by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("project_id") ?: initialProject.orEmpty())}
+    var workItems by rememberSaveable(record?.id){mutableStateOf(record?.flag("items_are_tasks") ?: initialWork)}
+    var coordinator by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("assignee") ?: "")}
+    var targetDay by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("due") ?: "")}
+    var projectStatus by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("status","active") ?: "active")}
     var notifyItems by rememberSaveable(record?.id){mutableStateOf(record?.data?.get("notify_additions")!=JsonPrimitive(false))};var itemReminders by rememberSaveable(record?.id){mutableStateOf(record?.data?.get("item_reminders")!=JsonPrimitive(false))}
     var perpetual by rememberSaveable { mutableStateOf(record?.data?.get("perpetual")!=JsonPrimitive(false)) }
     var busy by remember { mutableStateOf(false) };var error by remember { mutableStateOf<String?>(null) };var remove by remember { mutableStateOf(false) }
     val scope=rememberCoroutineScope();val basis=remember { state.cache.snapshot!!.basis }
-    val occupied=record!=null&&projectRecords(state.cache).any { it.record.kind=="task"&&it.record.data.text("project_id")==record.id }
+    val occupied=record!=null&&projectRecords(state.cache).any { it.record.id!=record.id&&it.record.data.text("project_id")==record.id }
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New $kind" else "Edit $kind")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title,{title=it.take(160)},label={Text(if(kind=="list")"List name" else "Project name")},singleLine=true,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Description")},minLines=2,modifier=Modifier.fillMaxWidth())
         if(state.cache.supportsPlannerV3())CategoryPicker(category){category=it}
+        if(state.cache.supportsProjects()) {
+            if(kind=="project") {
+                ViewChoice("Project coordinator",coordinator,listOf("" to "No coordinator")+state.cache.people.filter {it.can_assign||it.id==coordinator}.map {it.id to it.name}){coordinator=it}
+                DateField("Project target date · optional",targetDay){targetDay=it}
+                ViewChoice("Project state",projectStatus,listOf("active" to "Active","on_hold" to "On hold","archived" to "Finished")){projectStatus=it}
+            } else {
+                ViewChoice("Group under a project",parent,listOf("" to "Standalone list")+workspaceContainers(state.cache).filter{it.record.kind=="project"}.map{it.record.id to it.record.data.text("title")}){parent=it}
+                Row(verticalAlignment=Alignment.CenterVertically){Switch(workItems,{workItems=it});Text("Items are work tasks",Modifier.padding(start=8.dp))}
+                Text("Work tasks appear in Tasks and count toward project progress. Reference and shopping checklists keep their items in the list.",style=MaterialTheme.typography.bodySmall)
+            }
+        }
         if(kind=="list") {
             Text("List type",style=MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((key,label) in listTemplates)FilterChip(template==key,{template=key;choices=defaultListFields(key);customize=key=="custom";if(category=="general"&&key=="groceries")category="food"},{Text(label)})}
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((key,label) in listTemplates.filterKeys{it!="tasks"||state.cache.supportsProjects()})FilterChip(template==key,{template=key;workItems=key=="tasks";choices=defaultListFields(key);customize=key=="custom";if(category=="general"&&key=="groceries")category="food"},{Text(label)})}
             if(template=="shopping")Row(verticalAlignment=Alignment.CenterVertically){Checkbox("price" in choices,{choices=if(it)choices+"price" else choices-"price"});Text("Include a price field")}
             SecondaryButton(onClick={customize=!customize}){Text("Customize fields (${choices.size}) "+if(customize)"▴" else "▾")}
             if(customize)Text("Fields on each item",style=MaterialTheme.typography.titleSmall)
@@ -61,14 +81,23 @@ import org.fieldnotes.domain.*
             if(customize)FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((field,label) in listFieldLabels.filterKeys{it!="price"||template!="shopping"})FilterChip(field in choices,{choices=if(field in choices)choices-field else choices+field},{Text(label)})}
             Row(verticalAlignment=Alignment.CenterVertically){Switch(perpetual,{perpetual=it});Text("Rolling list · keep using it",Modifier.padding(start=8.dp))}
             Text("Check items off, add more whenever you need, and clear only the checked items.",style=MaterialTheme.typography.bodySmall)
-            if(state.cache.supportsPlannerV3()){Row(verticalAlignment=Alignment.CenterVertically){Switch(notifyItems,{notifyItems=it});Text("Notify when items are added",Modifier.padding(start=8.dp))};Row(verticalAlignment=Alignment.CenterVertically){Switch(itemReminders,{itemReminders=it});Text("Scheduled item reminders",Modifier.padding(start=8.dp))};Text("Muting keeps saved reminder settings, list contents and sync intact.",style=MaterialTheme.typography.bodySmall)}
+            if(state.cache.supportsPlannerV3()){Row(verticalAlignment=Alignment.CenterVertically){Switch(notifyItems,{notifyItems=it});Text("Notify when items are added",Modifier.padding(start=8.dp))};if(template!="groceries")Row(verticalAlignment=Alignment.CenterVertically){Switch(itemReminders,{itemReminders=it});Text("Scheduled item reminders",Modifier.padding(start=8.dp))};Text("Muting keeps saved settings, list contents and sync intact.",style=MaterialTheme.typography.bodySmall)}
         }
         if(occupied)Text("Clear or move this collection's items before deleting it.",style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
-        val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to JsonPrimitive(itemReminders)) else emptyMap()) else emptyMap()
-        val fields=JsonObject(mapOf("title" to title.j(),"notes" to notes.j())+(if(kind=="list")listConfiguration(template,choices,perpetual) else emptyMap())+extra)
-        model.enqueue(kind+if(record==null)".create" else ".update",record?.id ?: model.newId(),fields,record?.revision,basis);close();model.sync()
+        if(record!=null&&kind=="project"&&state.cache.supportsProjects()) {
+            val progress=state.cache.projectGraph().rollup(record,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())
+            require(projectStatus!="archived"||progress.open==0){"Finish or move unfinished work before finishing this project."}
+            require(projectStatus!="on_hold"||progress.working==0){"Release or finish work in progress before putting this project on hold."}
+        }
+        if(record?.flag("items_are_tasks")==true&&!workItems)require(projectRecords(state.cache).none{it.record.data.text("project_id")==record.id&&it.record.data.text("status")=="in_progress"}){"Release or finish active work before converting this task list to a reference checklist."}
+        val reminderSetting=if(template=="groceries")record?.data?.get("item_reminders") ?: JsonPrimitive(false) else JsonPrimitive(itemReminders)
+        val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to reminderSetting) else emptyMap()) else emptyMap()
+        val projectExtra=if(state.cache.supportsProjects())if(kind=="project")mapOf("status" to projectStatus.j(),"due" to targetDay.j(),"assignee" to coordinator.j()) else mapOf("project_id" to parent.j(),"items_are_tasks" to JsonPrimitive(workItems)) else emptyMap()
+        val fields=JsonObject(mapOf("title" to title.j(),"notes" to notes.j())+(if(kind=="list")listConfiguration(template,choices,perpetual) else emptyMap())+extra+projectExtra)
+        val id=record?.id ?: model.newId()
+        model.enqueue(kind+if(record==null)".create" else ".update",id,fields,record?.revision,basis);model.requestSync();close();if(record==null)onCreated?.invoke(id)
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Create $kind" else "Save changes")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
         if(record!=null)SecondaryButton(onClick={remove=true},enabled=!occupied&&!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
         SecondaryButton(onClick=close,enabled=!busy){Text("Cancel")}
@@ -86,12 +115,13 @@ import org.fieldnotes.domain.*
         if(state.cache.supportsPlannerV3()){CategoryPicker(category){category=it};FollowUpControls(onRadar,remindAt,device.use24Hour){radar,at->onRadar=radar;remindAt=at}}
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(pinned,{pinned=it});Text("Pin this note")}
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-    }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);close();model.sync() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text("Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
+    }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);model.requestSync();close() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text("Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
 @Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,storeChanged:(String)->Unit={}) {
     val rows=projectRecords(state.cache);val all=rows.filter { it.record.kind=="task"&&it.record.data.text("project_id")==list.id }
     val fields=listFields(list);val writable=state.cache.snapshot!!.actor.role!="viewer"
+    val finished=list.flag("items_are_tasks")&&state.cache.projectGraph().project(list)?.data?.text("status")=="archived"
     var query by rememberSaveable(list.id){mutableStateOf("")};var store by rememberSaveable(list.id){mutableStateOf("*")};var sort by rememberSaveable(list.id){mutableStateOf("title")};var status by rememberSaveable(list.id){mutableStateOf("open")}
     var confirmAction by remember { mutableStateOf<String?>(null) };var changingChecked by remember { mutableStateOf(false) }
     var checkedSelection by remember { mutableStateOf<Pair<Basis,List<Record>>?>(null) }
@@ -106,6 +136,7 @@ import org.fieldnotes.domain.*
     }
     val sorted=filtered.sortedWith(comparator);val checked=matching.filter { it.record.data.text("status")=="done" }
     RecordBadges(list)
+    if(finished)Text("Project finished. Reopen it before adding or reopening work.",style=MaterialTheme.typography.bodyMedium)
     if(list.data.text("notes").isNotBlank())Text(list.data.text("notes"),style=MaterialTheme.typography.bodyMedium)
     OutlinedTextField(query,{query=it},label={Text("Search titles and item content")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(vertical=8.dp))
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -114,7 +145,7 @@ import org.fieldnotes.domain.*
         ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
         if(writable)SecondaryButton(onClick=edit){Text("List settings")}
         if(writable&&checked.isNotEmpty()) {
-            if(list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"}){Text("Reuse checked (${checked.size})")}
+            if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"}){Text("Reuse checked (${checked.size})")}
             SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="clear"}){Text("Clear checked (${checked.size})")}
         }
     }
@@ -128,7 +159,7 @@ import org.fieldnotes.domain.*
             items(items,key={it.record.id}){row->
                 val d=row.record.data;val done=d.text("status")=="done"
                 OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(10.dp),verticalAlignment=Alignment.Top) {
-                    Checkbox(done,{model.enqueueAsync(if(done)"task.reopen" else "task.complete",row.record.id,obj(),row.record.revision)},enabled=writable&&(d.text("claimant").isBlank()||d.text("claimant")==state.cache.snapshot.actor.user_id))
+                    Checkbox(done,{model.enqueueAsync(if(done)"task.reopen" else "task.complete",row.record.id,obj(),row.record.revision)},enabled=writable&&!finished&&(d.text("claimant").isBlank()||d.text("claimant")==state.cache.snapshot.actor.user_id))
                     Column(Modifier.weight(1f).clickable { open(row.record.id) }.padding(top=8.dp,bottom=6.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                         RecordBadges(row.record,list)
                         Text(d.text("title"),style=MaterialTheme.typography.titleMedium,color=if(done)MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
@@ -195,7 +226,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
             else { projectRecords(state.cache).filter { it.record.kind=="image"&&it.record.data.text("task_id")==id }.forEach { image(it) };if(writable)SecondaryButton(onClick={attach(id)}){Text("Attach image")}}
         }
         val rules=itemReminderRules(data,id)
-        if(writable)ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,
+        if(writable&&list.data.text("template")!="groceries")ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,
             reminderEditorSettings(model,state,reminderOptions(Record(id,"task",revision,data)) ?: ReminderOptions(),true){set("reminder_options",reminderOptionsData(it))}){set("reminders",reminderData(it))}
         if(record!=null) {
             Text(recordHistory(state.cache,record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -212,6 +243,6 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         } ?: data else JsonObject(data-"reminder_options")
         if(record==null)model.enqueue("task.create",id,JsonObject(payload+("project_id" to list.id.j())),null,basis)
         else { model.saveDraft(id,revision,payload,basis);model.submitDraft(id) }
-        close();model.sync()
+        model.requestSync();close()
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Add item" else "Save item")}},dismissButton={SecondaryButton(onClick=close){Text("Close")}})
 }

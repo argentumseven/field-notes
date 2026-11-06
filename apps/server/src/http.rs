@@ -864,6 +864,15 @@ pub fn router(app: App) -> Router {
                 }),
             )
             .route(
+                "/projects.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/projects.js"),
+                    )
+                }),
+            )
+            .route(
                 "/organization.js",
                 get(|| async {
                     (

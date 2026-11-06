@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeSet;
 
 impl Store {
     pub fn command(&mut self, token: &str, c: Command) -> Result<Value> {
@@ -106,8 +107,11 @@ impl Store {
             Vec::new()
         };
         let recovery_targets = self.recovery_subjects(c, &record, &removed_children);
-        let mut recovery_protected =
-            self.recovery_capture(&actor, &recovery_targets, "baseline.before_change")?;
+        let mut recovery_protected = if importing {
+            BTreeSet::new()
+        } else {
+            self.recovery_capture(&actor, &recovery_targets, "baseline.before_change")?
+        };
         if c.data.get("reminder_options").is_none() {
             if let Some(incoming) = c.data.get("reminders") {
                 let changed = record.data.get("reminders") != Some(incoming);
@@ -126,6 +130,18 @@ impl Store {
                     return fail(400, "Object kind mismatch");
                 }
                 Self::organized_record(&c.data, &mut record, &actor)?;
+                self.project_fields(&c.data, &mut record)?;
+                if record.kind == "list" {
+                    parent = record.data["project_id"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned);
+                    self.db.execute(
+                        "UPDATE objects SET parent=? WHERE id=?",
+                        params![parent, c.target],
+                    )?;
+                }
+
                 if record.kind == "note" {
                     self.reminder_options(&c.data, &mut record, &actor)?;
                 }
@@ -205,6 +221,17 @@ impl Store {
                     ],
                 )?;
                 if let Some(value) = c.data.get("project_id") {
+                    if value != &record.data["project_id"]
+                        && record.data["claimant"]
+                            .as_str()
+                            .is_some_and(|id| id != actor.user_id)
+                        && !actor.admin()
+                    {
+                        return fail(
+                            403,
+                            "Only the person working on this task or an administrator may move it",
+                        );
+                    }
                     let container = self.container_ref(value)?;
                     self.db.execute(
                         "UPDATE objects SET parent=? WHERE id=?",
@@ -368,7 +395,7 @@ impl Store {
                     if count > 0 {
                         return fail(
                             409,
-                            "Move or delete the tasks before deleting this collection",
+                            "Move or delete this collection's tasks and linked lists before deleting it",
                         );
                     }
                 }
@@ -437,6 +464,29 @@ impl Store {
                 }
             }
         }
+        if !importing
+            && record.revision == 1
+            && c.data.get("category").is_none()
+            && matches!(record.kind.as_str(), "task" | "list")
+            && !record.data["project_id"].as_str().unwrap_or("").is_empty()
+        {
+            let container = self.record(record.data["project_id"].as_str().unwrap_or(""))?;
+            record.data["category"] = container
+                .data
+                .get("category")
+                .cloned()
+                .unwrap_or(json!("general"));
+            self.save(&record, parent.as_deref())?;
+        }
+        if !importing {
+            let mut roots = BTreeSet::new();
+            for subject in history_before.iter().chain(std::iter::once(&record)) {
+                if let Some(project) = self.project_for_record(subject)? {
+                    roots.insert(project);
+                }
+            }
+            self.project_validate_roots(&roots)?;
+        }
         self.history_cascade(generation, &actor, &removed_children)?;
         self.db.execute(
             "INSERT INTO events(generation,object_id,action,actor,at) VALUES(?,?,?,?,?)",
@@ -455,8 +505,14 @@ impl Store {
                 None
             },
         )?;
-        recovery_protected.extend(self.recovery_capture(&actor, &recovery_targets, &c.action)?);
-        self.recovery_trim(&recovery_protected)?;
+        if !importing {
+            recovery_protected.extend(self.recovery_capture(
+                &actor,
+                &recovery_targets,
+                &c.action,
+            )?);
+            self.recovery_trim(&recovery_protected)?;
+        }
         let result = json!({"record":record,"sequence":sequence,"operation_id":c.operation_id});
         let bytes = self.vault.seal(
             &format!("operation:{}", c.operation_id),

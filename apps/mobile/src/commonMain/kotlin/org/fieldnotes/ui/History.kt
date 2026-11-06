@@ -22,14 +22,14 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.*
 import org.fieldnotes.domain.*
 
-@Composable internal fun ColumnScope.HistoryScreen(model:Workspace,state:WorkspaceState,use24Hour:Boolean,open:(String)->Unit) {
+@Composable internal fun ColumnScope.HistoryScreen(model:Workspace,state:WorkspaceState,use24Hour:Boolean,projectTarget:String?=null,projectTitle:String="",allHistory:()->Unit={},open:(String)->Unit) {
     val cache=state.cache;val snapshot=cache.snapshot ?: return
     val scope=rememberCoroutineScope();val focus=LocalFocusManager.current;val zone=TimeZone.currentSystemDefault()
     var recoveryTarget by remember {mutableStateOf<String?>(null)};var recoveryTitle by remember {mutableStateOf("")}
     recoveryTarget?.let {RecoverySheet(model,state,it.takeIf {s->s.isNotEmpty()},recoveryTitle,use24Hour){recoveryTarget=null}}
     var query by rememberSaveable {mutableStateOf("")};var actor by rememberSaveable {mutableStateOf("")};var kind by rememberSaveable {mutableStateOf("")};var action by rememberSaveable {mutableStateOf("")}
     var from by rememberSaveable {mutableStateOf("")};var to by rememberSaveable {mutableStateOf("")};var expanded by rememberSaveable {mutableStateOf(false)}
-    val filter=HistoryFilter(query,actor,kind,action,from=from,to=to)
+    val filter=HistoryFilter(query,actor,kind,action,target=projectTarget.orEmpty(),from=from,to=to)
     var entries by remember(snapshot.basis,snapshot.actor.user_id){mutableStateOf(cache.currentHistory()?.entries.orEmpty())}
     var page by remember(snapshot.basis,snapshot.actor.user_id){mutableStateOf<HistoryPage?>(null)}
     var loading by remember {mutableStateOf(false)};var problem by remember {mutableStateOf<String?>(null)};var offlineCopy by remember {mutableStateOf(true)}
@@ -66,6 +66,7 @@ import org.fieldnotes.domain.*
                     Text("One entry per item. Open its saved states to inspect or restore it.",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium)
                     SecondaryButton(onClick={focus.clearFocus();reload++},enabled=!loading){Text("Refresh history")}
                 }
+                if(projectTarget!=null){Text("Project activity · $projectTitle");SecondaryButton(onClick=allHistory){Text("All household history")}}
                 if(cache.supportsRecovery()){RecoveryPendingCard(model,state);SecondaryButton(onClick={recoveryTarget="";recoveryTitle="Content checkpoints"}){Text("Content checkpoints")}}
                 OutlinedTextField(query,{query=it.take(100)},Modifier.fillMaxWidth().testTag("history-search").onFocusChanged {if(it.isFocused)expanded=false},label={Text("Search titles, people and change details")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
                 FlowRow(Modifier.padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {

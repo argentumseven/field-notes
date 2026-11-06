@@ -216,6 +216,17 @@ impl Store {
                     return fail(409, "Item identity changed; this state cannot replace it");
                 }
             }
+            if row.record.kind == "project" {
+                if let Some(id) = row.record.data["assignee"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                {
+                    let active:bool=self.db.query_row("SELECT EXISTS(SELECT 1 FROM users WHERE id=? AND active=1 AND role!='viewer')",[id],|r|r.get(0))?;
+                    if !active {
+                        row.record.data["assignee"] = Value::Null;
+                    }
+                }
+            }
             if row.record.kind == "task" {
                 row.record.data["claimant"] = Value::Null;
                 if row.record.data["status"] == "in_progress" {
@@ -232,6 +243,21 @@ impl Store {
                 }
             }
         }
+        let mut overlay = desired.records.clone();
+        let kept = desired
+            .records
+            .iter()
+            .filter(|r| !r.deleted)
+            .map(|r| r.record.id.as_str())
+            .collect::<HashSet<_>>();
+        for row in &current.records {
+            if !kept.contains(row.record.id.as_str()) {
+                let mut removed = row.clone();
+                removed.deleted = true;
+                overlay.push(removed);
+            }
+        }
+        self.project_validate(&overlay)?;
         Ok(desired)
     }
     fn recovery_semantic(row: &SavedRecord) -> Value {
@@ -423,6 +449,7 @@ impl Store {
             "perpetual",
             "notify_additions",
             "item_reminders",
+            "items_are_tasks",
         ] {
             if let Some(value) = root.record.data.get(field) {
                 if !value.is_null() && value != &json!("") && value != &json!([]) {

@@ -38,7 +38,11 @@ function el(tag, cls = "", text = "") {
   if (text) n.textContent = text;
   return n;
 }
-class DialogCanceled extends Error { constructor(){super("This view changed. Reopen it and review again.");} }
+class DialogCanceled extends Error {
+  constructor() {
+    super("This view changed. Reopen it and review again.");
+  }
+}
 function button(text, fn, cls = "") {
   const n = el("button", cls, text);
   n.type = "button";
@@ -136,7 +140,7 @@ function byId(id) {
   return state.snapshot?.records.find((r) => r.id === id);
 }
 function projectName(id) {
-  return id ? byId(id)?.data.title || "Collection" : "Inbox";
+  return FieldProjects.graph().path(id);
 }
 function userName(id) {
   return (
@@ -343,7 +347,17 @@ function visibleTasks() {
     .filter((t) => state.project || isPlannerTask(t))
     .filter(
       (t) =>
-        (!state.project || t.data.project_id === state.project) &&
+        (!state.project ||
+          (byId(state.project)?.kind === "project"
+            ? FieldProjects.graph()
+                .members(state.project)
+                .some((r) => r.id === t.id) &&
+              (!state.projectGroup ||
+                t.data.project_id ===
+                  (state.projectGroup === "__direct"
+                    ? state.project
+                    : state.projectGroup))
+            : t.data.project_id === state.project)) &&
         (t.data.title + " " + t.data.notes)
           .toLowerCase()
           .includes(state.query.toLowerCase()),
@@ -385,6 +399,9 @@ function render() {
       () => {
         state.page = key;
         state.project = null;
+        state.projectGroup = "";
+        state.historyTarget = null;
+        state.historyTitle = null;
         state.query = "";
         closeDetail();
         render();
@@ -655,12 +672,25 @@ function render() {
     const c = byId(state.project);
     if (c)
       main.append(
-        button(c.kind === "list" ? "‹ All lists" : "‹ All projects", () => {
-          state.project = null;
-          state.page = c.kind === "list" ? "lists" : "projects";
-          state.query = "";
-          render();
-        }),
+        button(
+          c.kind === "list" && c.data.project_id
+            ? "‹ " + (byId(c.data.project_id)?.data.title || "Project")
+            : c.kind === "list"
+              ? "‹ All lists"
+              : "‹ All projects",
+          () => {
+            state.project =
+              c.kind === "list" ? c.data.project_id || null : null;
+            state.projectGroup = "";
+            state.page = state.project
+              ? "tasks"
+              : c.kind === "list"
+                ? "lists"
+                : "projects";
+            state.query = "";
+            render();
+          },
+        ),
       );
     if (c?.kind === "list") {
       renderChecklist(main, c);
@@ -676,7 +706,8 @@ function render() {
         context.append(
           button("Edit " + c.kind, () => editCollection(c), "quiet"),
         );
-      main.append(context);
+      if (c.kind === "project") renderProjectContext(main, c);
+      else main.append(context);
     }
   }
   const toolbar = el("div", "toolbar"),
@@ -731,7 +762,12 @@ function render() {
     toolbar.append(seg);
   }
   main.append(toolbar);
-  if (mayWrite())
+  if (
+    mayWrite() &&
+    byId(state.project)?.data.status !== "archived" &&
+    FieldProjects.graph().workProject({ data: { project_id: state.project } })
+      ?.data.status !== "archived"
+  )
     toolbar.append(button("New task", newStandaloneTask, "primary"));
   const tasks = el("div");
   tasks.id = "task-view";
@@ -851,6 +887,7 @@ function renderTasks() {
       (t) =>
         t.data.status !== "done" &&
         (t.data.blocked ||
+          FieldProjects.graph().held(t) ||
           (t.data.claimant && t.data.claimant !== state.actor.user_id)),
     );
   if (state.page === "completed")
@@ -863,6 +900,7 @@ function renderTasks() {
     tasks = tasks
       .filter(
         (t) =>
+          !FieldProjects.graph().held(t) &&
           FieldPlanning.rankTask(
             t,
             FieldPlanning.localDay(),
@@ -1216,6 +1254,20 @@ function renderDetail() {
         rank.reasons.join(" · "),
     ),
   );
+  const origin = FieldProjects.graph().project(task);
+  if (origin)
+    detail.append(
+      button("Open project · " + origin.data.title, () => {
+        if (state.project !== origin.id) {
+          state.projectGroup = "";
+          state.query = "";
+        }
+        state.page = "tasks";
+        state.project = origin.id;
+        closeDetail();
+        render();
+      }),
+    );
   const container = addField(
     detail,
     select(
@@ -1384,7 +1436,7 @@ function renderDetail() {
     );
   detail.append(historyNode(task));
   const actions = el("div", "detail-actions");
-  if (mayWrite())
+  if (mayWrite() && canScheduleReminders(task))
     actions.append(
       button("Reminders & sound", () => FieldReminders.edit(task)),
     );
@@ -1392,6 +1444,7 @@ function renderDetail() {
     if (
       task.data.status === "todo" &&
       !task.data.blocked &&
+      !FieldProjects.graph().held(task) &&
       (!task.data.assignee || task.data.assignee === state.actor.user_id)
     )
       actions.append(
@@ -1413,7 +1466,9 @@ function renderDetail() {
           mutate("task.complete", task.id, {}, task.revision),
         ),
       );
-    else
+    else if (
+      FieldProjects.graph().workProject(task)?.data.status !== "archived"
+    )
       actions.append(
         button("Reopen", () =>
           mutate("task.reopen", task.id, {}, task.revision),
@@ -1508,7 +1563,12 @@ function renderDetail() {
         await mutate(
           "image.create",
           uuid(),
-          { task_id: task.id, parent_incarnation: task.data.recovery_incarnation || 0, name: file.name, bytes },
+          {
+            task_id: task.id,
+            parent_incarnation: task.data.recovery_incarnation || 0,
+            name: file.name,
+            bytes,
+          },
           null,
         );
         notice("Image attached. Location metadata removed.");
@@ -1552,7 +1612,11 @@ function renderDetail() {
         await mutate(
           "comment.create",
           uuid(),
-          { task_id: task.id, parent_incarnation: task.data.recovery_incarnation || 0, body: comment.value },
+          {
+            task_id: task.id,
+            parent_incarnation: task.data.recovery_incarnation || 0,
+            body: comment.value,
+          },
           null,
         );
       } catch (e) {

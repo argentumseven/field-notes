@@ -29,9 +29,12 @@ The plaintext is a ZIP containing exactly `manifest.json` plus the media declare
 there at `media/<uuid>.bin`. No entry is extracted to a filesystem path. Duplicate
 names, unknown paths, unreferenced files, missing images and bad SHA-256/size
 descriptors are rejected. The manifest identifies `org.fieldnotes.archive`,
-version 1, source workspace UUID and generation, creation time, content records,
+version 2, source workspace UUID and generation, creation time, content records,
 people labels, media descriptors and retained changes. JSON fields follow the
 server's record schema. Future unknown fields fail visibly instead of being dropped.
+Readers also accept version 1. Version 2 adds project lifecycle/coordinator/target
+and project-linked task/reference lists. Older importers reject the newer manifest
+instead of silently losing its hierarchy. The encrypted outer framing is unchanged.
 
 The server stores import previews and image chunks with authenticated storage
 encryption, scoped to an authenticated user/session and workspace epoch/generation.

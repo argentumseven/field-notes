@@ -174,21 +174,50 @@ const FieldRecovery = (() => {
     parent.append(card);
   }
   function stateValue(field, data) {
-    if (field === "recurrence" && data?.frequency) return [FieldRecurrence.label(data), data.zone,
-      data.until ? "Through " + FieldHistory.value({field:"until"},data.until) : "",
-      data.dates?.length ? "Dates: " + data.dates.map(d => FieldHistory.value({field:"dates"},d)).join(", ") : "",
-      data.excluded?.length ? "Skipped: " + data.excluded.map(d => FieldHistory.value({field:"excluded"},d)).join(", ") : ""].filter(Boolean).join(" · ");
-    if (Array.isArray(data) && ["weekdays", "days"].includes(field)) return FieldHistory.value({field}, data);
-    if (Array.isArray(data)) return data.map(v => stateValue(field, v)).join("; ");
-    if (data && typeof data === "object") return Object.entries(data)
-      .filter(([key]) => key !== "id")
-      .map(([key, value]) => key.replaceAll("_", " ") + ": " + stateValue(key, value)).join(" · ");
-    return FieldHistory.value({field}, data);
+    if (field === "recurrence" && data?.frequency)
+      return [
+        FieldRecurrence.label(data),
+        data.zone,
+        data.until
+          ? "Through " + FieldHistory.value({ field: "until" }, data.until)
+          : "",
+        data.dates?.length
+          ? "Dates: " +
+            data.dates
+              .map((d) => FieldHistory.value({ field: "dates" }, d))
+              .join(", ")
+          : "",
+        data.excluded?.length
+          ? "Skipped: " +
+            data.excluded
+              .map((d) => FieldHistory.value({ field: "excluded" }, d))
+              .join(", ")
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    if (Array.isArray(data) && ["weekdays", "days"].includes(field))
+      return FieldHistory.value({ field }, data);
+    if (Array.isArray(data))
+      return data.map((v) => stateValue(field, v)).join("; ");
+    if (data && typeof data === "object")
+      return Object.entries(data)
+        .filter(([key]) => key !== "id")
+        .map(
+          ([key, value]) =>
+            key.replaceAll("_", " ") + ": " + stateValue(key, value),
+        )
+        .join(" · ");
+    return FieldHistory.value({ field }, data);
   }
   function itemState(parent, state, label) {
     const card = el("article", "recovery-item-state");
     card.setAttribute("aria-label", label);
-    if (!state) { card.append(el("p", "", "Item is not present in this state.")); parent.append(card); return; }
+    if (!state) {
+      card.append(el("p", "", "Item is not present in this state."));
+      parent.append(card);
+      return;
+    }
     card.append(el("h3", "", state.title));
     const fields = el("dl", "recovery-state-fields");
     const settings = el("details", "recovery-state-settings");
@@ -197,24 +226,68 @@ const FieldRecovery = (() => {
     for (const field of state.fields) {
       if (["title", "name"].includes(field.field)) continue;
       if (["body", "notes"].includes(field.field)) {
-        card.append(el("p", "recovery-state-content", stateValue(field.field, field.value)));
+        card.append(
+          el(
+            "p",
+            "recovery-state-content",
+            stateValue(field.field, field.value),
+          ),
+        );
         continue;
       }
-      const list = ["recurrence", "reminders", "reminder_options", "fields", "notify_additions", "item_reminders", "perpetual", "template"].includes(field.field) ? advanced : fields;
-      if (list === fields && (field.value === false || field.value === 0)) continue;
-      list.append(el("dt", "", field.label), el("dd", "", stateValue(field.field, field.value)));
+      const list = [
+        "recurrence",
+        "reminders",
+        "reminder_options",
+        "fields",
+        "notify_additions",
+        "item_reminders",
+        "perpetual",
+        "template",
+      ].includes(field.field)
+        ? advanced
+        : fields;
+      if (list === fields && (field.value === false || field.value === 0))
+        continue;
+      list.append(
+        el("dt", "", field.label),
+        el("dd", "", stateValue(field.field, field.value)),
+      );
     }
     card.append(fields);
-    if (advanced.children.length) { settings.append(advanced); card.append(settings); }
+    if (advanced.children.length) {
+      settings.append(advanced);
+      card.append(settings);
+    }
     if (state.comments || state.images) {
-      card.append(el("h4", "", `${state.comments} comments · ${state.images} attachments`));
+      card.append(
+        el(
+          "h4",
+          "",
+          `${state.comments} comments · ${state.images} attachments`,
+        ),
+      );
       for (const child of state.children) {
         const row = el("section", "recovery-state-child");
-        row.append(el("strong", "", child.kind === "comment" ? (child.author || "Comment") : child.title));
-        if (child.body) row.append(el("p", "recovery-state-content", child.body));
+        row.append(
+          el(
+            "strong",
+            "",
+            child.kind === "comment" ? child.author || "Comment" : child.title,
+          ),
+        );
+        if (child.body)
+          row.append(el("p", "recovery-state-content", child.body));
         card.append(row);
       }
-      if (state.children_limited) card.append(el("p", "muted", "First 20 comments and attachments shown. The complete state is restored together."));
+      if (state.children_limited)
+        card.append(
+          el(
+            "p",
+            "muted",
+            "First 20 comments and attachments shown. The complete state is restored together.",
+          ),
+        );
     }
     parent.append(card);
   }
@@ -243,29 +316,67 @@ const FieldRecovery = (() => {
         ),
       );
     if (plan.item_state) {
-      const choices = el("div", "history-actions"), content = el("div");
-      const selected = button(`Selected state #${plan.source_index}`, () => show(true)), current = button("Current state", () => show(false));
+      const choices = el("div", "history-actions"),
+        content = el("div");
+      const selected = button(`Selected state #${plan.source_index}`, () =>
+          show(true),
+        ),
+        current = button("Current state", () => show(false));
       function show(saved) {
-        selected.setAttribute("aria-pressed", String(saved)); current.setAttribute("aria-pressed", String(!saved));
+        selected.setAttribute("aria-pressed", String(saved));
+        current.setAttribute("aria-pressed", String(!saved));
         content.replaceChildren();
-        itemState(content, saved ? plan.item_state.saved : plan.item_state.current, saved ? "Selected item state" : "Current item state");
+        itemState(
+          content,
+          saved ? plan.item_state.saved : plan.item_state.current,
+          saved ? "Selected item state" : "Current item state",
+        );
       }
-      choices.append(selected, current); d.body.append(choices, content); show(true);
-      d.body.append(el("p", "muted", "Restores the entire selected item state, including comments and attachments. Individual attributes are not restored separately."));
+      choices.append(selected, current);
+      d.body.append(choices, content);
+      show(true);
+      d.body.append(
+        el(
+          "p",
+          "muted",
+          "Restores the entire selected item state, including comments and attachments. Individual attributes are not restored separately.",
+        ),
+      );
     }
     const comparison = el("details", "recovery-comparison");
     comparison.append(el("summary", "", "Compare with current state"));
     for (const change of plan.changes) {
       const card = el("article", "history-entry");
-      card.append(el("h3", "", `${change.action === "remove" ? "Remove" : change.action === "restore" ? "Restore" : "Change"} · ${change.title}`));
-      const details = el("details"); details.append(el("summary", "", "Field comparison"));
+      card.append(
+        el(
+          "h3",
+          "",
+          `${change.action === "remove" ? "Remove" : change.action === "restore" ? "Restore" : "Change"} · ${change.title}`,
+        ),
+      );
+      const details = el("details");
+      details.append(el("summary", "", "Field comparison"));
       for (const field of change.changes) {
         const row = el("div", "recovery-difference");
-        row.append(el("strong", "", field.label || field.field), el("p", "", "Current: " + FieldHistory.value(field, field.before)), el("p", "", "Saved: " + FieldHistory.value(field, field.after)));
-        if (field.truncated) row.append(el("small", "muted", "Excerpt; the full saved value is restored."));
+        row.append(
+          el("strong", "", field.label || field.field),
+          el("p", "", "Current: " + FieldHistory.value(field, field.before)),
+          el("p", "", "Saved: " + FieldHistory.value(field, field.after)),
+        );
+        if (field.truncated)
+          row.append(
+            el("small", "muted", "Excerpt; the full saved value is restored."),
+          );
         details.append(row);
       }
-      if (change.total_fields > change.changes.length) details.append(el("p", "muted", `${change.changes.length} of ${change.total_fields} changed fields shown.`));
+      if (change.total_fields > change.changes.length)
+        details.append(
+          el(
+            "p",
+            "muted",
+            `${change.changes.length} of ${change.total_fields} changed fields shown.`,
+          ),
+        );
       card.append(details);
       (plan.item_state ? comparison : d.body).append(card);
     }
@@ -313,7 +424,7 @@ const FieldRecovery = (() => {
         "p",
         "muted",
         target
-          ? "Each version is one complete item state, including its comments and attachments. Open a state to inspect or restore it; later states stay available."
+          ? "Each version is one complete item state. Task versions include their comments and attachments. Project and list versions restore the collection’s own details; their current tasks stay as they are. Use a content checkpoint to restore all household content together. Later states stay available."
           : "Checkpoints include tasks, lists, notes, calendar events, comments and attached images. They exclude accounts and device/security settings.",
       ),
     );

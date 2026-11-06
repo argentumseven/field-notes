@@ -6,6 +6,13 @@ function containers() {
   );
 }
 async function newStandaloneTask() {
+  const initialParent = byId(
+    state.projectGroup && state.projectGroup !== "__direct"
+      ? state.projectGroup
+      : state.project,
+  );
+  if (FieldProjects.graph().project(initialParent)?.data.status === "archived")
+    throw Error("Reopen the project before adding work.");
   let reminders = { alerts: [], repeat: null },
     reminderDirty = false;
   await formDialog(
@@ -13,7 +20,7 @@ async function newStandaloneTask() {
     "Capture everything you need in one step. Dates stay optional.",
     [
       { key: "title", label: "Task title", max: 240 },
-      categoryField(),
+      { ...categoryField(), value: initialParent?.data.category || "general" },
       {
         key: "notes",
         label: "Notes",
@@ -27,10 +34,12 @@ async function newStandaloneTask() {
         options: [
           ["", "Inbox"],
           ...containers()
-            .filter((c) => c.kind === "project")
-            .map((c) => [c.id, c.data.title]),
+            .filter(
+              (c) => c.kind === "project" || c.data.items_are_tasks === true,
+            )
+            .map((c) => [c.id, FieldProjects.graph().path(c.id)]),
         ],
-        value: state.project || "",
+        value: initialParent?.id || "",
         required: false,
       },
       {
@@ -70,13 +79,21 @@ async function newStandaloneTask() {
         FieldReminders.validate(reminders);
         data.reminders = reminders;
       }
-      await mutate("task.create", uuid(), data, null);
-      state.selected = null;
+      const id = uuid();
+      await mutate("task.create", id, data, null);
+      state.selected = id;
       state.query = "";
       render();
     },
     "Create task",
-    (nodes) =>
+    (nodes) => {
+      let ownCategory = false;
+      nodes.category.onchange = () => (ownCategory = true);
+      nodes.project_id.onchange = () => {
+        if (!ownCategory)
+          nodes.category.value =
+            byId(nodes.project_id.value)?.data.category || "general";
+      };
       FieldReminders.controls(
         $("#dialog-body"),
         reminders,
@@ -88,7 +105,8 @@ async function newStandaloneTask() {
           reminders = v;
           reminderDirty = true;
         },
-      ),
+      );
+    },
   );
 }
 

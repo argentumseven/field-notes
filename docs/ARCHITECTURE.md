@@ -97,8 +97,19 @@ expiry/retry/recovery, and the trust bootstrap.
 
 ## Planning and sync
 
-Tasks can exist in Inbox without a parent. Lists and Projects are separate typed
-collections, with editable names/context. Standalone Notes have title, body and
+Tasks can exist in Inbox without a parent, directly under a project or under a
+list. Lists can belong to a project, and `items_are_tasks` distinguishes work
+lists from reference checklists (legacy lists remain reference). `projects.rs`
+validates the resulting hierarchy and project lifecycle inside command, import
+and recovery transactions. Finished projects cannot contain unfinished work;
+on-hold projects cannot hold active claims. No parent action silently completes,
+reassigns or redates children. JS/Kotlin project graphs derive progress from
+records, with shared golden fixtures; no mutable progress counter is stored.
+Category is independent of hierarchy and copied only as a new-record default.
+An additive `history_projects` table captures before/after project scopes for
+moves; its foreign key follows history-detail retention. Collection deletion is
+refused while child tasks or linked lists remain. See [PROJECTS.md](PROJECTS.md).
+Standalone Notes have title, body and
 pinning; they never become tasks to appear in a workspace. The browser sidebar
 and Android drawer expose these plus Unscheduled, Waiting and Completed views.
 Assignment responsibility uses the same task revision; a minimal authenticated
@@ -198,6 +209,11 @@ metadata is separate from priority, responsibility and working claims.
 Android persists an encrypted delivery intent before posting, reconciles mute
 choices and acknowledges its cursor afterward. Initial history and own writes
 are not replayed as new shared additions.
+After a successful local write, editors hand delivery to workspace-owned
+`requestSync`, rather than awaiting network work in their disposable Compose
+scope. That request waits for an overlapping poll/sync to release the connection
+mutex. Closing the editor cannot cancel it or drop the kick during another poll;
+offline/error results retain the queue and visible connection status.
 
 Portable content uses an explicit capability-free manifest and framed AES-GCM.
 The web controller is `archive.js`; shared JVM cipher/ZIP parsing isolates format

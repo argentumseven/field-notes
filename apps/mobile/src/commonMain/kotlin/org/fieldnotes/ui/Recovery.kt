@@ -87,7 +87,7 @@ import org.fieldnotes.domain.*
                     }}
                 }else {
                     item {Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(if(target==null)"Save household content, comments and attached images together. Checkpoints do not contain accounts or security settings." else "Each version is one complete item state, including its comments and attachments. Open a state to inspect or restore it; later states stay available.")
+                        Text(if(target==null)"Save household content, comments and attached images together. Checkpoints do not contain accounts or security settings." else "Each version is one complete item state. Task versions include comments and attachments. Project and list versions restore the collection’s own details; current tasks stay as they are. Use a content checkpoint to restore all household content together. Later states stay available.")
                         if(target==null&&actor?.role in setOf("owner","admin")){
                             OutlinedTextField(name,{name=it.take(120)},label={Text("Checkpoint name")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                             Button(shape=ControlShape,onClick={run{model.createCheckpoint(name);name="";done="Content checkpoint saved.";load()}},enabled=!busy&&name.isNotBlank()&&state.cache.recoveryPending==null){Text("Save content checkpoint")}

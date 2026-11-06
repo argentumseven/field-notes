@@ -8,7 +8,7 @@ import kotlinx.serialization.json.*
 const val HISTORY_FEATURE="history-v1"
 fun Cache.supportsHistory()=compatibility?.let { !it.blocked&&HISTORY_FEATURE in it.features }==true
 @Serializable data class HistoryChange(val field:String,val label:String,val before:JsonElement=JsonNull,val after:JsonElement=JsonNull,val before_truncated:Boolean=false,val after_truncated:Boolean=false)
-@Serializable data class HistoryEntry(val sequence:Long,val target:String,val action:String,val actor_id:String,val actor_name:String,val at:Long,val title:String,val parent_title:String="",val kind:String,val item_type:String=kind,val source:String="edit",val changes:List<HistoryChange> = emptyList(),val total_fields:Int=changes.size,val details:String="unavailable",val item_target:String="",val activity_kind:String="") {
+@Serializable data class HistoryEntry(val sequence:Long,val target:String,val action:String,val actor_id:String,val actor_name:String,val at:Long,val title:String,val parent_title:String="",val kind:String,val item_type:String=kind,val source:String="edit",val changes:List<HistoryChange> = emptyList(),val total_fields:Int=changes.size,val details:String="unavailable",val item_target:String="",val activity_kind:String="",val project_ids:List<String> = emptyList()) {
     val group get()=when {action.endsWith(".create")->"added";action.endsWith(".delete")||action=="workspace.clear"->"removed";else->"changed"}
     val verb get():String {
         val actionLabel=when(action.substringAfter('.')) {"create"->"Added";"delete"->"Removed";"complete"->"Completed";"reopen"->"Reopened";"start"->"Started";"release"->"Released";"override"->"Overrode working claim";"clear"->"Cleared";"restore"->"Restored";else->"Changed"}
@@ -32,7 +32,7 @@ data class HistoryFilter(val query:String="",val actor:String="",val kind:String
 }
 fun Cache.currentHistory()=history?.takeIf { h->snapshot?.basis==h.basis&&snapshot?.actor?.user_id==h.actor&&snapshot?.history_revision==h.history_revision }
 fun historyMatches(entry:HistoryEntry,filter:HistoryFilter,zone:TimeZone):Boolean {
-    if(filter.actor.isNotEmpty()&&entry.actor_id!=filter.actor||filter.kind.isNotEmpty()&&entry.kind!=filter.kind||filter.action.isNotEmpty()&&entry.group!=filter.action||filter.target.isNotEmpty()&&entry.target!=filter.target)return false
+    if(filter.actor.isNotEmpty()&&entry.actor_id!=filter.actor||filter.kind.isNotEmpty()&&entry.kind!=filter.kind||filter.action.isNotEmpty()&&entry.group!=filter.action||filter.target.isNotEmpty()&&entry.target!=filter.target&&filter.target !in entry.project_ids)return false
     val day=Instant.fromEpochSeconds(entry.at).toLocalDateTime(zone).date.toString()
     if(filter.from.isNotEmpty()&&day<filter.from||filter.to.isNotEmpty()&&day>filter.to)return false
     return filter.query.isBlank()||listOf(entry.title,entry.parent_title,entry.actor_name,entry.verb,entry.typeLabel,entry.changes.joinToString { it.label+" "+it.before+" "+it.after }).joinToString(" ").contains(filter.query,true)

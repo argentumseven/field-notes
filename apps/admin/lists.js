@@ -14,33 +14,46 @@ const listFieldLabels = {
 };
 const listTemplates = {
   general: "General list",
+  tasks: "Task list",
   groceries: "Groceries",
   shopping: "Online shopping",
   custom: "Custom list",
 };
 const defaultListFields = (type) =>
-  type === "groceries"
-    ? ["quantity", "store", "notes"]
-    : type === "shopping"
-      ? ["quantity", "link_url", "images"]
-      : type === "custom"
-        ? []
-        : ["notes"];
+  type === "tasks"
+    ? [
+        "notes",
+        "assignee",
+        "due",
+        "planned_for",
+        "priority",
+        "estimate_minutes",
+        "images",
+      ]
+    : type === "groceries"
+      ? ["quantity", "store", "notes"]
+      : type === "shopping"
+        ? ["quantity", "link_url", "images"]
+        : type === "custom"
+          ? []
+          : ["notes"];
 const fieldsOf = (list) => [
   ...new Set([
     ...(list.data.fields || defaultListFields(list.data.template || "general")),
   ]),
 ];
-async function newCollection(kind = "list") {
-  return collectionEditor(kind);
+async function newCollection(kind = "list", defaults = {}) {
+  return collectionEditor(kind, null, defaults);
 }
 async function editCollection(record) {
   return collectionEditor(record.kind, record);
 }
-async function collectionEditor(kind, record) {
-  const d = record?.data || {},
+async function collectionEditor(kind, record, defaults = {}) {
+  const d = record?.data || defaults,
     isList = kind === "list",
-    chosen = d.fields || defaultListFields(d.template || "general");
+    chosen =
+      d.fields ||
+      defaultListFields(d.items_are_tasks ? "tasks" : d.template || "general");
   const fields = [
     {
       key: "title",
@@ -56,14 +69,60 @@ async function collectionEditor(kind, record) {
       required: false,
       max: 16384,
     },
-    categoryField(record),
+    { ...categoryField(record), value: d.category || "general" },
+    ...(!isList
+      ? [
+          {
+            key: "assignee",
+            label: "Project coordinator",
+            options: assignmentOptions(),
+            value: d.assignee || "",
+            required: false,
+          },
+          {
+            key: "due",
+            label: "Project target date · optional",
+            type: "date",
+            value: d.due || "",
+            required: false,
+          },
+          {
+            key: "status",
+            label: "Project state",
+            options: [
+              ["active", "Active"],
+              ["on_hold", "On hold"],
+              ["archived", "Finished"],
+            ],
+            value: d.status || "active",
+          },
+        ]
+      : [
+          {
+            key: "project_id",
+            label: "Group under a project · optional",
+            options: [
+              ["", "Standalone list"],
+              ...records("project").map((p) => [p.id, p.data.title]),
+            ],
+            value: d.project_id || "",
+            required: false,
+          },
+          {
+            key: "items_are_tasks",
+            label:
+              "Items are work tasks · include in Tasks and project progress",
+            type: "checkbox",
+            value: !!d.items_are_tasks,
+          },
+        ]),
     ...(isList
       ? [
           {
             key: "template",
             label: "List type",
             options: Object.entries(listTemplates),
-            value: d.template || "general",
+            value: d.items_are_tasks ? "tasks" : d.template || "general",
           },
           ...Object.entries(listFieldLabels).map(([key, label]) => ({
             key: "field_" + key,
@@ -131,15 +190,20 @@ async function collectionEditor(kind, record) {
         notes: v.notes,
         ...(isList
           ? {
-              template: v.template,
+              template: v.template === "tasks" ? "general" : v.template,
+              project_id: v.project_id || "",
+              items_are_tasks: !!v.items_are_tasks,
               fields: Object.keys(listFieldLabels).filter(
                 (key) => v["field_" + key],
               ),
               perpetual: v.perpetual,
               notify_additions: v.notify_additions,
-              item_reminders: v.item_reminders,
+              item_reminders:
+                v.template === "groceries"
+                  ? (record?.data.item_reminders ?? false)
+                  : v.item_reminders,
             }
-          : {}),
+          : { status: v.status, due: v.due || "", assignee: v.assignee || "" }),
       };
       await mutate(
         kind + (record ? ".update" : ".create"),
@@ -148,8 +212,10 @@ async function collectionEditor(kind, record) {
         record?.revision ?? null,
       );
       if (!record) {
-        state.page = isList ? "lists" : "projects";
-        state.project = null;
+        state.page =
+          isList && data.project_id ? "tasks" : isList ? "lists" : "projects";
+        state.project = isList ? data.project_id || null : null;
+        state.projectGroup = "";
         render();
       }
     },
@@ -174,6 +240,8 @@ async function collectionEditor(kind, record) {
             " selected";
         };
         const arrange = () => {
+          nodes.item_reminders.closest("label").hidden =
+            nodes.template.value === "groceries";
           const price = nodes.field_price.closest("label");
           if (nodes.template.value === "shopping") group.before(price);
           else group.append(price);
@@ -189,6 +257,7 @@ async function collectionEditor(kind, record) {
             nodes.template.value === "groceries"
           )
             nodes.category.value = "food";
+          nodes.items_are_tasks.checked = nodes.template.value === "tasks";
           const selected = defaultListFields(nodes.template.value);
           for (const key of Object.keys(listFieldLabels))
             nodes["field_" + key].checked = selected.includes(key);
@@ -216,8 +285,8 @@ async function collectionEditor(kind, record) {
           },
           "danger",
         );
-        remove.disabled = records("task").some(
-          (t) => t.data.project_id === record.id,
+        remove.disabled = state.snapshot.records.some(
+          (t) => t.id !== record.id && t.data.project_id === record.id,
         );
         $("#dialog-body").append(remove);
       }
@@ -238,6 +307,7 @@ function renderCollections(root) {
     template: "*",
     category: "*",
     sort: "title",
+    status: "current",
   });
   const tools = el("div", "toolbar"),
     filters = el("div", "view-filters"),
@@ -271,6 +341,14 @@ function renderCollections(root) {
     ["*", "All categories"],
     ...Object.entries(recordCategories),
   ]);
+  if (kinds.includes("project"))
+    choice("Project state", "status", [
+      ["current", "Current projects"],
+      ["active", "Active"],
+      ["on_hold", "On hold"],
+      ["archived", "Finished"],
+      ["all", "All projects"],
+    ]);
   choice("Sort by", "sort", [
     ["title", "Name A–Z"],
     ["updated", "Recently changed"],
@@ -282,9 +360,16 @@ function renderCollections(root) {
       .filter(
         (c) =>
           kinds.includes(c.kind) &&
+          (c.kind !== "project" ||
+            view.status === "all" ||
+            (view.status === "current"
+              ? (c.data.status || "active") !== "archived"
+              : (c.data.status || "active") === view.status)) &&
           (view.template === "*" ||
             c.kind !== "list" ||
-            (c.data.template || "general") === view.template) &&
+            (c.data.items_are_tasks
+              ? "tasks"
+              : c.data.template || "general") === view.template) &&
           (view.category === "*" ||
             categoryKey(c.data.category) === categoryKey(view.category)) &&
           (c.data.title + " " + c.data.notes)
@@ -293,8 +378,14 @@ function renderCollections(root) {
       )
       .sort((a, b) =>
         view.sort === "updated"
-          ? (b.data.last_activity_at || b.data.updated_at || 0) -
-            (a.data.last_activity_at || a.data.updated_at || 0)
+          ? (b.kind === "project"
+              ? FieldProjects.graph().rollup(b, FieldPlanning.localDay())
+                  .activity
+              : b.data.last_activity_at || b.data.updated_at || 0) -
+            (a.kind === "project"
+              ? FieldProjects.graph().rollup(a, FieldPlanning.localDay())
+                  .activity
+              : a.data.last_activity_at || a.data.updated_at || 0)
           : a.data.title.localeCompare(b.data.title),
       );
     if (!group.length)
@@ -329,6 +420,23 @@ function renderCollections(root) {
         ),
         el("span", "muted", c.data.notes || ""),
       );
+      if (c.kind === "project") {
+        const stats = FieldProjects.graph().rollup(c, FieldPlanning.localDay());
+        row.append(
+          el(
+            "span",
+            "project-library-progress",
+            `${stats.done}/${stats.total} tasks · ${FieldProjects.stateLabel(c, stats)} · ${stats.overdue} overdue`,
+          ),
+        );
+      } else if (c.data.project_id)
+        row.append(
+          el(
+            "span",
+            "item-sub",
+            "In " + (byId(c.data.project_id)?.data.title || "Project"),
+          ),
+        );
       library.append(row);
     }
   }
@@ -427,6 +535,24 @@ function renderChecklist(root, list) {
       clear,
       ...(list.data.perpetual !== false ? [reuse] : []),
     );
+  const project = FieldProjects.graph().project(list),
+    finished =
+      !!list.data.items_are_tasks && project?.data.status === "archived";
+  if (finished) {
+    for (const b of toolbar.querySelectorAll("button"))
+      if (
+        b.textContent === "Add item" ||
+        b.textContent.startsWith("Reuse checked")
+      )
+        b.disabled = true;
+    root.append(
+      el(
+        "p",
+        "",
+        "Project finished. Reopen it before adding or reopening work.",
+      ),
+    );
+  }
   root.append(typeBadges(list), toolbar, filters);
   if (
     list.data.notify_additions === false ||
@@ -507,7 +633,7 @@ function renderChecklist(root, list) {
     clear.textContent = `Clear checked (${checked.length})`;
     clear.disabled = !checked.length;
     reuse.textContent = `Reuse checked (${checked.length})`;
-    reuse.disabled = !checked.length;
+    reuse.disabled = finished || !checked.length;
     results.append(
       el(
         "p",
@@ -554,7 +680,9 @@ function renderChecklist(root, list) {
           (done ? "Uncheck " : "Check ") + d.title,
         );
         check.disabled =
-          !mayWrite() || (!!d.claimant && d.claimant !== state.actor.user_id);
+          !mayWrite() ||
+          (finished && done) ||
+          (!!d.claimant && d.claimant !== state.actor.user_id);
         check.onchange = () =>
           mutate(
             done ? "task.reopen" : "task.complete",
@@ -754,7 +882,7 @@ async function editListItem(list, record, initialStore = "") {
     record ? "Save item" : "Add item",
     () => {
       const body = $("#dialog-body");
-      if (mayWrite())
+      if (mayWrite() && list.data.template !== "groceries")
         FieldReminders.controls(
           body,
           reminders,
@@ -822,7 +950,12 @@ async function editListItem(list, record, initialStore = "") {
                 await mutate(
                   "image.create",
                   uuid(),
-                  { task_id: record.id, parent_incarnation: record.data.recovery_incarnation || 0, name: selected.name, bytes },
+                  {
+                    task_id: record.id,
+                    parent_incarnation: record.data.recovery_incarnation || 0,
+                    name: selected.name,
+                    bytes,
+                  },
                   null,
                 );
                 notice(
@@ -852,7 +985,11 @@ async function editListItem(list, record, initialStore = "") {
               await mutate(
                 "comment.create",
                 uuid(),
-                { task_id: record.id, parent_incarnation: record.data.recovery_incarnation || 0, body: text.value },
+                {
+                  task_id: record.id,
+                  parent_incarnation: record.data.recovery_incarnation || 0,
+                  body: text.value,
+                },
                 null,
               );
               text.value = "";

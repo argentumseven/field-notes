@@ -17,6 +17,31 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Household projects and grocery cleanup — 0.9
+
+[Tasks, task lists and projects](PROJECTS.md) explains the grouping choices.
+Household/honey-do can be a single task, a rolling task list or a project with
+several work groups. Progress includes all work while reference/shopping items
+stay separate. These captures use an isolated synthetic Rust household.
+
+| Web | What it shows |
+| --- | --- |
+| [Project workspace](screenshots/web/83-project-workspace.png) | Coordinator, optional target, derived progress, work groups, direct/grouped tasks and safe lifecycle controls |
+| [Project history](screenshots/web/84-project-history.png) | One history entry per item, scoped to the project |
+| [Reminder recipients](screenshots/web/85-reminder-recipients.png) | Several selected people stay selectable and survive a save/reopen |
+| [Grocery item](screenshots/web/86-grocery-item.png) | Store/quantity/notes without reminder, recipient or sound controls |
+
+| Android | What it shows |
+| --- | --- |
+| [Project workspace](screenshots/android/87-native-project-workspace.png) | The same derived progress and lifecycle controls, with a visible scrollbar |
+| [Reminder recipients](screenshots/android/88-native-reminder-recipients.png) | Native recipient chips; saving was checked through the durable queue into the encrypted cache |
+| [Grocery item](screenshots/android/89-native-grocery-item.png) | Store, quantity, notes and comments without the unrelated reminder editor |
+
+The project fixture deliberately omits an APK download bundle, so image 87 also
+shows the persistent missing-update warning. The normal server bundle includes
+the verified APK. The gallery does not hide that warning or disable screenshot
+protection in the shipped app; protection is cleared only by guarded test code.
+
 ## Indexed recovery and planner refinements — 0.8
 
 [Recovery guide](RECOVERY.md) · [Planner/list comparison](PLANNER-COMPARISON.md).

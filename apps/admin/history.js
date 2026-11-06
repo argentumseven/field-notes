@@ -150,7 +150,12 @@ const FieldHistory = (() => {
     view = null;
   }
   function requestBody(v, more) {
-    const body = { epoch: v.epoch, generation: v.generation, view: "items", ...v.filters };
+    const body = {
+      epoch: v.epoch,
+      generation: v.generation,
+      view: "items",
+      ...v.filters,
+    };
     delete body.from;
     delete body.to;
     if (v.filters.from)
@@ -349,11 +354,7 @@ const FieldHistory = (() => {
         card.append(el("p", "muted", "Saved without changing content fields."));
       if (entry.changes.length) {
         const detail = el("details", "history-changes"),
-          summary = el(
-            "summary",
-            "",
-            "Latest activity details",
-          );
+          summary = el("summary", "", "Latest activity details");
         detail.open = v.expanded.has(entry.sequence);
         detail.ontoggle = () => {
           if (detail.open) v.expanded.add(entry.sequence);
@@ -414,7 +415,15 @@ const FieldHistory = (() => {
       epoch: state.snapshot.epoch,
       generation: state.snapshot.generation,
       ticket: 0,
-      filters: { query: "", actor: "", kind: "", action: "", from: "", to: "" },
+      filters: {
+        query: "",
+        actor: "",
+        kind: "",
+        action: "",
+        from: "",
+        to: "",
+        target: state.historyTarget || "",
+      },
       entries: [],
       page: null,
       loading: false,
@@ -423,6 +432,16 @@ const FieldHistory = (() => {
       expanded: new Set(),
     });
     const tools = el("div", "history-tools");
+    if (state.historyTarget)
+      tools.append(
+        el("p", "", "Project activity · " + (state.historyTitle || "Project")),
+        button("All household history", () => {
+          state.historyTarget = null;
+          state.historyTitle = null;
+          leave();
+          render();
+        }),
+      );
     FieldRecovery.tools(root);
     v.search = input("Search titles, people and change details", "", "search");
     v.search.node.maxLength = 100;
@@ -488,7 +507,8 @@ const FieldHistory = (() => {
     }
     fields.append(
       button("Clear filters", () => {
-        for (const key of Object.keys(v.filters)) v.filters[key] = "";
+        for (const key of Object.keys(v.filters))
+          if (key !== "target") v.filters[key] = "";
         for (const field of [v.search, v.person, v.kind, v.from, v.to])
           field.node.value = "";
         schedule(v);

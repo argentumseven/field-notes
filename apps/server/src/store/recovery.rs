@@ -34,10 +34,10 @@ impl Default for RecoveryPolicy {
     }
 }
 #[derive(Serialize, Deserialize, Clone)]
-struct SavedRecord {
-    record: Record,
-    parent: Option<String>,
-    deleted: bool,
+pub(super) struct SavedRecord {
+    pub(super) record: Record,
+    pub(super) parent: Option<String>,
+    pub(super) deleted: bool,
 }
 #[derive(Serialize, Deserialize, Clone)]
 struct ContentState {

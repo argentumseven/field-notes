@@ -134,6 +134,10 @@ test("web workflow: sign in, project, task details, comment, board, admin and mo
         .getByRole("button", { name: "Create task", exact: true })
         .click();
       await page
+        .getByRole("dialog", { name: "Task details", exact: true })
+        .waitFor();
+      await page.getByRole("button", { name: "Close", exact: true }).click();
+      await page
         .getByRole("button", { name: "Open task: " + title, exact: true })
         .waitFor();
     };

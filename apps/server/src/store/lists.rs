@@ -84,7 +84,7 @@ impl Store {
                 .get(field)
                 .or_else(|| record.data.get(field))
                 .cloned()
-                .unwrap_or(json!(true));
+                .unwrap_or(json!(field != "item_reminders" || template != "groceries"));
             if !value.is_boolean() {
                 return fail(400, "Choose list notification settings");
             }

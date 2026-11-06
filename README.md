@@ -10,7 +10,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.8.1.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.9.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -18,14 +18,17 @@ services. iOS/native desktop packages are deferred.
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
 [Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [List types and fields](docs/LISTS.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
-[Household planning](docs/PLANNER-0.6.md) · [History & restore](docs/HISTORY.md) · [Planner comparison](docs/PLANNER-COMPARISON.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
+[Household planning](docs/PLANNER-0.6.md) · [Tasks and project tracking](docs/PROJECTS.md) · [History & restore](docs/HISTORY.md) · [Planner comparison](docs/PLANNER-COMPARISON.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/50-sunday-week-aligned.png)
 
 ## Planner and administration
 
-- Capture tasks in Inbox without creating a project. Lists hold shopping, routines
-  and checklists; Projects group an outcome. Move tasks between either or Inbox.
+- Capture tasks in Inbox without creating a project. Household/honey-do is a
+  category for standalone tasks, task lists or projects. Projects combine direct
+  tasks and linked task lists with progress, coordinator, optional target, hold
+  and finish/reopen controls. Reference/shopping lists can sit alongside the work
+  without inflating progress. Move tasks and lists while preserving their identity.
   Standalone Notes hold shared reference material with pinning and search.
   Unscheduled, Waiting and Completed views surface different kinds of work.
 - Tasks and Assignments are explicit views, with My tasks and Unassigned filters.
@@ -45,7 +48,9 @@ services. iOS/native desktop packages are deferred.
   clear checked items or reuse their original records while retaining unchecked ones. Image previews use attached
   images only; there are no retailer requests. Rows show creator/activity times.
 - Later & reminders keeps undated ideas and optional follow-up alerts outside occupied calendar time. Searches include titles and content, with category/person/status filters and useful sort fields.
-- Granular shared-addition notices name the person, item and list. Each list can mute additions and scheduled item reminders separately.
+- Granular shared-addition notices name the person, item and list. Lists can mute
+  additions; grocery items have no scheduled reminder/recipient controls. Other
+  list types can mute scheduled item reminders separately.
 - Encrypted content export/import works on phone and web, preserves offline changes and images, skips duplicates and retains conflicting alternatives without overwriting current work.
 - Indexed item versions and named content checkpoints support reviewed backward/forward restores, including deleted items and attachments, with configurable age, count and storage limits. Accounts and pairings stay current. [Recovery guide](docs/RECOVERY.md).
 - History on web and phone lists each item once, with full saved-state inspection and restoration. It shows who added, changed or removed content, with server timestamps, Previous/Now field details, search and filters. Removed items stay identifiable; recent phone history is cached offline. [History and retention](docs/HISTORY.md).

@@ -2,6 +2,7 @@
 //! mutation, never supplied by clients or imported as authoritative history.
 use super::*;
 use rusqlite::types::Value as SqlValue;
+use std::collections::BTreeSet;
 
 const DETAIL_ENTRIES: usize = 10_000;
 const DETAIL_BYTES: usize = 64 * 1024 * 1024;
@@ -9,7 +10,7 @@ const PAGE_SCAN: usize = 500;
 const DETAIL_FIELDS: usize = 64;
 
 impl Store {
-    fn history_record(&self, target: &str) -> Result<Option<Record>> {
+    pub(super) fn history_record(&self, target: &str) -> Result<Option<Record>> {
         let row: Option<(String, i64, Vec<u8>)> = self
             .db
             .query_row(
@@ -31,7 +32,7 @@ impl Store {
         })
         .transpose()
     }
-    fn history_title(record: &Record) -> String {
+    pub(super) fn history_title(record: &Record) -> String {
         record
             .data
             .get("title")
@@ -129,6 +130,7 @@ impl Store {
             "perpetual",
             "notify_additions",
             "item_reminders",
+            "items_are_tasks",
             "due",
             "priority",
             "planned_for",
@@ -215,6 +217,14 @@ impl Store {
                 self.vault.seal(&format!("history:{seq}"), &bytes)?
             ],
         )?;
+        for item in before.into_iter().chain(after) {
+            if let Some(project) = self.project_for_record(item)? {
+                self.db.execute(
+                    "INSERT OR IGNORE INTO history_projects VALUES(?,?)",
+                    params![seq, project],
+                )?;
+            }
+        }
         self.trim_history(DETAIL_ENTRIES, DETAIL_BYTES)
     }
     pub(super) fn trim_history(&self, max_entries: usize, max_bytes: usize) -> Result<()> {
@@ -424,8 +434,8 @@ impl Store {
             _ => {}
         }
         if !target.is_empty() {
-            sql.push_str(" AND (e.object_id=? OR d.parent_id=? OR d.collection_id=? OR (d.seq IS NULL AND (o.parent=? OR p.parent=?)))");
-            for _ in 0..5 {
+            sql.push_str(" AND (e.object_id=? OR d.parent_id=? OR d.collection_id=? OR o.parent=? OR p.parent=? OR EXISTS(SELECT 1 FROM history_projects h WHERE h.seq=e.seq AND h.project_id=?))");
+            for _ in 0..6 {
                 args.push(target.clone().into());
             }
         }
@@ -483,6 +493,17 @@ impl Store {
                     .unwrap_or_default();
                 json!({"title":record.as_ref().map(Self::history_title).unwrap_or_else(||if action=="workspace.clear"{"Workspace content cleared".into()}else{"Earlier item".into()}),"parent_title":parent_title,"kind":action.split('.').next().unwrap_or("item"),"item_type":action.split('.').next().unwrap_or("item"),"actor_name":name,"source":"edit","changes":[],"total_fields":0,"details":"unavailable"})
             };
+            let mut project_ids = self
+                .db
+                .prepare("SELECT project_id FROM history_projects WHERE seq=? ORDER BY project_id")?
+                .query_map([seq], |r| r.get::<_, String>(0))?
+                .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+            if let Some(record) = self.history_record(target)? {
+                if let Some(project) = self.project_for_record(&record)? {
+                    project_ids.insert(project);
+                }
+            }
+            item["project_ids"] = json!(project_ids);
             item["sequence"] = json!(seq);
             item["target"] = json!(target);
             item["action"] = json!(action);

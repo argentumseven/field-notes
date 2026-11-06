@@ -140,6 +140,6 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
     }},confirmButton={Button(shape=ControlShape,enabled=!busy,onClick={busy=true;scope.launch{try{
         validateReminders(rules);val extra=prunedReminderOptions(options,rules)
         val data=if(state.cache.supportsRemindersV2()){validateReminderOptions(extra);obj("reminders" to reminderData(rules),"reminder_options" to reminderOptionsData(extra))}else obj("reminders" to reminderData(rules))
-        model.enqueue(record.kind+".update",record.id,data,record.revision,basis);close();model.sync()
+        model.enqueue(record.kind+".update",record.id,data,record.revision,basis);model.requestSync();close()
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false}}}){Text("Save reminders")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }

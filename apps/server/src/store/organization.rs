@@ -33,6 +33,11 @@ impl Store {
                 &[
                     "title",
                     "notes",
+                    "project_id",
+                    "items_are_tasks",
+                    "status",
+                    "assignee",
+                    "due",
                     "template",
                     "fields",
                     "perpetual",
@@ -110,6 +115,17 @@ impl Store {
             .any(|f| data.get(f).is_some())
         {
             return fail(400, "List options belong to lists");
+        }
+        if record.kind == "project"
+            && ["project_id", "items_are_tasks"]
+                .iter()
+                .any(|f| data.get(f).is_some())
+            || record.kind == "list"
+                && ["status", "assignee", "due"]
+                    .iter()
+                    .any(|f| data.get(f).is_some())
+        {
+            return fail(400, "These options belong to a different collection type");
         }
         Self::list_schema(data, record)?;
         Self::category(data, record)?;

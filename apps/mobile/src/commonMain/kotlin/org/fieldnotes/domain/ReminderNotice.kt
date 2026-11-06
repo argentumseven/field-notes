@@ -48,7 +48,7 @@ fun reminderNotice(cache:Cache,alerts:List<LocalAlert>,zone:TimeZone,now:Instant
         }
     }
     val title=if(targets.size==1&&row!=null)row.data.text("title").ifBlank { "Field Notes reminder" } else if(alerts.all { it.kind=="overdue" })"Overdue tasks" else "${targets.size.coerceAtLeast(1)} reminders"
-    val shown=if(targets.isEmpty())records.values.filter { it.kind=="task"&&it.data.text("status")!="done"&&reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty())&&it.data.text("due").isNotBlank()&&it.data.text("due")<Clock.System.now().toLocalDateTime(zone).date.toString() }.take(8) else occurrences.take(8)
+    val shown=if(targets.isEmpty())records.values.filter { it.kind=="task"&&it.data.text("status")!="done"&&reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty())&&allowsItemReminders(cache,it)&&it.data.text("due").isNotBlank()&&it.data.text("due")<Clock.System.now().toLocalDateTime(zone).date.toString() }.take(8) else occurrences.take(8)
     val details=shown.joinToString("\n\n") { r -> buildString {
         append(r.data.text("title"));append('\n');append(schedule(r));append("\nFor ");append(people(r))
         r.data.text("project_id").takeIf { it.isNotBlank() }?.let { id->records[id]?.data?.text("title")?.let { append("\nList / project: ");append(it) } }
