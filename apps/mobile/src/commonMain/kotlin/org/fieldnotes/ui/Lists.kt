@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -118,12 +119,14 @@ import org.fieldnotes.domain.*
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);model.requestSync();close() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text("Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
-@Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,storeChanged:(String)->Unit={}) {
+@Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,history:(()->Unit)?=null,storeChanged:(String)->Unit={}) {
     val rows=projectRecords(state.cache);val all=rows.filter { it.record.kind=="task"&&it.record.data.text("project_id")==list.id }
     val fields=listFields(list);val writable=state.cache.snapshot!!.actor.role!="viewer"
     val finished=list.flag("items_are_tasks")&&state.cache.projectGraph().project(list)?.data?.text("status")=="archived"
     var query by rememberSaveable(list.id){mutableStateOf("")};var store by rememberSaveable(list.id){mutableStateOf("*")};var sort by rememberSaveable(list.id){mutableStateOf("title")};var status by rememberSaveable(list.id){mutableStateOf("open")}
     var confirmAction by remember { mutableStateOf<String?>(null) };var changingChecked by remember { mutableStateOf(false) }
+    var filtersOpen by rememberSaveable(list.id){mutableStateOf(false)}
+    var removing by remember {mutableStateOf<Pair<Basis,Record>?>(null)}
     var checkedSelection by remember { mutableStateOf<Pair<Basis,List<Record>>?>(null) }
     LaunchedEffect(fields){if("store" !in fields){store="*";storeChanged("")};if(sort !in setOf("title","added","updated")+fields.filter{it !in setOf("notes","images","store","link_url")})sort="title"}
     val stores=all.map { storeName(it.record) }.distinct().sortedWith(compareBy { it.lowercase() })
@@ -142,18 +145,26 @@ import org.fieldnotes.domain.*
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
         if("store" in fields)ViewChoice("Store",store,listOf("*" to "All stores")+stores.map { it to it.ifBlank { "No store yet" } }){store=it;storeChanged(if(it=="*")"" else it)}
         ViewChoice("Show",status,listOf("open" to "Unchecked","all" to "All items","done" to "Checked")){status=it}
-        ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
+        SecondaryButton(onClick={filtersOpen=!filtersOpen}){Text("List options"+if(filtersOpen)" ▴" else " ▾")}
         if(writable)SecondaryButton(onClick=edit){Text("List settings")}
-        if(writable&&checked.isNotEmpty()) {
-            if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"}){Text("Reuse checked (${checked.size})")}
-            SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="clear"}){Text("Clear checked (${checked.size})")}
+    }
+    if(filtersOpen)FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+        ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
+        if(history!=null)SecondaryButton(onClick=history){Text("List history")}
+    }
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+        if(query.isNotBlank()||store!="*"||status=="done")SecondaryButton(onClick={query="";store="*";status="open";storeChanged("")}){Text("Clear filters")}
+        if(writable) {
+            if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"},enabled=checked.isNotEmpty()){Text("Reuse checked (${checked.size})")}
+            SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="clear"},enabled=checked.isNotEmpty(),dangerous=true){Text("Delete checked (${checked.size})")}
         }
     }
     Text("${sorted.size} of ${all.size} items · ${all.count { it.record.data.text("status")!="done" }} unchecked",Modifier.padding(vertical=8.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-    if(list.data["notify_additions"]==JsonPrimitive(false)||list.data["item_reminders"]==JsonPrimitive(false))Text(listOfNotNull(if(list.data["notify_additions"]==JsonPrimitive(false))"Item-addition alerts muted" else null,if(list.data["item_reminders"]==JsonPrimitive(false))"Scheduled item reminders muted" else null).joinToString(" · "),style=MaterialTheme.typography.labelSmall)
+    if(store!="*"||query.isNotBlank())Text("Cleanup applies to this search and ${store.ifBlank{"No store yet"}.takeIf{it!="*"} ?: "all stores"}, including hidden checked items.",style=MaterialTheme.typography.labelSmall)
+    if(list.data["notify_additions"]==JsonPrimitive(false)||list.data.text("template")!="groceries"&&list.data["item_reminders"]==JsonPrimitive(false))Text(listOfNotNull(if(list.data["notify_additions"]==JsonPrimitive(false))"Item-addition alerts muted" else null,if(list.data.text("template")!="groceries"&&list.data["item_reminders"]==JsonPrimitive(false))"Scheduled item reminders muted" else null).joinToString(" · "),style=MaterialTheme.typography.labelSmall)
     val groups=if("store" in fields&&store=="*")sorted.groupBy { storeName(it.record) }.toList().sortedBy { it.first.lowercase() }.toMap() else mapOf("" to sorted)
-    VisibleLazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(bottom=100.dp)) {
-        if(sorted.isEmpty())item { Text(if(all.isEmpty())"Your list is ready. Add an item to get started." else "No items match. Clear the search or choose All stores.",Modifier.padding(vertical=28.dp),color=MaterialTheme.colorScheme.onSurfaceVariant) }
+    VisibleLazyColumn(Modifier.weight(1f).testTag("checklist-items"),verticalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(bottom=100.dp)) {
+        if(sorted.isEmpty())item { Text(when{all.isEmpty()->"Your list is ready. Add an item to get started.";matching.isEmpty()->"No items match this search or store. Use Clear filters to return to the list.";status=="open"->"Everything in this view is checked. Show checked items or use Delete checked to clean up.";else->"No checked items in this view. Choose Unchecked to continue."},Modifier.padding(vertical=28.dp),color=MaterialTheme.colorScheme.onSurfaceVariant) }
         for((name,items) in groups){
             if("store" in fields&&store=="*")item("store:$name"){Row(Modifier.fillMaxWidth().padding(top=14.dp,bottom=6.dp)){Text(name.ifBlank { "No store yet" },Modifier.weight(1f),style=MaterialTheme.typography.titleSmall);Text(items.size.toString(),style=MaterialTheme.typography.labelMedium)}}
             items(items,key={it.record.id}){row->
@@ -169,6 +180,7 @@ import org.fieldnotes.domain.*
                         Text(recordHistory(state.cache,row.record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Open item ›",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
                     }
+                    if(writable)SecondaryButton(onClick={removing=state.cache.snapshot!!.basis to row.record},dangerous=true){Text("Delete")}
                     if("images" in fields)rows.firstOrNull { it.record.kind=="image"&&it.record.data.text("task_id")==row.record.id }?.let { attachment ->Box(Modifier.padding(start=8.dp).size(64.dp).clip(RoundedCornerShape(10.dp))){image(attachment)} }
                 } }
             }
@@ -177,12 +189,13 @@ import org.fieldnotes.domain.*
     if(confirmAction!=null) {
         val reuse=confirmAction=="reuse"
         val selection=checkedSelection!!
-        EditorDialog(onDismissRequest={if(!changingChecked)confirmAction=null},title={Text("${if(reuse)"Reuse" else "Clear"} ${selection.second.size} checked items?")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        EditorDialog(onDismissRequest={if(!changingChecked)confirmAction=null},title={Text("${if(reuse)"Reuse" else "Delete"} ${selection.second.size} checked item${if(selection.second.size==1)"" else "s"}?")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
             Text(if(reuse)"Uncheck the completed items matching your search and store to use the list again. Notes, quantities, stores, images and history are kept. Changed items stay for review." else "Only these checked items matching your search and store will be removed. Unchecked items and revision conflicts are kept.")
             Text(selection.second.take(5).joinToString(" · "){it.data.text("title")})
             state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-        }},confirmButton={Button(shape=ControlShape,enabled=!changingChecked,onClick={changingChecked=true;model.launch {try {if(reuse)model.reuseCheckedItems(selection.second,selection.first)else model.clearCheckedItems(selection.second,selection.first);confirmAction=null;model.sync()}finally{changingChecked=false}}}){Text(if(reuse)"Uncheck and reuse" else "Clear checked")}},dismissButton={SecondaryButton(enabled=!changingChecked,onClick={confirmAction=null}){Text("Keep items")}})
+        }},confirmButton={Button(shape=ControlShape,enabled=!changingChecked,onClick={changingChecked=true;model.launch {try {if(reuse)model.reuseCheckedItems(selection.second,selection.first)else model.clearCheckedItems(selection.second,selection.first);confirmAction=null;model.sync()}finally{changingChecked=false}}}){Text(if(reuse)"Uncheck and reuse" else "Delete checked")}},dismissButton={SecondaryButton(enabled=!changingChecked,onClick={confirmAction=null}){Text("Keep items")}})
     }
+    removing?.let{selection->RemoveItemDialog(model,selection,{removing=null},{removing=null})}
 }
 
 private val itemKeys=setOf("title","notes","quantity","store","category","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
@@ -197,11 +210,13 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
     var dataJson by rememberSaveable(id){mutableStateOf(itemEditingData(draft?.data ?: record?.data ?: JsonObject(obj("title" to "".j(),"currency" to "USD".j())+(if(state.cache.supportsPlannerV3())mapOf("store" to initialStore.j(),"category" to list.data.text("category","general").j()) else emptyMap()))).toString())}
     var revision by rememberSaveable(id){mutableStateOf(draft?.revision ?: record?.revision ?: 0)}
     var dirty by rememberSaveable(id){mutableStateOf(draft!=null)};var busy by remember { mutableStateOf(false) };var error by remember { mutableStateOf<String?>(null) };var comment by rememberSaveable(id){mutableStateOf("")}
+    var removing by remember {mutableStateOf<Pair<Basis,Record>?>(null)}
     val data=WireJson.parseToJsonElement(dataJson).jsonObject;val fields=listFields(list);val scope=rememberCoroutineScope();val writable=state.cache.snapshot!!.actor.role!="viewer"&&basis==state.cache.snapshot.basis
     fun set(field:String,value:JsonElement) { val next=JsonObject(WireJson.parseToJsonElement(dataJson).jsonObject+(field to value));dataJson=next.toString();dirty=true;if(record!=null)model.launch { model.saveDraft(id,revision,next,basis) } }
     LaunchedEffect(record?.revision,visible?.pending){if(record!=null&&!dirty){dataJson=itemEditingData(record.data).toString();revision=record.revision}}
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New item" else "List item")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text(list.data.text("title"),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+        SyncStatusLine(state)
         OutlinedTextField(data.text("title"),{set("title",it.take(240).j())},label={Text("Item name")},enabled=writable,modifier=Modifier.fillMaxWidth())
         if(state.cache.supportsPlannerV3())CategoryPicker(data.text("category","general"),writable){set("category",it.j())}
         for((field,label) in listOf("quantity" to "Quantity","store" to "Store","link_url" to "Web link","price" to "Price"))if(field in fields) {
@@ -244,5 +259,9 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         if(record==null)model.enqueue("task.create",id,JsonObject(payload+("project_id" to list.id.j())),null,basis)
         else { model.saveDraft(id,revision,payload,basis);model.submitDraft(id) }
         model.requestSync();close()
-    }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Add item" else "Save item")}},dismissButton={SecondaryButton(onClick=close){Text("Close")}})
+    }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Add item" else "Save item")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+        if(record!=null&&writable)SecondaryButton(onClick={removing=basis to record.copy(revision=revision)},enabled=!busy,dangerous=true){Text("Delete item")}
+        SecondaryButton(onClick=close,enabled=!busy){Text("Close")}
+    }})
+    removing?.let{selection->RemoveItemDialog(model,selection,{removing=null},{removing=null;close()})}
 }

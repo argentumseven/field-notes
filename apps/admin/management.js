@@ -88,14 +88,17 @@ async function resetUserPassword(user) {
 }
 
 async function renderAdmin() {
-  const root = $(".admin-grid");
-  if (!root) return;
+  const previousRoot = $(".admin-grid");
+  if (!previousRoot) return;
   const data = await api("/admin");
   state.users = data.users;
   const directory = await api("/people");
   state.people = directory.people;
   state.directoryRevision = directory.revision;
-  root.replaceChildren();
+  if (!previousRoot.isConnected) return;
+  // Build off-screen, including async APK metadata, so polling never collapses
+  // the visible management page while the response is being assembled.
+  const root = el("div", "admin-grid");
   const people = el("section", "panel"),
     ph = el("div", "admin-title");
   ph.append(
@@ -590,4 +593,6 @@ async function renderAdmin() {
     audit.append(row);
   }
   root.append(audit);
+  if (previousRoot.isConnected)
+    preserveViewport(() => previousRoot.replaceWith(root));
 }

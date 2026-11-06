@@ -51,6 +51,12 @@ class NativeStackTest {
             assertTrue(withTimeout(3000){blocked.await()}.isFailure)
             val canceled=withTimeout(3000){queued.await()}.exceptionOrNull()
             assertTrue(canceled is IllegalStateException && canceled.message=="Private connection stopped", "An exchange queued before Stop must fail its generation check without sending")
+            // A default-network handoff reopens the same userspace tunnel;
+            // it must not need a fresh identity or server login/pairing.
+            native.configure(JsonObject(config+("private_key" to keys.getValue("private_key"))))
+            val reconnected=native.exchange("/api/snapshot",token,serverKey=peer)
+            assertEquals(200,reconnected.status)
+            assertTrue(WireJson.parseToJsonElement(reconnected.body).jsonObject.getValue("records").jsonArray.any{it.jsonObject.text("id")==task})
         } finally {native.stop()}
     }
 }

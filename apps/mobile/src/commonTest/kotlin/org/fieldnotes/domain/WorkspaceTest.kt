@@ -67,6 +67,58 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun visibleAppChecksContinuouslyEvenWithLegacyAutoRefreshDisabled()=runTest {
+        val vault=MemoryVault(initial().copy(preferences=Preferences(autoRefresh=false,liveUpdates=false)))
+        val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        val follow=backgroundScope.launch{workspace.followForegroundUpdates()};runCurrent()
+        val initialHeads=transport.requests.count{it=="/api/head"}
+        transport.snapshot=transport.snapshot.copy(sequence=2,records=listOf(task.copy(revision=2,data=JsonObject(task.data+("notes" to "Added from the web at the store".j())))))
+        advanceTimeBy(FOREGROUND_REFRESH_MILLIS-1);runCurrent();assertEquals(initialHeads,transport.requests.count{it=="/api/head"})
+        advanceTimeBy(1);runCurrent();assertEquals("Added from the web at the store",vault.value.snapshot!!.records.single().data.text("notes"))
+        assertFalse(workspace.state.value.refreshPending)
+        transport.networkFailure=true;advanceTimeBy(FOREGROUND_REFRESH_MILLIS);runCurrent();assertFalse(workspace.state.value.online)
+        transport.networkFailure=false;advanceTimeBy(FOREGROUND_REFRESH_MILLIS);runCurrent();assertTrue(workspace.state.value.online)
+        follow.cancel();val stopped=transport.requests.size;advanceTimeBy(30_000);runCurrent();assertEquals(stopped,transport.requests.size)
+    }
+    @Test fun visibleRefreshWaitsForAnOverlappingRequestAndDownloadsBeforeReportingCurrent()=runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        val held=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>();var first=true
+        transport.beforeExchange={path->if(path=="/api/head"&&first){first=false;held.complete(Unit);release.await()}}
+        workspace.launch{workspace.poll()};runCurrent();assertTrue(held.isCompleted)
+        transport.snapshot=transport.snapshot.copy(sequence=2,records=listOf(task.copy(revision=2,data=JsonObject(task.data+("notes" to "New groceries".j())))))
+        val refresh=backgroundScope.launch{workspace.refreshWhileVisible()};runCurrent();assertTrue(refresh.isActive)
+        release.complete(Unit);runCurrent();assertEquals("New groceries",workspace.state.value.cache.snapshot!!.records.single().data.text("notes"));assertFalse(workspace.state.value.refreshPending)
+    }
+    @Test fun networkHandoffReopensOnlyTheTransportAndKeepsIdentityAndQueuedCommands()=runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        val keys=vault.value.keys;val binding=vault.value.config
+        workspace.enqueue("task.update",task.id,obj("notes" to "Keep this during handoff".j()),1)
+        val pending=vault.value.outbox;transport.networkFailure=true;workspace.networkChanged()
+        assertEquals(pending,vault.value.outbox);assertEquals(keys,vault.value.keys);assertEquals(binding,vault.value.config);assertTrue(transport.stopped)
+        transport.networkFailure=false;workspace.networkChanged();assertTrue(vault.value.outbox.isEmpty());assertTrue(transport.configurations>=3)
+        assertEquals(keys,vault.value.keys);assertEquals(binding,vault.value.config)
+        workspace.pauseConnection();val requests=transport.requests.size;workspace.networkChanged();assertEquals(requests,transport.requests.size);assertTrue(workspace.state.value.connectionPaused)
+    }
+    @Test fun networkHandoffCanDeferAllTrafficUntilTheAppReturnsToTheForeground()=runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
+        val requests=transport.requests.size;workspace.networkChanged(refresh=false)
+        assertEquals(requests,transport.requests.size);assertTrue(transport.stopped)
+        workspace.refreshWhileVisible();assertTrue(transport.requests.size>requests);assertTrue(workspace.state.value.online)
+    }
+    @Test fun removingAnUncheckedListItemIsDurableAndDoesNotLeaveItsEditorDraftBehind()=runTest {
+        val list=Record("list","list",1,obj("title" to "Food".j(),"template" to "groceries".j()))
+        val item=task.copy(data=JsonObject(task.data+("project_id" to list.id.j())))
+        val image=Record("image","image",1,obj("task_id" to item.id.j()))
+        val vault=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(list,item,image))))
+        val workspace=model(vault,FakeTransport(vault.value.snapshot!!),backgroundScope);workspace.initialize();workspace.saveDraft(item.id,1,obj("title" to "Unsent spelling correction".j()))
+        vault.failing=true;assertFails{workspace.removeTask(item,vault.value.snapshot!!.basis)};assertTrue(workspace.state.value.cache.drafts.containsKey(item.id));assertTrue(workspace.state.value.cache.outbox.isEmpty())
+        vault.failing=false;workspace.enqueue("task.update",item.id,obj("quantity" to "4".j()),1)
+        workspace.removeTask(item,vault.value.snapshot!!.basis)
+        assertEquals(listOf("task.update","task.delete"),vault.value.outbox.map{it.command.action});assertEquals(vault.value.outbox.first().command.operation_id,vault.value.outbox.last().dependsOn)
+        assertFalse(vault.value.drafts.containsKey(item.id));assertEquals(listOf(list.id),projectRecords(vault.value).map{it.record.id})
+        val reopened=model(vault,FakeTransport(vault.value.snapshot!!),backgroundScope);reopened.initialize();assertEquals(vault.value.outbox,reopened.state.value.cache.outbox)
+        assertFails{reopened.removeTask(item,Basis("old-workspace",1))}
+    }
     @Test fun savedEditSyncWaitsForAnOverlappingPollInsteadOfDroppingTheRequest()=runTest {
         val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()
         val started=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>();var first=true

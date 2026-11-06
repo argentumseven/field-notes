@@ -365,6 +365,7 @@ function renderCalendar(root) {
   frame.append(scroll);
   root.append(frame);
   const key = view + ":" + days[0];
+  scroll.dataset.scrollKey = "calendar:" + key;
   state.calendarScroll ??= {};
   scroll.scrollTop = state.calendarScroll[key] ?? 7 * 56;
   scroll.onscroll = () => {

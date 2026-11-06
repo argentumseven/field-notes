@@ -23,6 +23,8 @@ const state = {
   query: "",
   page: "calendar",
   autoRefresh: readSetting("field-notes-auto-refresh") !== "off",
+  refreshPending: false,
+  lastCheckedAt: 0,
   month: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   day: FieldPlanning.localDay(),
   selected: null,
@@ -168,20 +170,36 @@ async function refresh(expectedActor) {
   state.people = directory.people;
   state.directoryRevision = directory.revision;
   state.actor = state.snapshot.actor;
+  state.refreshPending = false;
+  state.lastCheckedAt = Date.now();
   updateSync();
 }
 function updateSync() {
   const n = $("#sync");
   if (n) {
-    n.className = "sync" + (state.online ? "" : " offline");
+    const delayed =
+      !state.lastCheckedAt || Date.now() - state.lastCheckedAt > 20000;
+    n.className =
+      "sync" +
+      (!state.online || state.refreshPending || !state.autoRefresh || delayed
+        ? " offline"
+        : "");
     n.replaceChildren(
       el("span", "sync-dot"),
       el(
         "span",
         "",
-        state.online
-          ? "Connected to your server"
-          : "Offline · drafts kept in this tab",
+        !state.online
+          ? "Offline · drafts kept in this tab"
+          : !state.autoRefresh
+            ? "Automatic refresh paused"
+            : state.refreshPending
+              ? "New changes waiting · finish editing to refresh"
+              : delayed
+                ? "Updates delayed · checking connection"
+                : state.drafts.size
+                  ? "Unsent edits in this tab · server checked"
+                  : "Up to date · checked just now",
       ),
     );
   }
@@ -363,7 +381,47 @@ function visibleTasks() {
           .includes(state.query.toLowerCase()),
     );
 }
+// Replacing a tall subtree briefly clamps the document's scroll position. Keep
+// the viewport through a synchronous redraw, after its full height is restored.
+function preserveViewport(draw) {
+  const left = window.scrollX,
+    top = window.scrollY;
+  const areas = [...document.querySelectorAll("[data-scroll-key]")].map(
+    (n) => ({
+      key: n.dataset.scrollKey,
+      left: n.scrollLeft,
+      top: n.scrollTop,
+    }),
+  );
+  try {
+    return draw();
+  } finally {
+    for (const area of areas) {
+      const node = [...document.querySelectorAll("[data-scroll-key]")].find(
+        (n) => n.dataset.scrollKey === area.key,
+      );
+      node?.scrollTo({ left: area.left, top: area.top, behavior: "instant" });
+    }
+    window.scrollTo({ left, top, behavior: "instant" });
+  }
+}
 function render() {
+  const viewKey = JSON.stringify([
+    state.actor?.user_id,
+    state.page,
+    state.project,
+    state.view,
+  ]);
+  const sameView = $(".shell")?.dataset.viewKey === viewKey;
+  if (sameView && state.page === "admin") {
+    updateSync();
+    void renderAdmin().catch((e) => notice(e.message));
+    return;
+  }
+  const draw = () => renderWorkspace(viewKey);
+  return sameView ? preserveViewport(draw) : draw();
+}
+function renderWorkspace(viewKey) {
   FieldRecovery.changed();
   if (state.actor && state.page === "history" && FieldHistory.isOpen()) {
     updateSync();
@@ -389,6 +447,8 @@ function render() {
   const shell = el("div", "shell"),
     side = el("aside", "sidebar"),
     main = el("main");
+  shell.dataset.viewKey = viewKey;
+  side.dataset.scrollKey = "sidebar";
   side.append(brand());
   const workspaceNav = el("div", "sidebar-scroll");
   side.append(workspaceNav);
@@ -776,6 +836,9 @@ function render() {
   if (state.selected) renderDetail();
 }
 function renderTasks() {
+  return preserveViewport(drawTasks);
+}
+function drawTasks() {
   const root = $("#task-view");
   if (!root) return;
   root.replaceChildren();
@@ -1060,11 +1123,19 @@ function taskCard(t) {
     );
   return b;
 }
-async function mutate(action, target, data, revision) {
+async function sendCommand(command) {
+  try {
+    return await api("/commands", command);
+  } catch (e) {
+    if (e.status) throw e;
+    return api("/commands", command);
+  }
+}
+async function mutate(action, target, data, revision, basis = null) {
   const c = {
     operation_id: uuid(),
-    epoch: state.snapshot.epoch,
-    generation: state.snapshot.generation,
+    epoch: basis?.epoch ?? state.snapshot.epoch,
+    generation: basis?.generation ?? state.snapshot.generation,
     action,
     target,
     expected_revision: revision,
@@ -1079,12 +1150,7 @@ async function mutate(action, target, data, revision) {
   for (const [n] of controls) n.disabled = true;
   let result;
   try {
-    try {
-      result = await api("/commands", c);
-    } catch (e) {
-      if (e.status) throw e;
-      result = await api("/commands", c);
-    }
+    result = await sendCommand(c);
     await refresh();
     render();
     return result;
@@ -1104,7 +1170,9 @@ function closeDetail() {
   for (const u of state.images) URL.revokeObjectURL(u);
   state.images = [];
   if (previous)
-    document.querySelector('[data-task-id="' + previous + '"]')?.focus();
+    document
+      .querySelector('[data-task-id="' + previous + '"]')
+      ?.focus({ preventScroll: true });
 }
 function renderDetail() {
   $(".detail")?.remove();
@@ -1121,6 +1189,7 @@ function renderDetail() {
   const backdrop = el("div", "detail-backdrop");
   backdrop.addEventListener("click", closeDetail);
   const detail = el("aside", "detail");
+  detail.dataset.scrollKey = "task-detail:" + task.id;
   detail.setAttribute("aria-label", "Task details");
   detail.setAttribute("role", "dialog");
   detail.setAttribute("aria-modal", "true");
@@ -1626,7 +1695,7 @@ function renderDetail() {
     detail.append(form);
   }
   document.body.append(backdrop, detail);
-  detail.focus();
+  detail.focus({ preventScroll: true });
 }
 async function formDialog(
   title,
@@ -1776,8 +1845,8 @@ window.addEventListener("beforeunload", (e) => {
     e.returnValue = "";
   }
 });
-setInterval(async () => {
-  if (!state.actor || state.loading || $("#dialog").open) return;
+async function pollLiveChanges() {
+  if (!state.actor || state.loading || document.hidden) return;
   state.loading = true;
   try {
     if (state.page === "admin") {
@@ -1792,6 +1861,7 @@ setInterval(async () => {
     updateCalendarClock();
     if (!state.autoRefresh) return;
     const head = await api("/head");
+    state.lastCheckedAt = Date.now();
     if (
       head.epoch !== state.snapshot.epoch ||
       head.generation !== state.snapshot.generation ||
@@ -1799,16 +1869,31 @@ setInterval(async () => {
       head.history_revision !== state.snapshot.history_revision ||
       head.directory_revision !== state.directoryRevision
     ) {
+      state.refreshPending = true;
       const focused = document.activeElement;
       const typing =
         focused && ["INPUT", "TEXTAREA", "SELECT"].includes(focused.tagName);
-      if (typing) {
+      const listSearch = focused?.dataset.liveRefresh === "list-search";
+      if ($("#dialog").open || (typing && !listSearch)) {
         updateSync();
         return;
       }
+      const caret = listSearch
+        ? [focused.selectionStart, focused.selectionEnd]
+        : null;
       await refresh();
       render();
+      if (caret) {
+        const next = document.querySelector(
+          '[data-live-refresh="list-search"]',
+        );
+        if (next) {
+          next.focus({ preventScroll: true });
+          next.setSelectionRange(caret[0], caret[1]);
+        }
+      }
     } else {
+      state.refreshPending = false;
       updateSync();
       const minute = Math.floor(Date.now() / 60000);
       if (
@@ -1827,7 +1912,14 @@ setInterval(async () => {
   } finally {
     state.loading = false;
   }
-}, 8000);
+}
+setInterval(pollLiveChanges, 3000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void pollLiveChanges();
+});
+window.addEventListener("focus", () => {
+  void pollLiveChanges();
+});
 (async () => {
   try {
     const s = await api("/session");

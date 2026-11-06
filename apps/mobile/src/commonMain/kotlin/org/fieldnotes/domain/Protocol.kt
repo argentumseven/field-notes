@@ -38,7 +38,7 @@ val Snapshot.basis get() = Basis(epoch, generation)
     val recoveryPending:RecoveryIntent? = null,
     val recoveryNotice:String = "",
 )
-data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0)
+data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0,val refreshPending:Boolean=false)
 data class Reply(val status: Int, val body: String = "", val binary: String? = null)
 interface Transport {
     suspend fun keys(): JsonObject

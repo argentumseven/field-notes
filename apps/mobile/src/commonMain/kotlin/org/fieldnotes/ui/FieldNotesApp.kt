@@ -214,7 +214,7 @@ import org.fieldnotes.domain.*
         DrawerGroup("Task views",listOf("Inbox","My tasks","Assignments","Unassigned","Unscheduled","Waiting","Completed"),page,initiallyOpen=false,navigate={navigate(it)})
 
     } }}) { Scaffold(topBar = { TopAppBar(title = { Brand() }, navigationIcon={OutlinedIconButton(shape=ControlShape,onClick={uiScope.launch { drawer.open() }}){Icon(Icons.Outlined.Menu,"Browse workspace")}},actions = {
-        OutlinedIconButton(shape=ControlShape,onClick = { model.launch { model.sync() } }, enabled = !state.syncing) { Icon(Icons.Outlined.Refresh, "Sync now") }
+        OutlinedIconButton(shape=ControlShape,onClick = { model.requestSync() }, enabled = !state.syncing) { Icon(Icons.Outlined.Refresh, "Sync now") }
         Box { OutlinedIconButton(shape=ControlShape,onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Workspace menu") }; DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text("Retained changes (${state.cache.conflicts.size + state.cache.drafts.size})") }, onClick = { menu = false; changes = true })
             DropdownMenuItem(text = { Text("Settings & widgets") }, onClick = { menu = false; settings = true })
@@ -232,7 +232,7 @@ import org.fieldnotes.domain.*
     } }, floatingActionButton = { if (writable&&page!="History"&&!workClosed) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(horizontal = 18.dp)) {
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-            Text(when { state.connectionPaused -> "Connection paused · cached work and reminders remain available"; state.syncing -> "Synchronizing…"; state.online -> "Synced · ${state.cache.outbox.size} queued"; else -> "Offline · ${state.cache.outbox.size} queued · starts provisional" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SyncStatusLine(state)
             if(!state.cache.preferences.visibilityChoiceSeen&&(!state.cache.preferences.notificationTitles||!state.cache.preferences.widgetTitles))OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 Text("Make your schedule visible at a glance",style=MaterialTheme.typography.titleSmall)
                 Text("Show full reminder and widget details while unlocked. Lock-screen visibility and the optional app lock remain separate.",style=MaterialTheme.typography.bodySmall)
@@ -266,7 +266,7 @@ import org.fieldnotes.domain.*
             else if(projects.any { it.record.id==project&&it.record.kind=="list" }) {
                 val list=projects.first { it.record.id==project }.record
                 SecondaryButton(onClick={if(list.data.text("project_id").isNotBlank())navigate("Tasks",list.data.text("project_id")) else navigate("Lists")}){Text(if(list.data.text("project_id").isNotBlank())"‹ "+(state.cache.projectGraph().project(list)?.data?.text("title") ?: "Project") else "‹ All lists")}
-                Checklist(model,state,list,device,image,{selected=it},{editingContainer=list},{activeStore=it})
+                Checklist(model,state,list,device,image,{selected=it},{editingContainer=list},history=if(state.cache.supportsHistory())({historyTarget=list.id;historyTitle=list.data.text("title");page="History"})else null,storeChanged={activeStore=it})
             }
             else {
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -338,7 +338,7 @@ import org.fieldnotes.domain.*
             Text("Appearance",style=MaterialTheme.typography.titleMedium)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(theme in listOf("system","light","dark"))FilterChip(state.cache.preferences.theme==theme,{model.launch { model.preferences(state.cache.preferences.copy(theme=theme)) }},{Text(theme.replaceFirstChar { it.uppercase() })})}
             SettingSwitch("Shared additions","Name the person and item when someone adds a task, note, event or list item. Bulk additions use one expandable alert; list settings can mute its item alerts.",state.cache.preferences.sharedAdditions){val p=state.cache.preferences.copy(sharedAdditions=it);model.launch{model.preferences(p)}}
-            SettingSwitch("Auto-refresh while open","Check for household changes without pressing refresh.",state.cache.preferences.autoRefresh){val p=state.cache.preferences.copy(autoRefresh=it);model.launch{model.preferences(p)}}
+            Text("Live refresh while open · checks every 3 seconds. Returning to the app checks immediately. Pause the connection to work offline.",style=MaterialTheme.typography.bodySmall)
             Text("Visibility and app lock",style=MaterialTheme.typography.titleMedium)
             Text("App locking, notification details and home-screen details are independent.",style=MaterialTheme.typography.bodySmall)
             SettingSwitch("Require a credential to open the app","Optional device-credential check. Reminders and widgets keep their own visibility choices.",state.cache.preferences.appLock){val p=state.cache.preferences.copy(appLock=it);model.launch{model.preferences(p)}}
@@ -399,7 +399,7 @@ import org.fieldnotes.domain.*
     var saving by remember { mutableStateOf(false) }
     var dirty by remember(task.id) { mutableStateOf(draft != null) }
     var comment by rememberSaveable(task.id) { mutableStateOf("") }
-    var delete by remember { mutableStateOf(false) }
+    var delete by remember { mutableStateOf<Pair<Basis,Record>?>(null) }
     val writable = state.cache.snapshot!!.actor.role != "viewer"
     val workProject=state.cache.projectGraph().workProject(task)
     val heldProject=workProject?.data?.text("status","active")?.let{it!="active"} ?: false
@@ -417,6 +417,7 @@ import org.fieldnotes.domain.*
     Scaffold(topBar = { TopAppBar(title = { Text(if (visible.pending) "Pending confirmation" else "Task details") }, navigationIcon = { OutlinedIconButton(shape=ControlShape,onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } }) }) { padding ->
         VisibleLazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.error?.let { message->item { ErrorText(message) } }
+            item {SyncStatusLine(state)}
             if (staleWorkspace) item { ErrorText("The server was reset or restored. Reopen this task before making new changes; your old drafts are retained.") }
             item { Text(recordHistory(state.cache,task,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant);if(supportsReminderEditor(state.cache,task))SecondaryButton(onClick={reminderDialog=true}){Text("Reminders & sound")} }
             item { OutlinedTextField(title, { if (it.length <= 240) { title = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Task title") }, enabled = writable && !saving && !staleWorkspace) }
@@ -456,7 +457,7 @@ import org.fieldnotes.domain.*
                 if (status == "todo" && !task.flag("blocked") && (task.data.text("assignee").isBlank() || task.data.text("assignee")==state.cache.snapshot.actor.user_id)) SecondaryButton(onClick = { model.enqueueAsync("task.start", task.id, obj(), task.revision, basis) },enabled=!heldProject) { Text("Start task") }
                 if (status == "in_progress") SecondaryButton(onClick = { model.enqueueAsync("task.release", task.id, obj(), task.revision, basis) }) { Text("Release") }
                 SecondaryButton(onClick = { model.enqueueAsync(if (status == "done") "task.reopen" else "task.complete", task.id, obj(), task.revision, basis) },enabled=status!="done"||!finishedProject) { Text(if (status == "done") "Reopen" else "Complete") }
-                SecondaryButton(onClick = { delete = true },dangerous=true) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                SecondaryButton(onClick = { delete = basis to task.copy(revision=revision) },dangerous=true) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             } }
             item { HorizontalDivider(); Text("Images", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 14.dp)) }
             val images = projectRecords(state.cache).filter { it.record.kind == "image" && it.record.data.text("task_id") == task.id }
@@ -475,9 +476,7 @@ import org.fieldnotes.domain.*
             item { Spacer(Modifier.height(25.dp)) }
         }
     }
-    if (delete) ConfirmDialog("Delete this task?", "Comments and images will also be removed from active data. Existing backups are unchanged.", "DELETE", { delete = false }) {
-        model.enqueueAsync("task.delete", task.id, obj(), task.revision, basis); delete = false; back()
-    }
+    delete?.let{selection->RemoveItemDialog(model,selection,{delete=null},{delete=null;back()})}
     if(reminderDialog)TaskReminderDialog(model,state,task,device){reminderDialog=false}
 }
 

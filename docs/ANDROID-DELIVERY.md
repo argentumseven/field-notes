@@ -5,6 +5,10 @@ service, device administration, root, or a system CA installation. Background
 mode uses the same app-contained WireGuard connection and restricted notes API
 as foreground sync. The LAN management website is never exposed through it.
 
+While the app is open, 0.9.1 checks immediately and every three seconds, with
+freshness/queue status and default-network reconnection. That foreground loop is
+separate from the background service below. See [Live updates](LIVE-UPDATES.md).
+
 ## Enable delivery once in the profile containing Field Notes
 
 1. Enroll and activate the phone on home Wi-Fi. **Live background updates**, cached

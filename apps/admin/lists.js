@@ -355,6 +355,9 @@ function renderCollections(root) {
   ]);
   root.append(filters, library);
   function draw() {
+    return preserveViewport(drawItems);
+  }
+  function drawItems() {
     library.replaceChildren();
     const group = containers()
       .filter(
@@ -474,6 +477,7 @@ function renderChecklist(root, list) {
     filters = el("div", "view-filters"),
     results = el("section", "checklist-items");
   const search = input("Search this list", view.query, "search");
+  search.node.dataset.liveRefresh = "list-search";
   search.node.placeholder = "Search titles, notes, stores and links";
   filters.append(addField(el("div"), search).parentElement);
   const choose = (label, options, value, changed) => {
@@ -520,7 +524,14 @@ function renderChecklist(root, list) {
       .map((f) => [f, listFieldLabels[f]]),
   ];
   choose("Sort by", sorts, view.sort, (value) => (view.sort = value));
-  const clear = button("Clear checked", () => changeChecked(false));
+  const reset = button("Clear filters", () => {
+    view.query = "";
+    view.store = "";
+    view.status = "all";
+    render();
+  });
+  filters.append(reset);
+  const clear = button("Delete checked", () => changeChecked(false), "danger");
   const reuse = button("Reuse checked", () => changeChecked(true));
   clear.disabled = true;
   if (mayWrite())
@@ -535,6 +546,15 @@ function renderChecklist(root, list) {
       clear,
       ...(list.data.perpetual !== false ? [reuse] : []),
     );
+  toolbar.append(
+    button("List history", () => {
+      state.historyTarget = list.id;
+      state.historyTitle = list.data.title;
+      state.page = "history";
+      state.selected = null;
+      render();
+    }),
+  );
   const project = FieldProjects.graph().project(list),
     finished =
       !!list.data.items_are_tasks && project?.data.status === "archived";
@@ -556,7 +576,7 @@ function renderChecklist(root, list) {
   root.append(typeBadges(list), toolbar, filters);
   if (
     list.data.notify_additions === false ||
-    list.data.item_reminders === false
+    (list.data.template !== "groceries" && list.data.item_reminders === false)
   )
     root.append(
       el(
@@ -566,6 +586,7 @@ function renderChecklist(root, list) {
           list.data.notify_additions === false
             ? "Item-addition alerts muted"
             : "",
+          list.data.template !== "groceries" &&
           list.data.item_reminders === false
             ? "Scheduled item reminders muted"
             : "",
@@ -575,7 +596,8 @@ function renderChecklist(root, list) {
       ),
     );
   root.append(results);
-  let visible = [];
+  let visible = [],
+    matched = [];
   const matching = (item) => {
     const d = item.data;
     return (
@@ -587,9 +609,7 @@ function renderChecklist(root, list) {
           .filter(Boolean)
           .join(" ")
           .toLocaleLowerCase()
-          .includes(view.query.toLocaleLowerCase())) &&
-      (view.status === "all" ||
-        (d.status === "done") === (view.status === "done"))
+          .includes(view.query.toLocaleLowerCase()))
     );
   };
   const compare = (a, b) => {
@@ -619,9 +639,18 @@ function renderChecklist(root, list) {
     return order || d.title.localeCompare(e.title) || a.id.localeCompare(b.id);
   };
   function draw() {
+    return preserveViewport(drawItems);
+  }
+  function drawItems() {
+    reset.disabled = !view.query && !view.store && view.status === "all";
     results.replaceChildren();
-    visible = all
-      .filter(matching)
+    matched = all.filter(matching);
+    visible = matched
+      .filter(
+        (item) =>
+          view.status === "all" ||
+          (item.data.status === "done") === (view.status === "done"),
+      )
       .sort((a, b) =>
         fields.includes("store") && !view.store
           ? String(a.data.store || "~").localeCompare(
@@ -629,11 +658,13 @@ function renderChecklist(root, list) {
             ) || compare(a, b)
           : compare(a, b),
       );
-    const checked = visible.filter((t) => t.data.status === "done");
-    clear.textContent = `Clear checked (${checked.length})`;
+    const checked = matched.filter((t) => t.data.status === "done");
+    clear.textContent = `Delete checked (${checked.length})`;
     clear.disabled = !checked.length;
     reuse.textContent = `Reuse checked (${checked.length})`;
     reuse.disabled = finished || !checked.length;
+    clear.title =
+      "Delete checked items matching this search and store, including hidden checked rows.";
     results.append(
       el(
         "p",
@@ -709,6 +740,16 @@ function renderChecklist(root, list) {
         if (fields.includes("notes") && d.notes)
           detail.append(el("span", "muted", d.notes));
         detail.append(historyNode(item));
+        const actions = el("div", "checklist-actions");
+        if (mayWrite()) {
+          const remove = button(
+            "Delete",
+            () => deleteListItem(list, item),
+            "danger",
+          );
+          remove.setAttribute("aria-label", "Delete item: " + d.title);
+          actions.append(remove);
+        }
         row.append(check, detail);
         if (fields.includes("images")) {
           const image = records("image").find(
@@ -719,9 +760,10 @@ function renderChecklist(root, list) {
             picture.alt = "Attached preview for " + d.title;
             picture.loading = "lazy";
             picture.src = "/api/images/" + encodeURIComponent(image.id);
-            row.append(picture);
+            actions.append(picture);
           }
         }
+        if (actions.childNodes.length) row.append(actions);
         section.append(row);
       }
       results.append(section);
@@ -731,25 +773,39 @@ function renderChecklist(root, list) {
         el(
           "p",
           "empty",
-          all.length
-            ? "No items match these filters. Clear the search or choose All stores."
-            : "Your list is ready. Add an item to get started.",
+          !all.length
+            ? "Your list is ready. Add an item to get started."
+            : !matched.length
+              ? "No items match this search or store. Use Clear filters to return to the list."
+              : view.status === "open"
+                ? "Everything in this view is checked. Show checked items or use Delete checked to clean up."
+                : "No checked items in this view. Choose Unchecked to continue.",
         ),
       );
   }
   async function changeChecked(reusing) {
-    const checked = visible.filter((t) => t.data.status === "done");
+    const checked = matched.filter((t) => t.data.status === "done");
     if (!checked.length) return;
     const basis = {
       epoch: state.snapshot.epoch,
       generation: state.snapshot.generation,
     };
+    const preview =
+      checked
+        .slice(0, 5)
+        .map((item) => item.data.title)
+        .join(", ") +
+      (checked.length > 5 ? ` and ${checked.length - 5} more` : "");
     await confirmDialog(
-      (reusing ? "Reuse " : "Clear ") + checked.length + " checked items?",
-      reusing
+      (reusing ? "Reuse " : "Delete ") +
+        checked.length +
+        ` checked item${checked.length === 1 ? "" : "s"}?`,
+      (reusing
         ? "Uncheck the completed items matching this view to use the list again. Their notes, quantities, stores, images and history are kept. Changed items stay for review."
-        : "Only the checked items matching this list view will be removed. Unchecked or changed items stay in place.",
-      reusing ? "Uncheck and reuse" : "Clear checked",
+        : "Delete the checked items matching this search and store, including hidden checked rows. Unchecked or changed items stay in place. Saved versions remain available in History while retained.") +
+        " Items: " +
+        preview,
+      reusing ? "Uncheck and reuse" : "Delete checked",
     );
     let cleared = 0;
     const failures = [];
@@ -757,7 +813,7 @@ function renderChecklist(root, list) {
     try {
       for (const item of checked) {
         try {
-          await api("/commands", {
+          await sendCommand({
             operation_id: uuid(),
             ...basis,
             action: reusing ? "task.reopen" : "task.delete",
@@ -777,9 +833,11 @@ function renderChecklist(root, list) {
       }
       notice(
         cleared +
-          (reusing ? " unchecked for reuse" : " cleared") +
+          (reusing ? " unchecked for reuse" : " deleted") +
           (failures.length
-            ? " · " + failures.length + " changed items kept for review."
+            ? " · " +
+              failures.length +
+              ` item${failures.length === 1 ? " needs" : "s need"} review. Refresh before trying again.`
             : ""),
       );
     } finally {
@@ -787,6 +845,22 @@ function renderChecklist(root, list) {
     }
   }
   draw();
+}
+async function deleteListItem(list, item) {
+  const basis = {
+    epoch: state.snapshot.epoch,
+    generation: state.snapshot.generation,
+  };
+  await confirmDialog(
+    "Delete " + item.data.title + "?",
+    "Removes this item, its comments and attached images from active content. Other items stay as they are. Saved versions can be restored from History while retained.",
+    "Delete item",
+  );
+  await mutate("task.delete", item.id, {}, item.revision, basis);
+  notice(
+    item.data.title +
+      " deleted. Retained versions are available in List history.",
+  );
 }
 async function editListItem(list, record, initialStore = "") {
   const d = record?.data || {
@@ -882,6 +956,17 @@ async function editListItem(list, record, initialStore = "") {
     record ? "Save item" : "Add item",
     () => {
       const body = $("#dialog-body");
+      if (record && mayWrite())
+        body.append(
+          button(
+            "Delete item…",
+            () => {
+              state.dismissDialog?.();
+              return deleteListItem(list, record);
+            },
+            "danger",
+          ),
+        );
       if (mayWrite() && list.data.template !== "groceries")
         FieldReminders.controls(
           body,

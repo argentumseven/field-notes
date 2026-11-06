@@ -200,7 +200,7 @@ test("household aliases stay intact and rolling-list reuse preserves changed ite
       .getByRole("button", { name: "Uncheck and reuse", exact: true })
       .click();
     await page
-      .getByText("1 changed items kept for review.", { exact: false })
+      .getByText("1 item needs review.", { exact: false })
       .waitFor();
     let snapshot = (await s.f.request("/api/snapshot", { token: s.token }))
       .data;

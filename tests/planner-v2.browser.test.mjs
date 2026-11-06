@@ -325,10 +325,10 @@ test("typed rolling lists use attached previews only, show authorship and clear 
       .getByRole("checkbox", { name: "Check Reading lamp", exact: true })
       .check();
     await page
-      .getByRole("button", { name: "Clear checked (1)", exact: true })
+      .getByRole("button", { name: "Delete checked (1)", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "Clear checked", exact: true })
+      .getByRole("button", { name: "Delete checked", exact: true })
       .click();
     await page
       .getByText("Reading lamp", { exact: true })

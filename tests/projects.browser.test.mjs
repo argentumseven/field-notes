@@ -287,7 +287,9 @@ test("grocery items have no reminder or recipient editor while list addition ale
         exact: true,
       })
       .click();
-    await page.getByRole("button", { name: /Bananas/, exact: false }).click();
+    await page
+      .getByRole("button", { name: "Open item: Bananas", exact: true })
+      .click();
     assert.equal(await page.locator("#dialog .reminder-editor").count(), 0);
     assert.equal(
       await page.getByLabel("Who receives reminders", { exact: true }).count(),

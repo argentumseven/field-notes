@@ -268,6 +268,9 @@ const FieldHistory = (() => {
     v.timer = setTimeout(() => load(v), 300);
   }
   function rows(v) {
+    return preserveViewport(() => drawRows(v));
+  }
+  function drawRows(v) {
     v.renderedSequence = state.snapshot?.sequence;
     v.timeline.replaceChildren();
     let day = "";

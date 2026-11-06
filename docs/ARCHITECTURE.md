@@ -1,5 +1,22 @@
 # Architecture
 
+Foreground freshness and list removal (0.9.1): `ForegroundSync.kt` owns a
+three-second head check inside Android's resumed lifecycle, with an immediate
+check on return. It waits for overlapping connection work and honors durable
+Pause independently of older Auto refresh preferences. `DefaultNetworkMonitor`
+invalidates/reopens the userspace transport with the existing identity; no OS
+routes or VPN slot are changed. With all background modes off, a background
+network change invalidates it without traffic. Freshness/pending timestamps are
+ephemeral; head polling does not rewrite the encrypted cache or regenerate widgets.
+
+Individual removal uses the existing revision-checked `task.delete` command.
+The phone commits its outbox entry and draft removal together before closing the
+editor; workspace-owned sync survives editor cancellation. Web retries preserve
+the same operation ID. Both retain the confirmation's expected item revision and
+workspace, so concurrent amendments need review. Web redraws preserve viewport
+and keyed nested scroll positions; asynchronous management renders are assembled
+before replacing visible content.
+
 Field Notes is one household workspace: a Rust server on Linux, a bundled LAN
 web interface, and a Kotlin Multiplatform Android client. The server can decrypt
 content. iOS and native desktop packaging are deferred; Linux and Windows use

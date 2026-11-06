@@ -160,8 +160,8 @@ class MainActivity : ComponentActivity() {
             try { withContext(Dispatchers.IO){CatchUpWorker.schedule(this@MainActivity, app.model.state.value.cache.preferences)} }
             catch(e:kotlinx.coroutines.CancellationException){throw e}
             catch(_:Exception){app.deliveryError.value="Background scheduling could not start. Open Settings to review delivery; cached work is kept."}
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (isActive) { if (unlocked && app.model.state.value.cache.preferences.autoRefresh) app.model.poll(); delay(15_000) }
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                app.model.followForegroundUpdates()
             }
         }
         setContent {

@@ -376,6 +376,7 @@ function renderNoteDetail(note) {
   const backdrop = el("div", "detail-backdrop");
   backdrop.onclick = closeDetail;
   const detail = el("aside", "detail");
+  detail.dataset.scrollKey = "note-detail:" + note.id;
   detail.setAttribute("role", "dialog");
   detail.setAttribute("aria-label", "Note details");
   detail.setAttribute("aria-modal", "true");
@@ -488,5 +489,5 @@ function renderNoteDetail(note) {
     );
   }
   document.body.append(backdrop, detail);
-  detail.focus();
+  detail.focus({ preventScroll: true });
 }

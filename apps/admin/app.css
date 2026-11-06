@@ -1293,6 +1293,12 @@ main {
   margin: 6px 0;
   accent-color: var(--accent);
 }
+.checklist-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
 .checklist-open {
   display: flex;
   flex-direction: column;

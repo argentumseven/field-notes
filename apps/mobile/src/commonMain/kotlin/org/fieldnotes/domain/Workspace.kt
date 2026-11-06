@@ -364,6 +364,20 @@ class Workspace(
             c.copy(outbox = c.outbox + Pending(command, predecessor,parentCreation=parentCreate))
         }
     }
+    /** Explicit deletion discards this editor's unsent draft only after the
+     * removal command is durably queued. Earlier queued saves keep their order. */
+    suspend fun removeTask(item:Record,basis:Basis) {
+        update { c ->
+            val snapshot=c.snapshot ?: error("Synchronize first.")
+            check(snapshot.basis==basis){"The workspace changed. Reopen this item before deleting it."}
+            check(snapshot.actor.role!="viewer"){"Your role is read-only."}
+            check(item.kind=="task"){"Choose a task or list item."}
+            check(c.outbox.size+c.conflicts.size<500){"Resolve pending changes before deleting more items."}
+            val predecessor=c.outbox.lastOrNull{it.command.target==item.id}?.command?.operation_id
+            val command=Command(newId(),basis.epoch,basis.generation,"task.delete",item.id,item.revision,obj())
+            c.copy(outbox=c.outbox+Pending(command,predecessor),drafts=c.drafts-item.id)
+        }
+    }
     /** Freeze the exact checked rows in one durable local write. Existing per-task
      * dependency/revision handling protects a concurrent remote reopen or edit. */
     suspend fun clearChecked(listId:String) {
@@ -457,6 +471,7 @@ class Workspace(
                 Conflict(Command(newId(), d.epoch, d.generation, d.action, d.target, d.revision, d.data), "The server item was removed or restored. Copy this draft to a new item if needed.")
             })
         }
+        _state.update{it.copy(refreshPending=false)}
         return fresh
     }
 
@@ -501,31 +516,44 @@ class Workspace(
             }
             val final = SyncJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
             update { it.copy(snapshot = final,lastSyncedAt=Clock.System.now().epochSeconds,lastContactAt=Clock.System.now().epochSeconds,lastSyncProblem="",recoveryNotice="") }
-            _state.update { it.copy(online = true, error = null,problem=null,contactAt=Clock.System.now().epochSeconds) }
+            _state.update { it.copy(online = true, error = null,problem=null,contactAt=Clock.System.now().epochSeconds,refreshPending=false) }
         } catch (e: Exception) {
             report(e); _state.update { it.copy(online = false) };runCatching{update { it.copy(lastSyncProblem=(e.message ?: "Sync failed").take(600)) }}
         } finally { _state.update { it.copy(syncing = false) }; connection.unlock() }
     }
     /** Cheap background checks keep the private connection alive without
      * downloading and re-encrypting an unchanged workspace every few seconds. */
-    suspend fun poll(): Boolean {
+    suspend fun poll(): Boolean = pollNow(waitForConnection=false)
+    suspend fun refreshWhileVisible():Boolean = pollNow(waitForConnection=true)
+    private suspend fun pollNow(waitForConnection:Boolean): Boolean {
         if(state.value.connectionPaused)return false
-        if(!connection.tryLock())return false
+        if(waitForConnection)connection.lock()else if(!connection.tryLock())return false
         var changed=false
         try {
-            if(cache.token==null||cache.config==null||!state.value.ready)return false
+            if(cache.token==null||cache.config==null||!state.value.ready||state.value.connectionPaused)return false
             val head=request("/api/head")
             rememberCompatibility(head)
             check(cache.compatibility?.blocked!=true) { cache.compatibility!!.message }
-            changed=cache.snapshot?.let { it.epoch!=head.text("epoch")||it.generation!=head.number("generation")||it.sequence!=head.number("sequence")||it.history_revision!=head.number("history_revision")||cache.directoryRevision!=head.number("directory_revision") }?:true
+            val remoteChanged=cache.snapshot?.let { it.epoch!=head.text("epoch")||it.generation!=head.number("generation")||it.sequence!=head.number("sequence")||it.history_revision!=head.number("history_revision")||cache.directoryRevision!=head.number("directory_revision") }?:true
+            changed=remoteChanged
             if(cache.outbox.isNotEmpty())changed=true
             val now=Clock.System.now().epochSeconds
             if(now-cache.lastContactAt>=300||cache.lastSyncProblem.isNotBlank())update { it.copy(lastContactAt=now,lastSyncProblem="") }
-            _state.update { it.copy(online=true,error=null,problem=null,contactAt=now) }
+            _state.update { it.copy(online=true,error=null,problem=null,contactAt=now,refreshPending=remoteChanged) }
         }catch(e:Exception){report(e);_state.update { it.copy(online=false) };runCatching{update { it.copy(lastSyncProblem=(e.message ?: "Connection failed").take(600)) }}}
         finally{connection.unlock()}
-        if(changed)sync()
+        if(changed)syncNow(waitForConnection=true)
         return changed&&state.value.online
+    }
+    /** Reopen only our userspace transport after Android changes its default
+     * network. Reuse the existing identity, pin, session and outbox. */
+    suspend fun networkChanged(refresh:Boolean=true) {
+        connection.withLock {
+            if(!state.value.ready||state.value.connectionPaused||cache.config==null||cache.token==null)return
+            try {transport.stop()} finally {prepared=false}
+            _state.update{it.copy(online=false,contactAt=0)}
+        }
+        if(refresh)refreshWhileVisible()
     }
 
     private suspend fun reject(id: String, reason: String) = update { c ->

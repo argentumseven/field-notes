@@ -10,6 +10,8 @@ import androidx.work.Configuration
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import org.fieldnotes.domain.Workspace
 import org.fieldnotes.platform.AndroidTransport
 import org.fieldnotes.platform.AndroidVault
@@ -35,6 +37,7 @@ class FieldNotesApplication : Application(), Configuration.Provider {
         transport = AndroidTransport(); vault = AndroidVault(this)
         model = Workspace(transport, vault, { UUID.randomUUID().toString() }, scope)
         scope.launch { try { model.initialize() } finally { initialized.complete(Unit) } }
+        DefaultNetworkMonitor(this).start()
         scope.launch(Dispatchers.IO) {
             try { AlarmAudio.restore(this@FieldNotesApplication) }catch(_:Exception){deliveryError.value="Previous alarm volume needs review. Open Android sound settings."}
             try {
@@ -58,6 +61,6 @@ class FieldNotesApplication : Application(), Configuration.Provider {
         }, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_USER_UNLOCKED) }, ContextCompat.RECEIVER_NOT_EXPORTED)
         // StateFlow conflates new states while this work completes. Do not cancel
         // reconciliation between saving its intent and installing the OS alarms.
-        scope.launch { initialized.await(); model.state.collect { delay(600); PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication);try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
+        scope.launch { initialized.await(); model.state.map{it.cache}.distinctUntilChanged().collect { delay(600); PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication);try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
     }
 }

@@ -1,5 +1,46 @@
 # Implementation and validation record
 
+## 0.9.1 live shopping, removal and scroll continuity — 2026-11-06
+
+Open Android screens check immediately on resume and every three seconds,
+independently of legacy Auto refresh preferences. A changed default network
+reopens the app-contained transport with the same identity; background-off and
+Pause preferences remain effective. Known pending changes, stale checks, offline
+work, local drafts and retained conflicts have distinct visible status. Ephemeral
+head-check timestamps do not cause encrypted-cache writes or widget regeneration.
+
+Both clients expose individual item deletion and scoped Delete checked counts
+independently of whether checked rows are visible. The phone durably queues
+offline removals. Frozen item revisions prevent a concurrent amendment being
+removed by an older confirmation. An ambiguously acknowledged web deletion
+retries the same operation ID. List history is accessible nearby.
+
+Web search keeps updating while focused, preserving cursor and text. Open forms
+keep their drafts and show that newer changes are waiting. Automatic/manual
+redraws preserve the page, sidebar and calendar timeline scroll positions;
+management assembles asynchronous content before replacing visible content.
+
+Executed here: **92 API/codec/planning cases**, **109 Kotlin host tests**,
+**126 Python helper tests**, **15 Rust tests**, clean clippy, and the actual
+JNI → WireGuard → TLS → Rust integration check, extended to stop/reconfigure
+using the same private key and session. All **31 browser checks** passed,
+including long-page automatic/manual refresh, calendar/management scroll,
+search-time incoming amendments, lost-ack deletion retry and stale bulk cleanup.
+The guarded AOSP AVD's ListExperienceDeviceTest passed incoming amendments
+without manual sync, durable offline removal/reconnection, and filtered bulk
+cleanup retaining other stores and unchecked items.
+
+The same-signer 0.9.0/code 16 → 0.9.1/code 17 AVD update passed its seed and
+verify phases with `adb install -r`, preserving the actual Keystore-backed phone
+keys, saved server/CA/PSK binding and unacknowledged task command. No data clear,
+uninstall or re-enrollment occurred between the two versions.
+
+Fresh synthetic captures and their fixture limitations are documented in
+[WALKTHROUGH.md](WALKTHROUGH.md). These checks do not establish physical
+GrapheneOS roaming/background delivery, or deployment to the home Debian VM.
+The remaining list UX findings are explicitly separated in
+[LIST-UX-REVIEW.md](LIST-UX-REVIEW.md).
+
 ## 0.9.0 project continuity and reminder editing — 2026-11-06
 
 Household/honey-do is independent of hierarchy: standalone tasks, standalone

@@ -17,6 +17,30 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Live shopping and deletion — 0.9.1
+
+[Live updates](LIVE-UPDATES.md) explains the three-second visible-app checks,
+connection status and reconnection behavior. [List workflow review](LIST-UX-REVIEW.md)
+records the remaining improvements separately from delivered controls.
+
+| Web | What it shows |
+| --- | --- |
+| [Scoped cleanup](screenshots/web/90-grocery-cleanup.png) | Delete checked counts matching checked items even with Unchecked selected |
+| [Individual deletion](screenshots/web/91-delete-grocery-confirmation.png) | Normal confirmation for deleting an unchecked grocery item |
+| [Live groceries](screenshots/web/92-live-groceries.png) | Incoming title/content amendments while search remains focused |
+
+| Android | What it shows |
+| --- | --- |
+| [Store and cleanup](screenshots/android/93-native-list-cleanup.png) | Visible store selector, grouped list options and scoped Delete checked |
+| [Delete grocery item](screenshots/android/94-native-delete-grocery.png) | Individual removal without typing an uppercase phrase |
+| [Incoming changes](screenshots/android/95-native-live-groceries.png) | An incoming item and amended quantity reached the open list without a manual sync |
+| [Queued offline removal](screenshots/android/96-native-queued-removal.png) | Offline status and a durably queued deletion, before reconnection acknowledged it |
+
+The native list fixture intentionally has no APK download bundle. Its visible
+Needs attention warning is retained; standard server bundles include the verified
+APK. The guarded AOSP test passed both offline removal/reconnection and store-scoped
+bulk deletion; these pictures are not physical GrapheneOS checks.
+
 ## Household projects and grocery cleanup — 0.9
 
 [Tasks, task lists and projects](PROJECTS.md) explains the grouping choices.
