@@ -74,6 +74,23 @@ harness keeps the disposable AVD awake during long launcher checks; the shipped
 app keeps screenshot protection. Physical GrapheneOS profile forwarding, DND,
 VPN coexistence and battery timing remain separate device checks.
 
+The public [v0.8.0 release](https://github.com/argentumseven/field-notes/releases/tag/v0.8.0)
+was built from clean tagged source `bb11687a59c2e6a1b159052b2bd6fa67618c9b21`
+and published through the successful [verified prebuilt workflow](https://github.com/argentumseven/field-notes/actions/runs/42227027112).
+Its ARM64 release passed lint, all 95 shared checks, package/signature inspection
+and 16 KiB alignment. All four freshly downloaded public assets match the build
+byte for byte; the README's latest link resolves to this version. The public
+signing certificate is unchanged from 0.7. APK SHA-256:
+`b48e0e15e0af1dd76ce688edbebe8de4441975791623bf6e2cad69c6df183095`.
+
+The ordinary Linux x86_64 server build fetched that public release without APK
+overrides and produced its offline app/gateway archive. Packaged program/helpers,
+all four APK assets, source metadata and archive checksums were verified.
+The 0.7 persistence migration and 200 MiB/128 MiB container backup/restore checks
+were repeated successfully against the final release programs/image. Signing
+and server identity keys are absent from the bundle. Updating the home server
+and physical phone still requires their normal operator-controlled update steps.
+
 [Recovery guide](RECOVERY.md) · [Planner comparison](PLANNER-COMPARISON.md) ·
 [Updated screenshots](WALKTHROUGH.md).
 
