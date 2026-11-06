@@ -18,8 +18,8 @@ import org.fieldnotes.domain.AppUpdateUi
         FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             SecondaryButton(onClick=device.checkUpdate,enabled=!update.busy){Text("Check for updates")}
             if(update.busy)SecondaryButton(onClick=device.cancelUpdate){Text("Cancel update request")}
-            else if(update.ready)Button(onClick=device.installUpdate){Text("Install update")}
-            else if(update.available)Button(onClick=device.downloadUpdate){Text("Download update")}
+            else if(update.ready)Button(shape=ControlShape,onClick=device.installUpdate){Text("Install update")}
+            else if(update.available)Button(shape=ControlShape,onClick=device.downloadUpdate){Text("Download update")}
         }
     }
 }

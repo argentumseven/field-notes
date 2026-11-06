@@ -25,6 +25,8 @@ import org.fieldnotes.domain.*
 @Composable internal fun ColumnScope.HistoryScreen(model:Workspace,state:WorkspaceState,use24Hour:Boolean,open:(String)->Unit) {
     val cache=state.cache;val snapshot=cache.snapshot ?: return
     val scope=rememberCoroutineScope();val focus=LocalFocusManager.current;val zone=TimeZone.currentSystemDefault()
+    var recoveryTarget by remember {mutableStateOf<String?>(null)};var recoveryTitle by remember {mutableStateOf("")}
+    recoveryTarget?.let {RecoverySheet(model,state,it.takeIf {s->s.isNotEmpty()},recoveryTitle,use24Hour){recoveryTarget=null}}
     var query by rememberSaveable {mutableStateOf("")};var actor by rememberSaveable {mutableStateOf("")};var kind by rememberSaveable {mutableStateOf("")};var action by rememberSaveable {mutableStateOf("")}
     var from by rememberSaveable {mutableStateOf("")};var to by rememberSaveable {mutableStateOf("")};var expanded by rememberSaveable {mutableStateOf(false)}
     val filter=HistoryFilter(query,actor,kind,action,from=from,to=to)
@@ -39,7 +41,7 @@ import org.fieldnotes.domain.*
         try {
             val next=model.history(filter,zone,if(more)page?.anchor else null,if(more)page?.next_before else null)
             if(ticket!=requestGeneration)return
-            entries=if(more&&entries.size+next.entries.size<=300)(entries+next.entries).distinctBy {it.sequence} else next.entries
+            entries=if(more&&page?.history_revision==next.history_revision&&entries.size+next.entries.size<=300)(entries+next.entries).distinctBy {it.sequence} else next.entries
             page=next;offlineCopy=false;olderLoaded=more
         }catch(e:Exception){
             if(e is CancellationException)throw e
@@ -48,7 +50,7 @@ import org.fieldnotes.domain.*
             if(!more){entries=model.state.value.cache.currentHistory()?.entries.orEmpty().filter {historyMatches(it,filter,zone)};offlineCopy=true}
         }finally{if(ticket==requestGeneration)loading=false}
     }
-    LaunchedEffect(snapshot.basis,snapshot.actor.user_id,filter,reload) {
+    LaunchedEffect(snapshot.basis,snapshot.actor.user_id,snapshot.history_revision,filter,reload) {
         requestGeneration++;loading=false
         page=null;olderLoaded=false
         entries=cache.currentHistory()?.entries.orEmpty().filter {historyMatches(it,filter,zone)};offlineCopy=true
@@ -63,6 +65,7 @@ import org.fieldnotes.domain.*
                     Text("Who changed what, and when.",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium)
                     SecondaryButton(onClick={focus.clearFocus();reload++},enabled=!loading){Text("Refresh history")}
                 }
+                if(cache.supportsRecovery()){RecoveryPendingCard(model,state);SecondaryButton(onClick={recoveryTarget="";recoveryTitle="Content checkpoints"}){Text("Content checkpoints")}}
                 OutlinedTextField(query,{query=it.take(100)},Modifier.fillMaxWidth().testTag("history-search").onFocusChanged {if(it.isFocused)expanded=false},label={Text("Search titles, people and change details")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
                 FlowRow(Modifier.padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     SecondaryButton(onClick={focus.clearFocus();expanded=!expanded}){Text(if(expanded)"Filters ▴" else "Filters ▾")}
@@ -84,7 +87,7 @@ import org.fieldnotes.domain.*
                     SecondaryButton(onClick={reload++},enabled=!loading){Text("Try history again")}
                 }} }
                 if(offlineCopy&&entries.isNotEmpty())Text("Cached history · ${entries.size} changes available on this phone. Reconnect for the complete trail.",Modifier.padding(vertical=6.dp),style=MaterialTheme.typography.labelMedium)
-                if(olderLoaded)Button(onClick={reload++}){Text(if(page?.let {snapshot.sequence>it.anchor}==true)"New changes · Show latest" else "Back to latest changes")}
+                if(olderLoaded)Button(shape=ControlShape,onClick={reload++}){Text(if(page?.let {snapshot.sequence>it.anchor}==true)"New changes · Show latest" else "Back to latest changes")}
         } }
         if(entries.isEmpty()&&!loading)item {
             Text(when{problem!=null->"No matching cached history. Your notes and queued changes are kept.";page?.has_more==true->"No match in this part of the trail. Search older changes below.";filter.active->"No changes match these filters.";else->"No changes yet. Added, changed and removed items will appear here."},Modifier.padding(vertical=20.dp))
@@ -92,14 +95,14 @@ import org.fieldnotes.domain.*
         items(entries,key={it.sequence}) {entry->
             val current=snapshot.records.find {it.id==entry.target}
             val target=if(current?.kind in setOf("comment","image"))current?.data?.text("task_id") else current?.id
-            HistoryCard(entry,zone,use24Hour,target?.let {id->{open(id)}})
+            HistoryCard(entry,zone,use24Hour,target?.let {id->{open(id)}},if(cache.supportsRecovery()&&entry.kind!="workspace"){{recoveryTarget=entry.target;recoveryTitle=entry.title}}else null)
         }
         if(!offlineCopy&&page?.has_more==true)item {SecondaryButton(onClick={focus.clearFocus();scope.launch {load(true)}},enabled=!loading,modifier=Modifier.fillMaxWidth()){Text(if(loading)"Loading history…" else if(entries.isEmpty())"Search older changes" else "Load older changes")}}
-        item {Text("Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Detailed changes are kept for the newest 10,000 events, up to 64 MB; earlier actions and timestamps remain. Account and device security activity is in web Management.",Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        item {Text("Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Saved states and change details follow the server’s configurable age, count and storage limits. Account and device security activity is in web Management.",Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
 }
 
-@Composable private fun HistoryCard(entry:HistoryEntry,zone:TimeZone,use24Hour:Boolean,open:(()->Unit)?) {
+@Composable private fun HistoryCard(entry:HistoryEntry,zone:TimeZone,use24Hour:Boolean,open:(()->Unit)?,versions:(()->Unit)?=null) {
     var expanded by rememberSaveable(entry.sequence){mutableStateOf(false)}
     val tint=when(entry.group){"removed"->MaterialTheme.colorScheme.errorContainer;"added"->MaterialTheme.colorScheme.secondaryContainer;else->MaterialTheme.colorScheme.surfaceVariant}
     OutlinedCard(Modifier.fillMaxWidth().testTag("history-entry-${entry.sequence}")) {
@@ -115,6 +118,7 @@ import org.fieldnotes.domain.*
             else if(entry.changes.isEmpty())Text("Saved without changing content fields.",style=MaterialTheme.typography.bodySmall)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 if(entry.changes.isNotEmpty())SecondaryButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide changes ▴" else "Show changes (${entry.total_fields}) ▾")}
+                if(versions!=null)SecondaryButton(onClick=versions){Text("Item versions")}
                 if(open!=null)SecondaryButton(onClick=open){Text("Open item")}
             }
             if(expanded) {

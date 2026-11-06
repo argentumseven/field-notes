@@ -286,7 +286,7 @@ function renderCollections(root) {
             c.kind !== "list" ||
             (c.data.template || "general") === view.template) &&
           (view.category === "*" ||
-            (c.data.category || "general") === view.category) &&
+            categoryKey(c.data.category) === categoryKey(view.category)) &&
           (c.data.title + " " + c.data.notes)
             .toLocaleLowerCase()
             .includes(view.query.toLocaleLowerCase()),
@@ -412,7 +412,8 @@ function renderChecklist(root, list) {
       .map((f) => [f, listFieldLabels[f]]),
   ];
   choose("Sort by", sorts, view.sort, (value) => (view.sort = value));
-  const clear = button("Clear checked", clearChecked);
+  const clear = button("Clear checked", () => changeChecked(false));
+  const reuse = button("Reuse checked", () => changeChecked(true));
   clear.disabled = true;
   if (mayWrite())
     toolbar.append(
@@ -424,6 +425,7 @@ function renderChecklist(root, list) {
       ),
       button("List settings", () => editCollection(list)),
       clear,
+      ...(list.data.perpetual !== false ? [reuse] : []),
     );
   root.append(typeBadges(list), toolbar, filters);
   if (
@@ -504,6 +506,8 @@ function renderChecklist(root, list) {
     const checked = visible.filter((t) => t.data.status === "done");
     clear.textContent = `Clear checked (${checked.length})`;
     clear.disabled = !checked.length;
+    reuse.textContent = `Reuse checked (${checked.length})`;
+    reuse.disabled = !checked.length;
     results.append(
       el(
         "p",
@@ -605,18 +609,20 @@ function renderChecklist(root, list) {
         ),
       );
   }
-  async function clearChecked() {
+  async function changeChecked(reusing) {
     const checked = visible.filter((t) => t.data.status === "done");
     if (!checked.length) return;
-    await confirmDialog(
-      "Clear " + checked.length + " checked items?",
-      "Only the checked items matching this list view will be removed. Unchecked or changed items stay in place.",
-      "Clear checked",
-    );
     const basis = {
       epoch: state.snapshot.epoch,
       generation: state.snapshot.generation,
     };
+    await confirmDialog(
+      (reusing ? "Reuse " : "Clear ") + checked.length + " checked items?",
+      reusing
+        ? "Uncheck the completed items matching this view to use the list again. Their notes, quantities, stores, images and history are kept. Changed items stay for review."
+        : "Only the checked items matching this list view will be removed. Unchecked or changed items stay in place.",
+      reusing ? "Uncheck and reuse" : "Clear checked",
+    );
     let cleared = 0;
     const failures = [];
     state.loading = true;
@@ -626,7 +632,7 @@ function renderChecklist(root, list) {
           await api("/commands", {
             operation_id: uuid(),
             ...basis,
-            action: "task.delete",
+            action: reusing ? "task.reopen" : "task.delete",
             target: item.id,
             expected_revision: item.revision,
             data: {},
@@ -643,7 +649,7 @@ function renderChecklist(root, list) {
       }
       notice(
         cleared +
-          " cleared" +
+          (reusing ? " unchecked for reuse" : " cleared") +
           (failures.length
             ? " · " + failures.length + " changed items kept for review."
             : ""),
@@ -662,7 +668,7 @@ async function editListItem(list, record, initialStore = "") {
     schema = fieldsOf(list),
     fields = [
       { key: "title", label: "Item name", value: d.title, max: 240 },
-      { ...categoryField(record), value: d.category || "general" },
+      { ...categoryField({ data: d }), value: d.category || "general" },
     ];
   for (const key of schema) {
     if (key === "images") continue;
@@ -816,7 +822,7 @@ async function editListItem(list, record, initialStore = "") {
                 await mutate(
                   "image.create",
                   uuid(),
-                  { task_id: record.id, name: selected.name, bytes },
+                  { task_id: record.id, parent_incarnation: record.data.recovery_incarnation || 0, name: selected.name, bytes },
                   null,
                 );
                 notice(
@@ -846,7 +852,7 @@ async function editListItem(list, record, initialStore = "") {
               await mutate(
                 "comment.create",
                 uuid(),
-                { task_id: record.id, body: text.value },
+                { task_id: record.id, parent_incarnation: record.data.recovery_incarnation || 0, body: text.value },
                 null,
               );
               text.value = "";

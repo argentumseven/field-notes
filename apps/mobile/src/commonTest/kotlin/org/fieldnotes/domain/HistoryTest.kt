@@ -34,6 +34,16 @@ private class HistoryTransport:Transport {
     }
 }
 class HistoryTest {
+    @Test fun retentionRevisionDropsPurgedCacheInsteadOfMergingItBack() {
+        val original=historyFixture();val page=HistoryPage("epoch",1,3,listOf(historyEntry),3,false,historyActor.user_id)
+        val cached=original.copy(history=mergeHistory(original,page,123))
+        assertNotNull(cached.currentHistory())
+        val changed=cached.copy(snapshot=cached.snapshot!!.copy(history_revision=1))
+        assertNull(changed.currentHistory())
+        val empty=page.copy(entries=emptyList(),history_revision=1)
+        assertTrue(mergeHistory(changed,empty,124).entries.isEmpty())
+    }
+
     @Test fun acceptedHistorySurvivesRestartAndOfflineFiltersSearchBothSidesOfChanges()=runTest {
         val vault=HistoryVault();val transport=HistoryTransport();val model=Workspace(transport,vault,{"unused"},backgroundScope)
         model.initialize();val originalKeys=vault.stored.keys

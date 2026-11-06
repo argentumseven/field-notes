@@ -44,6 +44,7 @@ import kotlinx.coroutines.*
 import org.fieldnotes.domain.*
 import org.fieldnotes.ui.FieldNotesApp
 import org.fieldnotes.ui.FieldNotesTheme
+import org.fieldnotes.ui.ControlShape
 import org.fieldnotes.ui.DeviceActions
 
 class MainActivity : ComponentActivity() {
@@ -171,7 +172,7 @@ class MainActivity : ComponentActivity() {
             }
             if (workspace.ready&&workspace.cache.preferences.appLock&&(!unlocked||lastUnlock==0L)) FieldNotesTheme { Surface(Modifier.fillMaxSize()) { Column(Modifier.padding(30.dp), verticalArrangement = Arrangement.Center) {
                 Text("Your workspace is locked", style = MaterialTheme.typography.headlineSmall)
-                Button(onClick = { unlock() }, modifier = Modifier.padding(top = 20.dp)) { Text("Unlock with device credential") }
+                Button(shape=ControlShape,onClick = { unlock() }, modifier = Modifier.padding(top = 20.dp)) { Text("Unlock with device credential") }
             } } }
             else {
                 val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

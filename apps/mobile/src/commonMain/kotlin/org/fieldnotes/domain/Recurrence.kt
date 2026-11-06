@@ -69,6 +69,55 @@ fun eventInstances(record:Record,from:LocalDate,until:LocalDate,displayZone:Time
 fun repeatLabel(rule:EventRepeat):String = when(rule.frequency) {
     "daily"->if(rule.interval==1)"Every day" else if(rule.interval==2)"Every other day" else "Every ${rule.interval} days"
     "weekly"->(if(rule.interval==1)"Weekly" else if(rule.interval==2)"Alternate weeks" else "Every ${rule.interval} weeks")+" · "+rule.weekdays.sortedBy { it%7 }.joinToString(", "){DayOfWeek.entries[it-1].name.take(3).lowercase().replaceFirstChar { c->c.uppercase() }}
-    "monthly"->if(rule.interval==1)"Monthly" else "Every ${rule.interval} months"
+    "monthly"->if(rule.interval==12)"Every year" else if(rule.interval%12==0)"Every ${rule.interval/12} years" else if(rule.interval==1)"Monthly" else "Every ${rule.interval} months"
     else->"${rule.dates.size} chosen dates"
 }+(if(rule.until.isNotBlank())" · through ${friendlyDate(LocalDate.parse(rule.until))}" else "")
+
+/** Yearly uses the existing monthly rule, so older compatible clients expand
+ * the same dates instead of silently hiding an unfamiliar frequency. */
+fun repeatPreset(rule:EventRepeat?):String=when {
+    rule==null->"none"
+    rule.frequency=="daily"&&rule.interval==2->"alternate"
+    rule.frequency=="weekly"&&rule.interval==2->"fortnightly"
+    rule.frequency=="weekly"&&rule.interval==1&&rule.weekdays.sorted()==listOf(1,2,3,4,5)->"weekdays"
+    rule.frequency=="monthly"&&rule.interval==12->"yearly"
+    rule.interval==1||rule.frequency=="dates"->rule.frequency
+    else->"custom"
+}
+
+/** Bounded candidate stepping avoids scanning decades of days for annual previews. */
+fun nextRepeatDates(rule:EventRepeat,first:LocalDate,from:LocalDate,limit:Int=5):List<LocalDate> {
+    validateRepeat(rule)
+    require(limit in 1..10)
+    val after=maxOf(first,from)
+    val end=rule.until.takeIf { it.isNotBlank() }?.let(LocalDate::parse)
+    if(end!=null&&after>end)return emptyList()
+    if(rule.frequency=="dates")return rule.dates.sorted().map(LocalDate::parse).filter { it>=after&&repeatMatches(rule,first,it) }.take(limit)
+    val result=mutableListOf<LocalDate>()
+    fun take(day:LocalDate) { if(day.year in 1..9999&&day>=after&&repeatMatches(rule,first,day)&&result.size<limit)result+=day }
+    when(rule.frequency) {
+        "daily"->{
+            var day=first.plus((first.daysUntil(after)/rule.interval)*rule.interval,DateTimeUnit.DAY)
+            repeat(256) { if(result.size>=limit||day.year>9999||end!=null&&day>end)return result;take(day);day=day.plus(rule.interval,DateTimeUnit.DAY) }
+        }
+        "weekly"->{
+            val anchor=first.minus(first.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY)
+            var week=anchor.plus((anchor.daysUntil(after)/(7*rule.interval))*7*rule.interval,DateTimeUnit.DAY)
+            repeat(256) {
+                if(result.size>=limit||week.year>9999||end!=null&&week>end)return result
+                for(offset in 0..6)take(week.plus(offset,DateTimeUnit.DAY))
+                week=week.plus(7*rule.interval,DateTimeUnit.DAY)
+            }
+        }
+        "monthly"->{
+            val months=(after.year-first.year)*12+after.monthNumber-first.monthNumber
+            var month=LocalDate(first.year,first.monthNumber,1).plus((months/rule.interval)*rule.interval,DateTimeUnit.MONTH)
+            repeat(1024) {
+                if(result.size>=limit||month.year>9999||end!=null&&month>end)return result
+                runCatching { LocalDate(month.year,month.monthNumber,first.dayOfMonth) }.getOrNull()?.let(::take)
+                month=month.plus(rule.interval,DateTimeUnit.MONTH)
+            }
+        }
+    }
+    return result
+}

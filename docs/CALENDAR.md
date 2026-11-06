@@ -82,3 +82,5 @@ through an editor that does not understand them.
 
 For an idea that only needs to return later, use **Later & reminders** instead
 of reserving calendar time. See [Household planning](PLANNER-0.6.md).
+
+Every year and custom Years show upcoming dates beyond the current year. February 29 skips years without that date. Existing recurring events are edited in their saved timezone. Tapping a home-screen calendar day opens that exact day’s timeline, regardless of the previous view. Background updates offer Live, Periodic and Manual; widget status shows cache freshness.

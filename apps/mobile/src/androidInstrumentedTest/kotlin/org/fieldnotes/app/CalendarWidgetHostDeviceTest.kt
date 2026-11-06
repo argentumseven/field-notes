@@ -62,6 +62,7 @@ class CalendarWidgetHostDeviceTest {
         fun waitFor(stage:String,condition:()->Boolean) {
             val end=System.currentTimeMillis()+90_000
             while(System.currentTimeMillis()<end) { if(condition())return;Thread.sleep(250) }
+            instrumentation.runOnMainSync {ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().forEach {it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)}}
             picture("host-failure")
             error("Calendar host did not reach $stage; active="+instrumentation.uiAutomation.rootInActiveWindow?.packageName)
         }
@@ -76,6 +77,13 @@ class CalendarWidgetHostDeviceTest {
             activity!=null
         }
         try {
+            instrumentation.runOnMainSync {
+                activity!!.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                activity!!.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+            waitFor("calendar view controls") {nodes("Month").isNotEmpty()}
+            val month=nodes("Month").first();assertTrue((if(month.isClickable)month else month.parent).performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            Thread.sleep(500)
             instrumentation.runOnMainSync { assertTrue(if(weekly)WeekCalendarWidget.pin(activity!!) else CalendarWidget.pin(activity!!)) }
             waitFor("pin confirmation") { launcher("Add").any { it.isClickable||it.parent?.isClickable==true } }
             picture("pin-confirmation")
@@ -101,6 +109,13 @@ class CalendarWidgetHostDeviceTest {
             picture(if(weekly)"42-home-week" else "32-home-calendar")
             assertTrue(described(friendlyDate(tomorrow)).first { it.isClickable }.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             waitFor("calendar date link") { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()=="org.fieldnotes.app"&&nodes("Tomorrow’s reminder").any { it.packageName?.toString()=="org.fieldnotes.app" } }
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().forEach {it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)}
+            }
+            // The timeline hint can be outside a short viewport; the navigation
+            // controls identify Day rather than the previous Month view.
+            waitFor("day view after widget link") {described("Next day").isNotEmpty()}
+            picture(if(weekly)"74-week-widget-day-link" else "73-calendar-widget-day-link")
             instrumentation.runOnMainSync {
                 val current=ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().single()
                 assertEquals(tomorrow.toString(),current.intent.getStringExtra("open_date"))

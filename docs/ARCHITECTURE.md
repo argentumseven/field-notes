@@ -205,3 +205,26 @@ logic from Android document-picker/vault operations in `PortableFiles.kt`.
 Server `transfer.rs` handles previews, encrypted chunks, identity/content maps and
 atomic commit; `transfer/recovery.rs` handles explicit, idempotent recovery.
 [Format and transaction details](PORTABLE-FORMAT.md) and [user workflow](CONTENT-FILES.md).
+
+## Content recovery boundaries
+
+`store/recovery` owns encrypted full states, reference-counted retained images,
+monotonic per-item indices, frozen restore plans/receipts and retention. The
+`snapshots`, `restore` and `retention` modules keep capture, mutation and cleanup
+separate while sharing the canonical SQLite transaction. `/api/recovery` is a
+bounded authenticated content API on both listeners; retention configuration and
+purging stay behind LAN-only admin authorization/reauthentication. Accounts,
+network configuration and device identity are outside content checkpoints.
+
+Native `domain/Recovery.kt` defines the version/preview contract; Workspace
+serializes actions with sync/account changes and durably retains uncertain
+results. Its UI is separate from the immutable history trail. Web `recovery.js`
+uses the same explicit preview/apply protocol without storing content in browser
+storage. Exportable content excludes live restore-write fences.
+
+`backup.rs` owns the independently versioned full backup format and staged
+restore publication. New files authenticate fixed bounded frames, including a
+random stream identifier, total length and frame index in each frame's AAD.
+SQLite snapshots and encrypted downloads use private temporary files, not a full
+in-memory database serialization. Old single-record archives remain readable.
+The server's schema/protocol versions are independent of this file format.

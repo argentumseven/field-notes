@@ -33,6 +33,7 @@ const FieldHistory = (() => {
         release: "Released",
         override: "Overrode working claim",
         clear: "Cleared",
+        restore: "Restored",
       }[entry.action.split(".")[1]] || "Changed";
     return entry.source === "import"
       ? entry.action.endsWith(".create")
@@ -190,7 +191,9 @@ const FieldHistory = (() => {
           "History belongs to another workspace or account. Refresh this page.",
         );
       v.entries =
-        more && v.entries.length + page.entries.length <= 300
+        more &&
+        (!v.page || v.page.history_revision === page.history_revision) &&
+        v.entries.length + page.entries.length <= 300
           ? [
               ...new Map(
                 [...v.entries, ...page.entries].map((e) => [e.sequence, e]),
@@ -325,6 +328,12 @@ const FieldHistory = (() => {
             "history-open",
           ),
         );
+      if (entry.kind !== "workspace")
+        card.append(
+          button("Item versions", () =>
+            FieldRecovery.versions(entry.target, entry.title),
+          ),
+        );
       if (entry.details !== "recorded")
         card.append(
           el(
@@ -411,6 +420,7 @@ const FieldHistory = (() => {
       expanded: new Set(),
     });
     const tools = el("div", "history-tools");
+    FieldRecovery.tools(root);
     v.search = input("Search titles, people and change details", "", "search");
     v.search.node.maxLength = 100;
     addField(tools, v.search);
@@ -505,7 +515,7 @@ const FieldHistory = (() => {
       el(
         "p",
         "muted",
-        "Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Detailed changes are kept for the newest 10,000 events, up to 64 MB; earlier actions and timestamps remain. Clearing the workspace removes prior content details. This trail is read-only. Account, device and password activity stays in Management. Server backups include history; portable content imports record new changes rather than replacing this trail.",
+        "Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Saved versions and change details follow the age, count and storage limits in Management. Clearing the workspace removes earlier content recovery copies. Restores create new history entries. Account, device and password activity stays in Management. Server backups include history; portable content imports record new changes rather than replacing this trail.",
       ),
     );
     root.append(about);
@@ -517,6 +527,13 @@ const FieldHistory = (() => {
     if (!sameScope(v)) {
       leave();
       render();
+      return;
+    }
+    if (v.page && state.snapshot.history_revision !== v.page.history_revision) {
+      v.entries = [];
+      v.page = null;
+      rows(v);
+      load(v);
       return;
     }
     if (
@@ -534,11 +551,11 @@ const FieldHistory = (() => {
     }
   }
   return {
+    value,
     render: renderHistory,
     leave,
     isOpen: () => !!view?.root.isConnected,
     changed,
     refresh: () => view && load(view),
-    value,
   };
 })();

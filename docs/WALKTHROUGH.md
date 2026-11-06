@@ -17,6 +17,39 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Indexed recovery and planner refinements — 0.8
+
+[Recovery guide](RECOVERY.md) · [Planner/list comparison](PLANNER-COMPARISON.md).
+Item versions retain full states and increasing indices, with previewed backward
+and forward restores. Checkpoints cover household content while preserving
+accounts, pairing and security settings. Management shows retained storage and
+configurable age/count/size limits. All examples below are synthetic.
+
+![Indexed item states](screenshots/web/69-item-versions.png)
+![Preview before restoring a deleted task](screenshots/web/70-item-restore-preview.png)
+![Named content checkpoints](screenshots/web/71-content-checkpoints.png)
+![History and recovery storage management](screenshots/web/72-history-retention.png)
+
+| Android item versions | Android restore preview |
+| --- | --- |
+| <img src="screenshots/android/75-native-item-versions.png" width="270" alt="Native indexed item versions"> | <img src="screenshots/android/76-native-restore-preview.png" width="270" alt="Native current and saved content restore preview"> |
+
+The native check uses versions/previews and a restored snapshot produced by the
+real Rust fixture, then exercises the actual Compose controls and encrypted
+Keystore cache through a test-only transport. API tests separately exercise real
+SQLite mutations, races, retention, backups and rejected restores.
+
+![Custom yearly repeat with future dates](screenshots/web/66-yearly-repeat.png)
+![Review checked groceries before reuse](screenshots/web/67-reuse-list-preview.png)
+![Original grocery records reused](screenshots/web/68-reused-groceries.png)
+
+The actual month and week launcher checks begin with Month selected in the app,
+then tap a widget day and verify Day navigation plus the chosen date/agenda.
+
+| From the month widget | From the week widget |
+| --- | --- |
+| <img src="screenshots/android/73-calendar-widget-day-link.png" width="270" alt="Month widget opens the selected day's timeline"> | <img src="screenshots/android/74-week-widget-day-link.png" width="270" alt="Week widget opens the selected day's timeline"> |
+
 ## Expanding sidebar sections
 
 Plan, Library, Task views and Preferences keep their full content height when
@@ -37,7 +70,7 @@ source scripts/dev-env.sh
 FIELD_NOTES_CAPTURE_SIDEBAR=synthetic-only node --test tests/sidebar.browser.test.mjs
 ```
 
-## Change history on web and phone — 0.7
+## Change history on web and phone
 
 Open **Library → History** on either client. These new captures show the same
 synthetic Rust household: Sophia adds groceries, Alex changes a quantity/note

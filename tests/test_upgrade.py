@@ -239,6 +239,15 @@ class Upgrade(unittest.TestCase):
   self.assertEqual(upgrade.bundle_info(self.folder,'0.7.0',recover=True)[0]['version'],'0.7.0')
   with self.assertRaisesRegex(ValueError,'same-version replacements'):upgrade.bundle_info(self.folder,'0.7.0')
   with self.assertRaisesRegex(ValueError,'downgrades'):upgrade.bundle_info(self.folder,'0.8.0',recover=True)
+ def test_current_release_can_recover_its_runtime_without_allowing_same_version_replacement(self):
+  release_path=self.folder/'release.json';release=json.loads(release_path.read_text());release['version']='0.8.0';release_path.write_text(json.dumps(release))
+  info_path=self.folder/'downloads/android.json';info=json.loads(info_path.read_text());info['version']='0.8.0';info_path.write_text(json.dumps(info))
+  index_path=self.folder/'images.json';index=json.loads(index_path.read_text())
+  for role in index:index[role]['tag']='field-notes-'+role+':0.8.0'
+  index_path.write_text(json.dumps(index))
+  self.assertEqual(upgrade.bundle_info(self.folder,'0.7.0')[0]['version'],'0.8.0')
+  self.assertEqual(upgrade.bundle_info(self.folder,'0.8.0',recover=True)[0]['version'],'0.8.0')
+  with self.assertRaisesRegex(ValueError,'same-version replacements'):upgrade.bundle_info(self.folder,'0.8.0')
  def test_incompatible_schema_downgrade_corrupt_archive_and_foreign_namespace_refuse(self):
   release=self.folder/'release.json';original=release.read_text();data=json.loads(original);data['schema']=3;release.write_text(json.dumps(data))
   with self.assertRaises(ValueError):upgrade.preview(self.host.record,self.folder,self.host)

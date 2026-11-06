@@ -341,7 +341,7 @@ async fn head(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault
         blocking(app, move |s| {
             s.actor(&token)?;
             let (e, g, q) = s.meta()?;
-            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?,"compatibility":crate::store::Store::compatibility()}))
+            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?,"history_revision":s.recovery_revision()?,"compatibility":crate::store::Store::compatibility()}))
         })
         .await?,
     ))
@@ -376,6 +376,16 @@ async fn history(
 ) -> Result<Json<Value>, Fault> {
     let token = credential(&h, app.device)?;
     Ok(Json(blocking(app, move |s| s.history(&token, body)).await?))
+}
+async fn recovery(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, app.device)?;
+    Ok(Json(
+        blocking(app, move |s| s.content_recovery(&token, body)).await?,
+    ))
 }
 async fn image(
     State(app): State<App>,
@@ -421,10 +431,26 @@ async fn backup(State(app): State<App>, h: HeaderMap) -> Result<Response, Fault>
                 "Owner and recent reauthentication required".into(),
             ));
         }
+        s.budget(&format!("backup:{}", a.user_id), 3)?;
         s.export_backup()
     })
     .await?;
-    Ok((
+    let size = data.size;
+    let file = tokio::fs::File::open(&data.path)
+        .await
+        .map_err(|_| Fault(500, "Open encrypted backup download".into()))?;
+    let stream = futures_util::stream::try_unfold((file, data), |(mut file, guard)| async move {
+        use tokio::io::AsyncReadExt;
+        let mut bytes = vec![0u8; 64 * 1024];
+        let count = file.read(&mut bytes).await?;
+        if count == 0 {
+            Ok::<_, std::io::Error>(None)
+        } else {
+            bytes.truncate(count);
+            Ok(Some((bytes, (file, guard))))
+        }
+    });
+    let mut response = (
         [
             ("content-type", "application/octet-stream"),
             (
@@ -432,9 +458,15 @@ async fn backup(State(app): State<App>, h: HeaderMap) -> Result<Response, Fault>
                 "attachment; filename=field-notes.backup",
             ),
         ],
-        data,
+        Body::from_stream(stream),
     )
-        .into_response())
+        .into_response();
+    response.headers_mut().insert(
+        "content-length",
+        HeaderValue::from_str(&size.to_string())
+            .map_err(|_| Fault(500, "Invalid backup size".into()))?,
+    );
+    Ok(response)
 }
 async fn invite(
     State(app): State<App>,
@@ -759,6 +791,10 @@ pub fn router(app: App) -> Router {
         .route("/api/people", get(people))
         .route("/api/head", get(head))
         .route("/api/history", post(history))
+        .route(
+            "/api/recovery",
+            post(recovery).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
         .route("/api/commands", post(command))
         .route("/api/images/{id}", get(image));
     routes = routes.merge(
@@ -842,6 +878,15 @@ pub fn router(app: App) -> Router {
                     (
                         [("content-type", "text/javascript; charset=utf-8")],
                         include_str!("../../admin/reminders.js"),
+                    )
+                }),
+            )
+            .route(
+                "/recovery.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/recovery.js"),
                     )
                 }),
             )

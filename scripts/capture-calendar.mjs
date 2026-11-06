@@ -8,8 +8,10 @@ const adb=join(root,'android-sdk/platform-tools/adb'),serial=process.env.FIELD_N
 const only=process.argv.find(value=>value.startsWith('--only='))?.slice(7);
 const call=async(args,timeout=180000)=>(await run(adb,['-s',serial,...args],{timeout,maxBuffer:6*1024*1024})).stdout;
 if(!serial.startsWith('emulator-')||(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()!=='field-notes-test')throw Error('Dedicated field-notes-test AVD required.');
+const originalScreenTimeout=(await call(['shell','settings','get','system','screen_off_timeout'])).trim();
 await mkdir('dist/android-test-results',{recursive:true});await mkdir('docs/screenshots/android',{recursive:true});
 try {
+ await call(['shell','settings','put','system','screen_off_timeout','1800000']);
  await call(['shell','input','keyevent','KEYCODE_WAKEUP']);await call(['shell','wm','dismiss-keyguard']);
  await call(['shell','settings','put','secure','show_ime_with_hard_keyboard','1']);
  await call(['shell','cmd','alarm','set-timezone','America/New_York']);
@@ -26,7 +28,7 @@ try {
   await writeFile('dist/android-test-results/'+name+'.txt',output);
   if(!output.includes(`OK (${count} test${count===1?'':'s'})`))throw Error(output);
   console.log(name+' passed');
-  const captures=name==='CalendarExperienceDeviceTest'?['30-calendar-home','31-local-event','33-time-picker','40-reminder-rules','41-reminder-sound','44-long-alarm-controls','45-independent-visibility','50-sunday-week','51-sunday-month','52-repeat-event']:name==='CalendarWidgetHostDeviceTest'?['32-home-calendar','42-home-week']:name==='ReminderDeliveryDeviceTest'?['43-detailed-notifications']:[];
+  const captures=name==='CalendarExperienceDeviceTest'?['30-calendar-home','31-local-event','33-time-picker','40-reminder-rules','41-reminder-sound','44-long-alarm-controls','45-independent-visibility','50-sunday-week','51-sunday-month','52-repeat-event']:name==='CalendarWidgetHostDeviceTest'?['32-home-calendar','42-home-week','73-calendar-widget-day-link','74-week-widget-day-link']:name==='ReminderDeliveryDeviceTest'?['43-detailed-notifications']:[];
   for(const capture of captures) {
    const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/calendar-gallery/'+capture+'.png'],{encoding:'buffer',maxBuffer:8*1024*1024});
    await writeFile('docs/screenshots/android/'+capture+'.png',stdout);
@@ -42,5 +44,6 @@ try {
  if(stdout)await writeFile('dist/android-test-results/calendar-failure.png',stdout);
  throw error;
 } finally {
+ if(/^\d+$/.test(originalScreenTimeout))await call(['shell','settings','put','system','screen_off_timeout',originalScreenTimeout]).catch(()=>{});
  await call(['shell','pm','clear','org.fieldnotes.app']).catch(()=>{});
 }

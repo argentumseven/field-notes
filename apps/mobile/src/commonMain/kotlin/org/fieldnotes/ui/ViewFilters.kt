@@ -33,7 +33,7 @@ import org.fieldnotes.domain.*
         ViewChoice("Category",category,listOf("" to "All categories")+recordCategories.toList()){category=it}
         ViewChoice("Sort",sort,listOf("title" to "Name A–Z","updated" to "Recently changed")){sort=it}
     }
-    val records=workspaceContainers(cache).filter { val r=it.record;r.kind in kinds&&(r.data.text("title")+" "+r.data.text("notes")).contains(query,true)&&(template=="*"||r.kind!="list"||r.data.text("template","general")==template)&&(category.isBlank()||r.data.text("category","general")==category) }.let{if(sort=="updated")it.sortedByDescending{r->r.record.data.number("last_activity_at",r.record.data.number("updated_at"))}else it}
+    val records=workspaceContainers(cache).filter { val r=it.record;r.kind in kinds&&(r.data.text("title")+" "+r.data.text("notes")).contains(query,true)&&(template=="*"||r.kind!="list"||r.data.text("template","general")==template)&&(category.isBlank()||categoryKey(r.data.text("category","general"))==categoryKey(category)) }.let{if(sort=="updated")it.sortedByDescending{r->r.record.data.number("last_activity_at",r.record.data.number("updated_at"))}else it}
     VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(top=12.dp,bottom=90.dp)) {
         if(records.isEmpty())item{Text("Nothing matches these filters. Change a filter or create a new collection.",Modifier.padding(vertical=20.dp))}
         items(records,key={it.record.id}) {c->CollectionRow(cache,c,writable,{open(c.record.id)},{edit(c.record)})}

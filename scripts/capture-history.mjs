@@ -36,8 +36,17 @@ try {
     body: { epoch: f.snapshot.epoch, generation: f.snapshot.generation },
   });
   assert.equal(history.status, 200);
+  const recovery = async(action,extra={})=>f.f.request('/api/recovery',{token:f.alex,body:{action,epoch:f.snapshot.epoch,generation:f.snapshot.generation,...extra}});
+  const versions=(await recovery('versions',{target:f.bananas})).data;
+  const saved=versions.entries.at(-1);
+  const plan=(await recovery('preview',{source:saved.id})).data;
+  const before=await get('/api/snapshot');
+  const result=await recovery('apply',{preview_id:plan.preview_id,operation_id:crypto.randomUUID(),confirmation:'RESTORE ITEM'});
+  assert.equal(result.status,200);
+  const after=await get('/api/snapshot');
   const seed = {
-    snapshot: await get("/api/snapshot"),
+    snapshot: before,
+    recovery_versions: versions, recovery_preview:plan, recovery_result:result.data, recovery_after:after,
     history: history.data,
     people: (await get("/api/people")).people,
     head: await get("/api/head"),
@@ -148,6 +157,7 @@ try {
     "60-history-details",
     "61-history-offline",
     "62-history-light",
+    "75-native-item-versions", "76-native-restore-preview", "77-native-restored-item",
     "63-history-keyboard",
   ]) {
     const { stdout } = await run(

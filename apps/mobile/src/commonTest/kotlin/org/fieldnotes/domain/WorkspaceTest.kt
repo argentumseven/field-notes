@@ -28,6 +28,7 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
     var additiveFields=false
     var sent = mutableListOf<Command>()
     var results = mutableMapOf<String, JsonObject>()
+    var recoveryReply:((JsonObject)->Reply)?=null
     var loseReply = false
     override suspend fun keys() = obj("private_key" to "private-test-key".j())
     override suspend fun configure(configuration: JsonObject) { configurations++;if(configureFailure)error("DNS unavailable") }
@@ -35,6 +36,7 @@ private class FakeTransport(var snapshot: Snapshot = initial().snapshot!!) : Tra
     override suspend fun exchange(path: String, token: String?, body: JsonObject?, serverKey: String?): Reply {
         requests+=path
         if (networkFailure) error("Offline")
+        if(path=="/api/recovery")return checkNotNull(recoveryReply){"Missing recovery fixture"}(checkNotNull(body))
         if (path == "/api/login") return Reply(200, obj("token" to "new-token".j(), "actor" to WireJson.encodeToJsonElement(actor)).toString())
         if (expired) return Reply(401, obj("error" to "Session expired".j()).toString())
         if(path.startsWith("/api/device/update"))return Reply(200,"""{"available":false}""")
@@ -63,6 +65,49 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun recoveryIntentIsDurableBeforeSendingAndLostRepliesCanBeConfirmedAfterRestart()=runTest {
+        val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        val preview=RecoveryPreview("preview",9999999999,"epoch",1,"version",1,"Saved state",false,change_count=1,changes=emptyList())
+        // Use the real fixture basis rather than inventing a second workspace.
+        val plan=preview.copy(epoch=v.value.snapshot!!.epoch,generation=v.value.snapshot!!.generation)
+        assertFailsWith<IllegalArgumentException>{m.recovery("apply")}
+        val saved=v.value;v.failing=true
+        assertFailsWith<IllegalStateException>{m.applyRecovery(plan)};assertTrue(t.requests.isEmpty());v.failing=false
+        var applied=0;var reply:JsonObject?=null
+        t.recoveryReply={body->
+            when(body.text("action")){
+                "apply"->{assertNotNull(v.value.recoveryPending);applied++;t.snapshot=t.snapshot.copy(generation=2);reply=obj("ok" to JsonPrimitive(true),"changed" to 1.j());error("Reply lost after commit")}
+                "result"->{assertEquals(v.value.recoveryPending!!.request.text("operation_id"),body.text("operation_id"));Reply(200,obj("known" to JsonPrimitive(true),"result" to checkNotNull(reply)).toString())}
+                else->error("Unexpected recovery request")
+            }
+        }
+        assertFailsWith<IllegalStateException>{m.applyRecovery(plan)};assertNotNull(v.value.recoveryPending);assertEquals(1,applied)
+        val restarted=model(v,t,backgroundScope);restarted.initialize();assertNotNull(restarted.state.value.cache.recoveryPending)
+        assertFailsWith<IllegalStateException>{restarted.resetConnection()};assertFailsWith<IllegalStateException>{restarted.logout()};assertFailsWith<IllegalStateException>{restarted.removeInstallation()}
+        assertNotNull(restarted.checkRecoveryResult());assertNull(v.value.recoveryPending);assertEquals(2,v.value.snapshot!!.generation);assertEquals(saved.keys,v.value.keys);assertEquals(saved.config,v.value.config);assertEquals(saved.token,v.value.token);assertEquals(1,applied)
+    }
+    @Test fun aCommittedRestoreKeepsItsPendingReceiptIfSavingTheConfirmationFails()=runTest {
+        val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        val basis=v.value.snapshot!!.basis;val plan=RecoveryPreview("preview",9999999999,basis.epoch,basis.generation,"version",1,"Saved state",false,change_count=1,changes=emptyList())
+        t.recoveryReply={v.failing=true;Reply(200,obj("ok" to JsonPrimitive(true)).toString())}
+        val failure=assertFailsWith<IllegalStateException>{m.applyRecovery(plan)}
+        assertContains(failure.message.orEmpty(),"confirmed recovery");assertNotNull(v.value.recoveryPending)
+        v.failing=false;t.recoveryReply={Reply(200,obj("known" to JsonPrimitive(true),"result" to obj("ok" to JsonPrimitive(true))).toString())}
+        assertNotNull(m.checkRecoveryResult());assertNull(v.value.recoveryPending)
+    }
+    @Test fun newCommentRetainsTheParentRestoreIdentityInsteadOfAdoptingALaterOne()=runTest {
+        val current=task.copy(data=JsonObject(task.data+("recovery_incarnation" to 3.j())))
+        val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE)),snapshot=initial().snapshot!!.copy(records=listOf(current))))
+        val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();m.enqueue("comment.create","comment",obj("task_id" to task.id.j(),"body" to "Retained comment".j()),null)
+        assertEquals(3,v.value.outbox.single().command.data.number("parent_incarnation"))
+        val restored=model(v,t,backgroundScope);restored.initialize();assertEquals(3,restored.state.value.cache.outbox.single().command.data.number("parent_incarnation"))
+        t.compatibility=obj("server_version" to "0.8.0".j(),"protocol_min" to 1.j(),"protocol_max" to 1.j(),"minimum_client_code" to 10.j(),"recommended_client_code" to CURRENT_CLIENT_CODE.j(),"features" to JsonArray(listOf(RECOVERY_FEATURE.j())))
+        t.snapshot=t.snapshot.copy(records=listOf(current.copy(data=JsonObject(current.data+("recovery_incarnation" to 4.j())))))
+        t.rejection=409;restored.sync();val retained=v.value.conflicts.single();assertEquals(3,retained.command.data.number("parent_incarnation"))
+        restored.resolve(retained.command.operation_id,true);assertEquals(4,v.value.outbox.single().command.data.number("parent_incarnation"));assertEquals("Retained comment",v.value.outbox.single().command.data.text("body"))
+
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun aWaitingImportCannotSendItsFileAfterTheAccountOrWorkspaceChanges()=runTest {
         val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
@@ -114,6 +159,26 @@ class WorkspaceTest {
         val restarted=model(v,FakeTransport(v.value.snapshot!!),backgroundScope);restarted.initialize()
         assertEquals(queued,restarted.state.value.cache.outbox)
         assertEquals(listOf(other.id),projectRecords(restarted.state.value.cache).filter { it.record.kind=="task" }.map { it.record.id })
+    }
+    @Test fun reusingCheckedItemsIsDurableAndKeepsContentAndRevisionDependencies()=runTest {
+        val list=Record("groceries","list",1,obj("title" to "Groceries".j(),"perpetual" to JsonPrimitive(true)))
+        val item=task.copy(data=JsonObject(task.data+mapOf("project_id" to list.id.j(),"quantity" to "2".j(),"store" to "Costco".j())))
+        val image=Record("image","image",1,obj("task_id" to item.id.j(),"name" to "Attached photo".j()))
+        val other=item.copy(id="leave-unchecked")
+        val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(list,item,image,other))))
+        val m=model(v,FakeTransport(v.value.snapshot!!),backgroundScope);m.initialize()
+        m.enqueue("task.complete",item.id,obj(),1)
+        val completed=projectRecords(m.state.value.cache).single { it.record.id==item.id }.record
+        v.failing=true;assertFails { m.reuseCheckedItems(listOf(completed),v.value.snapshot!!.basis) };assertEquals(1,m.state.value.cache.outbox.size)
+        v.failing=false;m.reuseCheckedItems(listOf(completed),v.value.snapshot!!.basis)
+        assertEquals(listOf("task.complete","task.reopen"),v.value.outbox.map { it.command.action })
+        assertEquals(v.value.outbox.first().command.operation_id,v.value.outbox.last().dependsOn)
+        val restarted=model(v,FakeTransport(v.value.snapshot!!),backgroundScope);restarted.initialize()
+        val records=projectRecords(restarted.state.value.cache).map { it.record }
+        val reopened=records.single { it.id==item.id }
+        assertEquals("todo",reopened.data.text("status"));assertEquals("Measure first",reopened.data.text("notes"));assertEquals("2",reopened.data.text("quantity"));assertEquals("Costco",reopened.data.text("store"))
+        assertTrue(records.any { it.id==image.id });assertTrue(records.any { it.id==other.id })
+        assertFails { restarted.reuseCheckedItems(listOf(completed),Basis("different",1)) }
     }
     @Test fun ddilRestartMergesDifferentItemsIntoARemotelyChangedListAndRetainsSameItemConflicts()=runTest {
         val list=Record("groceries","list",1,obj("title" to "Groceries".j()))

@@ -280,7 +280,8 @@ function renderNotes(root) {
       .filter((n) => state.page !== "later" || n.data.on_radar)
       .filter(
         (n) =>
-          !view.category || (n.data.category || "general") === view.category,
+          !view.category ||
+          categoryKey(n.data.category) === categoryKey(view.category),
       )
       .filter(
         (n) =>
@@ -389,7 +390,7 @@ function renderNoteDetail(note) {
     detail,
     select(
       "Category",
-      Object.entries(recordCategories),
+      categoryChoices(draft.category),
       draft.category || "general",
     ),
   );

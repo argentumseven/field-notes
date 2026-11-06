@@ -37,20 +37,19 @@ import org.fieldnotes.domain.*
     if (show) {
         val selected = runCatching { LocalDate.parse(value).atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds() }.getOrNull()
         val state = rememberDatePickerState(initialSelectedDateMillis = selected)
-        DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { Button(onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { SecondaryButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
+        DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { Button(shape=ControlShape,onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { SecondaryButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
     }
 }
-@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit) {
+@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit) {
     val selected=LocalDate.parse(selectedDate);val records=rows.map { it.record }
-    var view by rememberSaveable { mutableStateOf("Day") }
     val month=LocalDate(selected.year,selected.monthNumber,1);val weekStart=selected.minus(selected.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY)
     Row(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
         Column(Modifier.weight(1f)){Text(if(view=="Month")selected.month.name.lowercase().replaceFirstChar { it.uppercase() }+" ${selected.year}" else selected.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() },style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary);Text(friendlyDate(selected),style=MaterialTheme.typography.titleLarge)}
-        OutlinedIconButton(onClick={selectDate(if(view=="Month")month.minus(1,DateTimeUnit.MONTH).toString() else selected.minus(if(view=="Week")7 else 1,DateTimeUnit.DAY).toString())}){Icon(Icons.Outlined.KeyboardArrowLeft,"Previous ${if(view=="Month")"month" else if(view=="Week")"week" else "day"}")}
-        OutlinedIconButton(onClick={selectDate(if(view=="Month")month.plus(1,DateTimeUnit.MONTH).toString() else selected.plus(if(view=="Week")7 else 1,DateTimeUnit.DAY).toString())}){Icon(Icons.Outlined.KeyboardArrowRight,"Next ${if(view=="Month")"month" else if(view=="Week")"week" else "day"}")}
+        OutlinedIconButton(shape=ControlShape,onClick={selectDate(if(view=="Month")month.minus(1,DateTimeUnit.MONTH).toString() else selected.minus(if(view=="Week")7 else 1,DateTimeUnit.DAY).toString())}){Icon(Icons.Outlined.KeyboardArrowLeft,"Previous ${if(view=="Month")"month" else if(view=="Week")"week" else "day"}")}
+        OutlinedIconButton(shape=ControlShape,onClick={selectDate(if(view=="Month")month.plus(1,DateTimeUnit.MONTH).toString() else selected.plus(if(view=="Week")7 else 1,DateTimeUnit.DAY).toString())}){Icon(Icons.Outlined.KeyboardArrowRight,"Next ${if(view=="Month")"month" else if(view=="Week")"week" else "day"}")}
     }
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
-        for(mode in listOf("Day","Week","Month","Agenda"))FilterChip(view==mode,{view=mode},{Text(mode)})
+        for(mode in listOf("Day","Week","Month","Agenda"))FilterChip(view==mode,{selectView(mode)},{Text(mode)})
     }
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){SecondaryButton(onClick={selectDate(today.toString())}){Text("Today")}}
     if(view=="Month") {
@@ -69,7 +68,7 @@ import org.fieldnotes.domain.*
     } else if(view!="Week") {
         Row(Modifier.padding(vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {for(i in 0..6){
             val date=weekStart.plus(i,DateTimeUnit.DAY)
-            FilledTonalButton(onClick={selectDate(date.toString())},modifier=Modifier.weight(1f).testTag("calendar-day-$date"),contentPadding=PaddingValues(horizontal=0.dp,vertical=8.dp),colors=ButtonDefaults.filledTonalButtonColors(containerColor=if(date==selected)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)){
+            FilledTonalButton(shape=ControlShape,onClick={selectDate(date.toString())},modifier=Modifier.weight(1f).testTag("calendar-day-$date"),contentPadding=PaddingValues(horizontal=0.dp,vertical=8.dp),colors=ButtonDefaults.filledTonalButtonColors(containerColor=if(date==selected)MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)){
                 Column(horizontalAlignment=Alignment.CenterHorizontally){Text(date.dayOfWeek.name.take(2),style=MaterialTheme.typography.labelSmall);Text(date.dayOfMonth.toString())}
             }
         }}
@@ -82,7 +81,7 @@ import org.fieldnotes.domain.*
         DayTimeline(records,selected,zone,createAt,open)
     } else if(view=="Week")VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         for(i in 0..6){val day=weekStart.plus(i,DateTimeUnit.DAY);val items=calendarEntries(records,day,zone);val start=day.atStartOfDayIn(zone).epochSeconds;val end=day.plus(1,DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
-            item(day.toString()){OutlinedCard(onClick={selectDate(day.toString());view="Day"},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
+            item(day.toString()){OutlinedCard(onClick={selectDate(day.toString());selectView("Day")},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
                 Row(Modifier.fillMaxWidth()){Text(day.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }+" · ${day.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }} ${day.dayOfMonth}",Modifier.weight(1f),style=MaterialTheme.typography.titleSmall);Text("Open day ›",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)}
                 LinearProgressIndicator(progress={occupiedFraction(records,start,end,zone).toFloat()},modifier=Modifier.fillMaxWidth())
                 if(items.isEmpty())Text("No scheduled items",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -127,7 +126,7 @@ import org.fieldnotes.domain.*
 @Composable internal fun EventEditor(model: Workspace, state: WorkspaceState, record: Record?, day: LocalDate, use24Hour: Boolean = false, preview:(AlertProfile)->Unit={}, initialTime:String?=null, close: () -> Unit) {
     val draft = record?.let { state.cache.drafts[it.id] }; val data = draft?.data ?: record?.data ?: obj()
     var title by rememberSaveable(record?.id) { mutableStateOf(data.text("title")) }; var notes by rememberSaveable(record?.id) { mutableStateOf(data.text("notes")) }
-    val zone = TimeZone.currentSystemDefault()
+    val zone = remember(record?.id) {data["recurrence"]?.let {runCatching {WireJson.decodeFromJsonElement<EventRepeat>(it).zone}.getOrNull()}?.let {runCatching {TimeZone.of(it)}.getOrNull()} ?: TimeZone.currentSystemDefault()}
     val originalStart = data.number("starts_at"); val originalEnd = data.number("ends_at")
     val initialStart = if(originalStart > 0) Instant.fromEpochSeconds(originalStart).toLocalDateTime(zone) else LocalDateTime(day, LocalTime.parse(initialTime ?: "09:00"))
     val initialEnd = if(originalEnd > 0) Instant.fromEpochSeconds(originalEnd).toLocalDateTime(zone) else (initialStart.toInstant(zone)+60.minutes).toLocalDateTime(zone)
@@ -187,7 +186,7 @@ import org.fieldnotes.domain.*
         if (!allDay) {
             if(hasEnd)TimeField("End time", endTime, use24Hour, writable) { endTime = it }
             else Text("Start only · shown as a calendar marker, without reserving a block of time.",style=MaterialTheme.typography.bodySmall)
-            Text("Times are local · ${zone.id.replace('_',' ')}", style = MaterialTheme.typography.bodySmall)
+            Text("Times shown in · ${zone.id.replace('_',' ')}", style = MaterialTheme.typography.bodySmall)
         }
         if(state.cache.supportsPlannerV3())RecurrenceEditor(recurrence,LocalDate.parse(startDate),writable){repeatJson=repeatData(it).toString()}
         if(record!=null&&recurrence!=null)Text("Editing the entire series. Use Skip dates to remove individual occurrences.",style=MaterialTheme.typography.bodySmall)
@@ -195,8 +194,8 @@ import org.fieldnotes.domain.*
         if(record!=null)Text(recordHistory(state.cache,record,zone),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if (record != null && revision != record.revision) { Text("Changed on another device. Your edits are kept. Close and reopen to load the latest event, or keep your edits for a new save.", color = MaterialTheme.colorScheme.error); SecondaryButton(onClick = { revision = record.revision }) { Text("Keep my edits") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    } }, confirmButton = { if(writable) Button(onClick = { busy = true; scope.launch { try { val fields = fields(); if (record == null) model.enqueue("event.create", model.newId(), fields, null, basis) else { model.saveDraft(record.id, revision, fields, basis, "event.update"); model.submitDraft(record.id) }; close(); model.sync() } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message } finally { busy = false } } }, enabled = !busy) { Text("Save event") } }, dismissButton = { Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { if(writable && record != null) SecondaryButton(dangerous=true,onClick = { confirmDelete=true }) { Text("Delete") }; SecondaryButton(onClick = close) { Text("Close") } } })
-    if(confirmDelete && record!=null) EditorDialog(onDismissRequest={confirmDelete=false},title={Text("Delete this event?")},text={Text("${record.data.text("title")} will be removed from the shared calendar when this device syncs.")},confirmButton={Button(onClick={model.enqueueAsync("event.delete",record.id,obj(),record.revision,basis);confirmDelete=false;close()}){Text("Delete event")}},dismissButton={SecondaryButton(onClick={confirmDelete=false}){Text("Keep event")}})
+    } }, confirmButton = { if(writable) Button(shape=ControlShape,onClick = { busy = true; scope.launch { try { val fields = fields(); if (record == null) model.enqueue("event.create", model.newId(), fields, null, basis) else { model.saveDraft(record.id, revision, fields, basis, "event.update"); model.submitDraft(record.id) }; close(); model.sync() } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message } finally { busy = false } } }, enabled = !busy) { Text("Save event") } }, dismissButton = { Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { if(writable && record != null) SecondaryButton(dangerous=true,onClick = { confirmDelete=true }) { Text("Delete") }; SecondaryButton(onClick = close) { Text("Close") } } })
+    if(confirmDelete && record!=null) EditorDialog(onDismissRequest={confirmDelete=false},title={Text("Delete this event?")},text={Text("${record.data.text("title")} will be removed from the shared calendar when this device syncs.")},confirmButton={Button(shape=ControlShape,onClick={model.enqueueAsync("event.delete",record.id,obj(),record.revision,basis);confirmDelete=false;close()}){Text("Delete event")}},dismissButton={SecondaryButton(onClick={confirmDelete=false}){Text("Keep event")}})
 }
 
 @Composable internal fun TimeField(label: String, value: String, use24Hour: Boolean, enabled: Boolean = true, changed: (String) -> Unit) {
@@ -212,6 +211,6 @@ import org.fieldnotes.domain.*
         EditorDialog(onDismissRequest={show=false}, title={Text(label)}, text={Column(horizontalAlignment=Alignment.CenterHorizontally) {
             if(keyboard) TimeInput(picker,modifier=Modifier.testTag("time-input")) else TimePicker(picker,modifier=Modifier.testTag("clock-picker"))
             SecondaryButton(onClick={keyboard=!keyboard}) { Text(if(keyboard) "Use clock" else "Type a time") }
-        }}, confirmButton={Button(onClick={changed(LocalTime(picker.hour,picker.minute).toString().take(5));show=false}){Text("Set time")}}, dismissButton={SecondaryButton(onClick={show=false}){Text("Cancel")}})
+        }}, confirmButton={Button(shape=ControlShape,onClick={changed(LocalTime(picker.hour,picker.minute).toString().take(5));show=false}){Text("Set time")}}, dismissButton={SecondaryButton(onClick={show=false}){Text("Cancel")}})
     }
 }

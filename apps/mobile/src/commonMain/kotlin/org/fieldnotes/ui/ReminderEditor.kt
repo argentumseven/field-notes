@@ -123,7 +123,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             if(settings.advanced)SecondaryButton(onClick={preview(p.copy(importance="quiet"))}){Text("Stop preview")}
         }
         Text("Alarm mode uses Android’s alarm audio stream. Preview uses the current volume. DND exceptions remain in Android Settings; profile forwarding uses the receiving profile’s channel.",style=MaterialTheme.typography.bodySmall)
-    }},confirmButton={Button(onClick={save(p)}){Text("Done")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
+    }},confirmButton={Button(shape=ControlShape,onClick={save(p)}){Text("Done")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
 @Composable internal fun TaskReminderDialog(model:Workspace,state:WorkspaceState,record:Record,device:DeviceActions,close:()->Unit) {
@@ -137,7 +137,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
         Text(record.data.text("title"));Text(if(record.kind=="note")"Reminders use this note’s follow-up time. Recurring windows also work for situational reminders." else "Date reminders use 9 AM on the due or planned day. A recurring window works even without a due date.",style=MaterialTheme.typography.bodySmall)
         ReminderEditor(rules,day,model::newId,device.use24Hour,device.previewSound,reminderEditorSettings(model,state,options,true){optionsJson=reminderOptionsData(it).toString()}){json=reminderData(it).toString()}
         error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-    }},confirmButton={Button(enabled=!busy,onClick={busy=true;scope.launch{try{
+    }},confirmButton={Button(shape=ControlShape,enabled=!busy,onClick={busy=true;scope.launch{try{
         validateReminders(rules);val extra=prunedReminderOptions(options,rules)
         val data=if(state.cache.supportsRemindersV2()){validateReminderOptions(extra);obj("reminders" to reminderData(rules),"reminder_options" to reminderOptionsData(extra))}else obj("reminders" to reminderData(rules))
         model.enqueue(record.kind+".update",record.id,data,record.revision,basis);close();model.sync()

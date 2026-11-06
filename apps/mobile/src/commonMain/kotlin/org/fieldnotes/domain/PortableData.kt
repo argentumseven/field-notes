@@ -7,7 +7,7 @@ import kotlinx.serialization.json.*
  * configuration, credentials or encryption/signing keys into an export. */
 fun portableManifest(cache:Cache):JsonObject {
     val snapshot=checkNotNull(cache.snapshot){"Download a workspace before exporting."}
-    val rows=projectRecords(cache).map{it.record.copy(data=JsonObject(it.record.data-"bytes"))}
+    val rows=projectRecords(cache).map{it.record.copy(data=JsonObject(it.record.data-"bytes"-"recovery_incarnation"))}
     val rowIds=rows.map{it.id}.toSet()
     val orphanAttachments=rows.filter{it.kind in setOf("image","comment")&&it.data.text("task_id") !in rowIds}
     val orphans=orphanAttachments.map{it.id}.toSet()

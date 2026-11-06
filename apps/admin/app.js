@@ -38,7 +38,7 @@ function el(tag, cls = "", text = "") {
   if (text) n.textContent = text;
   return n;
 }
-class DialogCanceled extends Error {}
+class DialogCanceled extends Error { constructor(){super("This view changed. Reopen it and review again.");} }
 function button(text, fn, cls = "") {
   const n = el("button", cls, text);
   n.type = "button";
@@ -192,6 +192,7 @@ function brand() {
   return n;
 }
 function renderLogin({ username = "", message = "" } = {}) {
+  FieldRecovery.changed();
   FieldHistory.leave();
   state.dismissDialog?.();
   state.elevatedUntil = 0;
@@ -349,6 +350,7 @@ function visibleTasks() {
     );
 }
 function render() {
+  FieldRecovery.changed();
   if (state.actor && state.page === "history" && FieldHistory.isOpen()) {
     updateSync();
     FieldHistory.changed();
@@ -821,7 +823,7 @@ function renderTasks() {
   let tasks = visibleTasks().filter(
     (t) =>
       (filters.category === "*" ||
-        (t.data.category || "general") === filters.category) &&
+        categoryKey(t.data.category) === categoryKey(filters.category)) &&
       (filters.person === "*" ||
         (t.data.assignee || "") ===
           (filters.person === "__none" ? "" : filters.person)) &&
@@ -1107,7 +1109,7 @@ function renderDetail() {
     detail,
     select(
       "Category",
-      Object.entries(recordCategories),
+      categoryChoices(draft.category),
       draft.category || "general",
     ),
   );
@@ -1506,7 +1508,7 @@ function renderDetail() {
         await mutate(
           "image.create",
           uuid(),
-          { task_id: task.id, name: file.name, bytes },
+          { task_id: task.id, parent_incarnation: task.data.recovery_incarnation || 0, name: file.name, bytes },
           null,
         );
         notice("Image attached. Location metadata removed.");
@@ -1550,7 +1552,7 @@ function renderDetail() {
         await mutate(
           "comment.create",
           uuid(),
-          { task_id: task.id, body: comment.value },
+          { task_id: task.id, parent_incarnation: task.data.recovery_incarnation || 0, body: comment.value },
           null,
         );
       } catch (e) {
@@ -1730,6 +1732,7 @@ setInterval(async () => {
       head.epoch !== state.snapshot.epoch ||
       head.generation !== state.snapshot.generation ||
       head.sequence !== state.snapshot.sequence ||
+      head.history_revision !== state.snapshot.history_revision ||
       head.directory_revision !== state.directoryRevision
     ) {
       const focused = document.activeElement;

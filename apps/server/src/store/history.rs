@@ -67,7 +67,7 @@ impl Store {
             .unwrap_or_default();
         Ok((parent, collection, title))
     }
-    fn history_value(&self, field: &str, value: &Value) -> Result<Value> {
+    pub(super) fn history_value(&self, field: &str, value: &Value) -> Result<Value> {
         if matches!(field, "assignee" | "claimant" | "completed_by") || field.ends_with(".people") {
             let name = |id: &str| -> Result<Value> {
                 if id.is_empty() {
@@ -217,7 +217,7 @@ impl Store {
         )?;
         self.trim_history(DETAIL_ENTRIES, DETAIL_BYTES)
     }
-    fn trim_history(&self, max_entries: usize, max_bytes: usize) -> Result<()> {
+    pub(super) fn trim_history(&self, max_entries: usize, max_bytes: usize) -> Result<()> {
         self.db.execute("DELETE FROM history_details WHERE seq IN (SELECT seq FROM history_details ORDER BY seq DESC LIMIT -1 OFFSET ?)",[max_entries as i64])?;
         let mut used: i64 = self.db.query_row(
             "SELECT COALESCE(SUM(length(data)),0) FROM history_details",
@@ -374,14 +374,23 @@ impl Store {
         if !["", "added", "changed", "removed"].contains(&action.as_str()) {
             return fail(400, "Choose a history action");
         }
-        let mut sql=String::from("SELECT e.seq,e.object_id,e.action,e.actor,e.at,COALESCE(u.name,'Former household member'),d.data FROM events e LEFT JOIN users u ON u.id=e.actor LEFT JOIN history_details d ON d.seq=e.seq LEFT JOIN objects o ON o.id=e.object_id LEFT JOIN objects p ON p.id=o.parent WHERE e.generation=? AND e.seq<=? AND e.seq<? AND e.at>=? AND e.at<?");
+        let mut sql=String::from("SELECT e.seq,e.object_id,e.action,e.actor,e.at,COALESCE(u.name,'Former household member'),d.data FROM events e LEFT JOIN users u ON u.id=e.actor LEFT JOIN history_details d ON d.seq=e.seq LEFT JOIN objects o ON o.id=e.object_id LEFT JOIN objects p ON p.id=o.parent WHERE e.generation>=? AND e.seq<=? AND e.seq<? AND e.at>=? AND e.at<?");
         let mut args: Vec<SqlValue> = vec![
-            generation.into(),
+            self.recovery_start_generation()?.into(),
             anchor.into(),
             before.into(),
             from.into(),
             to.into(),
         ];
+        sql.push_str(" AND e.seq>?");
+        args.push(self.recovery_history_floor()?.into());
+        let policy = self.recovery_policy()?;
+        sql.push_str(" AND e.seq >= COALESCE((SELECT MIN(seq) FROM (SELECT seq FROM events ORDER BY seq DESC LIMIT ?)),0)");
+        args.push(policy.history_entries.into());
+        if policy.history_days > 0 {
+            sql.push_str(" AND e.at>=?");
+            args.push((now() - policy.history_days * 86400).into());
+        }
         if !who.is_empty() {
             sql.push_str(" AND e.actor=?");
             args.push(who.into());
@@ -450,12 +459,12 @@ impl Store {
             }
         }
         Ok(
-            json!({"epoch":epoch,"generation":generation,"anchor":anchor,"entries":entries,"next_before":cursor,"has_more":examined<rows.len(),"scanned":examined,"detail_limit":DETAIL_ENTRIES,"detail_bytes":DETAIL_BYTES,"actor_id":actor.user_id}),
+            json!({"epoch":epoch,"generation":generation,"anchor":anchor,"entries":entries,"next_before":cursor,"has_more":examined<rows.len(),"scanned":examined,"detail_limit":policy.history_entries,"detail_bytes":policy.history_mib*1024*1024,"actor_id":actor.user_id,"history_revision":self.recovery_revision()?}),
         )
     }
 }
 
-fn history_diff(
+pub(super) fn history_diff(
     path: &str,
     old: Option<&Value>,
     new: Option<&Value>,
@@ -497,7 +506,7 @@ fn history_diff(
         out.push((path.into(), a.clone(), b.clone()))
     }
 }
-fn history_excerpt(value: Value, other: &Value) -> (Value, bool) {
+pub(super) fn history_excerpt(value: Value, other: &Value) -> (Value, bool) {
     if let Some(text) = value.as_str() {
         if text.len() <= 2000 {
             return (value, false);
@@ -537,7 +546,7 @@ fn history_excerpt(value: Value, other: &Value) -> (Value, bool) {
     }
     (value, false)
 }
-fn history_label(path: &str) -> String {
+pub(super) fn history_label(path: &str) -> String {
     let leaf = path.rsplit('.').next().unwrap_or(path);
     let label = match leaf {
         "project_id" => "List or project",

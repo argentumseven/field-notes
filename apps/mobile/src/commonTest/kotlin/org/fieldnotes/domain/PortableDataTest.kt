@@ -4,6 +4,13 @@ import kotlin.test.*
 import kotlinx.serialization.json.*
 
 class PortableDataTest {
+    @Test fun restoredTaskExportsKeepContentWithoutTransplantingTheServerWriteFence(){
+        val task=Record("task","task",3,obj("title" to "Restored reference".j(),"notes" to "Kept notes".j(),"recovery_incarnation" to 2.j()))
+        val cache=Cache(snapshot=Snapshot(1,"workspace",1,3,listOf(task),Actor("person","Alex","owner","session")))
+        val record=portableManifest(cache).getValue("records").jsonArray.single().jsonObject.getValue("data").jsonObject
+        assertEquals("Kept notes",record.text("notes"));assertFalse(record.containsKey("recovery_incarnation"));assertEquals(2,cache.snapshot!!.records.single().data.number("recovery_incarnation"))
+    }
+
     @Test fun contentExportsKeepOfflineImagesAndDraftsWithoutCredentials(){
         val task=Record("task","task",1,obj("title" to "Context to retain".j()))
         val image=Record("image","image",1,obj("task_id" to task.id.j(),"name" to "photo.png".j()))

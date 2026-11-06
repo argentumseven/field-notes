@@ -382,6 +382,7 @@ impl Store {
                             | "original_sha256"
                             | "reminder_rules"
                             | "imported_from"
+                            | "recovery_incarnation"
                     )
                 {
                     return fail(400,"An archive item contains newer fields; update Field Notes before importing it");
@@ -447,7 +448,12 @@ impl Store {
         let mut records = Vec::new();
         let mut media = Vec::new();
         for projected in snapshot.records {
-            let record = self.record(&projected.id)?;
+            let mut record = self.record(&projected.id)?;
+            record
+                .data
+                .as_object_mut()
+                .ok_or(Fault(500, "Invalid export record".into()))?
+                .remove("recovery_incarnation");
             if record.kind == "image" {
                 let bytes = self.image(&record.id)?;
                 media.push(Media {

@@ -1,3 +1,4 @@
+mod backup;
 mod crypto;
 mod downloads;
 mod http;
@@ -5,7 +6,7 @@ mod sounds;
 mod store;
 mod tls;
 use std::{
-    io::{self, Read, Write},
+    io::{self, Read},
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -71,18 +72,6 @@ fn validate_container_listener(
     Ok(())
 }
 
-fn private_write(path: &std::path::Path, data: &[u8]) -> Result<(), String> {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut f = options.open(path).map_err(|e| e.to_string())?;
-    f.write_all(data).map_err(|e| e.to_string())?;
-    f.sync_all().map_err(|e| e.to_string())
-}
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
@@ -127,42 +116,16 @@ async fn run() -> Result<(), String> {
         if data.exists() {
             return Err("Restore requires a nonexistent destination directory. Stop services and restore separately.".into());
         }
-        let vault = crypto::Vault::load(&key)?;
-        let bytes = std::fs::read(arg(&args, "--file", "")).map_err(|e| e.to_string())?;
-        let plain = zeroize::Zeroizing::new(vault.open("backup:v1", &bytes)?);
-        if !plain.starts_with(b"SQLite format 3\0") {
-            return Err("Invalid backup".into());
-        }
-        std::fs::create_dir_all(&data).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o700))
-                .map_err(|e| e.to_string())?;
-        }
-        private_write(&data.join("field-notes.sqlite3"), &plain)?;
-        let store = Store::open(&data, &key)?;
-        store
-            .db
-            .execute_batch("BEGIN IMMEDIATE; DELETE FROM sessions; DELETE FROM operations; DELETE FROM enrollment_invites; UPDATE devices SET state='revoking';")
-            .map_err(|e| e.to_string())?;
-        store
-            .db
-            .execute("UPDATE meta SET epoch=? WHERE id=1", [store::id()])
-            .map_err(|e| e.to_string())?;
-        store
-            .db
-            .execute_batch("COMMIT")
-            .map_err(|e| e.to_string())?;
+        backup::restore(&PathBuf::from(arg(&args, "--file", "")), &data, &key)?;
         println!("Restored with a fresh server epoch. All sessions revoked; reconnect and reconcile client drafts.");
         return Ok(());
     }
     let mut store = Store::open(&data, &key)?;
     if action == "backup" {
-        private_write(
-            &PathBuf::from(arg(&args, "--file", "field-notes.backup")),
-            &store.export_backup().map_err(|e| e.1)?,
-        )?;
+        store
+            .export_backup()
+            .map_err(|e| e.1)?
+            .copy_to(&PathBuf::from(arg(&args, "--file", "field-notes.backup")))?;
         println!("Encrypted backup created; keep the recovery key separately.");
         return Ok(());
     }
@@ -318,11 +281,17 @@ async fn run() -> Result<(), String> {
     let peer_store = app.store.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        let mut ticks = 0u32;
         loop {
             interval.tick().await;
+            ticks = ticks.wrapping_add(1);
+            let trim_recovery = ticks.is_multiple_of(30);
             let store = peer_store.clone();
             let _=tokio::task::spawn_blocking(move|| {
-                if let Ok(mut s)=store.lock() {if s.reconcile_peers().is_err(){eprintln!("Field Notes: peer reconciliation is pending; no new device activation was acknowledged");}}
+                if let Ok(mut s)=store.lock() {
+                    if s.reconcile_peers().is_err(){eprintln!("Field Notes: peer reconciliation is pending; no new device activation was acknowledged");}
+                    if trim_recovery&&s.recovery_maintenance().is_err(){eprintln!("Field Notes: recovery retention needs attention; no uncommitted content change was applied");}
+                }
             }).await;
         }
     });

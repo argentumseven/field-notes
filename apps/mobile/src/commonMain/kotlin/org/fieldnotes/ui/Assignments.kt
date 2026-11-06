@@ -94,7 +94,7 @@ import org.fieldnotes.domain.*
             }
         },
         confirmButton = {
-            Button(enabled = title.isNotBlank() && !busy && !stale, onClick = {
+            Button(shape=ControlShape,enabled = title.isNotBlank() && !busy && !stale, onClick = {
                 busy = true
                 scope.launch {
                     try {

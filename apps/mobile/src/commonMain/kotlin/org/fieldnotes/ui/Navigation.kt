@@ -13,6 +13,6 @@ import androidx.compose.ui.unit.dp
     SecondaryButton(onClick={expanded=!expanded},modifier=Modifier.fillMaxWidth().testTag("group-"+title.lowercase())) {
         Text(title,Modifier.weight(1f),style=MaterialTheme.typography.labelLarge);Text(if(expanded)"▴" else "▾")
     }
-    if(expanded) for(view in views)NavigationDrawerItem(modifier=Modifier.testTag("drawer-"+view.lowercase().replace(" ","-")),label={Text(view)},selected=selected==view,onClick={navigate(view)})
+    if(expanded) for(view in views)NavigationDrawerItem(shape=ControlShape,modifier=Modifier.testTag("drawer-"+view.lowercase().replace(" ","-")),label={Text(view)},selected=selected==view,onClick={navigate(view)})
     Spacer(Modifier.height(8.dp))
 }

@@ -75,7 +75,7 @@ class WidgetRefreshReceiver:BroadcastReceiver(){
     override fun onReceive(context:Context,intent:Intent){
         val pending=goAsync();val app=context.applicationContext as FieldNotesApplication
         app.scope.launch(kotlinx.coroutines.Dispatchers.IO){
-            try{WorkManager.getInstance(context).enqueueUniqueWork("field-notes-widget-refresh",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<WidgetRefreshWorker>().build())}
+            try{WidgetRefreshWorker.enqueue(context,false)}
             catch(e:kotlinx.coroutines.CancellationException){throw e}
             catch(_:Exception){app.deliveryError.value="The widget refresh could not be scheduled. Open Field Notes; cached work is kept."}
             finally{pending.finish()}
@@ -86,8 +86,14 @@ class WidgetRefreshWorker(context:Context,params:WorkerParameters):CoroutineWork
     override suspend fun doWork():Result {
         val app=applicationContext as FieldNotesApplication
         app.initialized.await()
-        if(app.model.state.value.ready&&!app.model.state.value.needsLogin)app.model.sync()
+        val state=app.model.state.value
+        if(state.ready&&!state.needsLogin&&!state.connectionPaused&&(!inputData.getBoolean("automatic",false)||backgroundUpdateMode(state.cache.preferences)!="manual"))app.model.sync()
         PlannerWidget.refresh(applicationContext);UpcomingWidget.refresh(applicationContext);CalendarWidget.refresh(applicationContext)
         return Result.success()
+    }
+    companion object {
+        fun enqueue(context:Context,automatic:Boolean) {
+            WorkManager.getInstance(context).enqueueUniqueWork(if(automatic)"field-notes-widget-auto-refresh" else "field-notes-widget-refresh",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<WidgetRefreshWorker>().setInputData(workDataOf("automatic" to automatic)).build())
+        }
     }
 }

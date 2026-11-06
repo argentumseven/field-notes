@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+val ControlShape=RoundedCornerShape(8.dp)
 /** Quiet surfaces, clear selected controls and coordinated light/dark palettes. */
 private val Dark = darkColorScheme(
     primary=Color(0xffa8b7ff), onPrimary=Color(0xff15245c), primaryContainer=Color(0xff2b3c69), onPrimaryContainer=Color(0xffdfe5ff),
@@ -28,5 +29,5 @@ private val Paper = lightColorScheme(
 )
 @Composable fun FieldNotesTheme(mode:String="system",content: @Composable () -> Unit) {
     MaterialTheme(colorScheme=if(mode=="dark" || mode=="system"&&isSystemInDarkTheme()) Dark else Paper,
-        shapes=Shapes(extraSmall=RoundedCornerShape(4.dp),small=RoundedCornerShape(6.dp),medium=RoundedCornerShape(12.dp),large=RoundedCornerShape(18.dp),extraLarge=RoundedCornerShape(24.dp)),content=content)
+        shapes=Shapes(extraSmall=ControlShape,small=ControlShape,medium=ControlShape,large=RoundedCornerShape(12.dp),extraLarge=RoundedCornerShape(16.dp)),content=content)
 }

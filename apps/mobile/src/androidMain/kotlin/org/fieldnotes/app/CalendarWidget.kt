@@ -21,7 +21,7 @@ import org.fieldnotes.domain.*
 
 /** A real month grid hosted by the launcher, independent of the Upcoming agenda. */
 open class CalendarWidget : AppWidgetProvider() {
-    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) { updateAsync(context) }
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) { updateAsync(context,true) }
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) { updateAsync(context) }
     override fun onDeleted(context: Context, ids: IntArray) {
         context.getSharedPreferences(PREFS,0).edit().apply { ids.forEach { remove("month-$it");remove("week-$it") } }.apply()
@@ -42,11 +42,28 @@ open class CalendarWidget : AppWidgetProvider() {
             updateAsync(context)
         } else if(intent.action == TICK) updateAsync(context)
     }
-    private fun updateAsync(context:Context) {
+    private fun updateAsync(context:Context,automaticSync:Boolean=false) {
         val pending=goAsync()
-        schedule(context).invokeOnCompletion { pending.finish() }
+        val app=context.applicationContext as FieldNotesApplication
+        app.scope.launch(Dispatchers.IO) {
+            var scheduled:Job?=null
+            try {
+                withTimeout(8_000) {
+                    app.initialized.await()
+                    if(automaticSync&&widgetNeedsBackgroundSync(app.model.state.value,Clock.System.now().epochSeconds))WidgetRefreshWorker.enqueue(context,true)
+                    scheduled=schedule(context);scheduled!!.join()
+                }
+            } catch(e:Exception) {
+                if(e is CancellationException&&e !is TimeoutCancellationException)throw e
+                if(scheduled?.isCompleted!=true&&app.deliveryError.compareAndSet(null,WIDGET_TIMEOUT))scheduled?.invokeOnCompletion { cause->
+                    if(cause==null&&app.deliveryError.compareAndSet(WIDGET_TIMEOUT,null))refresh(context)
+                }
+            } finally { pending.finish() }
+        }
     }
     companion object {
+        private const val WIDGET_TIMEOUT="The calendar widget could not update. Open Field Notes; cached work is kept."
+        private const val WIDGET_RENDER="Calendar widget needs a refresh. Open Field Notes."
         private val renderLock=Any()
         private var renderJob:Job?=null
         private var requested=false
@@ -55,9 +72,12 @@ open class CalendarWidget : AppWidgetProvider() {
             requested=true
             renderJob?.takeIf { it.isActive } ?: app.scope.launch(Dispatchers.Default) {
                 while(synchronized(renderLock) { if(requested) { requested=false;true } else { renderJob=null;false } }) {
-                    try { render(app) } catch(e:Exception) {
+                    try {
+                        render(app)
+                        if(app.deliveryError.compareAndSet(WIDGET_TIMEOUT,null)||app.deliveryError.compareAndSet(WIDGET_RENDER,null))synchronized(renderLock){requested=true}
+                    } catch(e:Exception) {
                         if(e is CancellationException)throw e
-                        app.deliveryError.value="Calendar widget needs a refresh. Open Field Notes."
+                        app.deliveryError.value=WIDGET_RENDER
                     }
                 }
             }.also { renderJob=it }
@@ -141,11 +161,12 @@ open class CalendarWidget : AppWidgetProvider() {
             }
             val dayStart=today.atStartOfDayIn(zone).epochSeconds
             val dayEnd=today.plus(1,DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
+            val dayRecords=records.flatMap { eventInstances(it,today,today.plus(1,DateTimeUnit.DAY),zone) }
             view.removeAllViews(R.id.calendar_busy)
             for(i in 0 until 48) {
                 val from=dayStart+(dayEnd-dayStart)*i/48;val until=dayStart+(dayEnd-dayStart)*(i+1)/48
                 val busy=if(reveal)occupiedFraction(records,from,until) else 0.0
-                val point=reveal&&records.any { it.kind=="event"&&!it.flag("all_day")&&it.data.number("ends_at")==0L&&it.data.number("starts_at") in from until until }
+                val point=reveal&&dayRecords.any { it.kind=="event"&&!it.flag("all_day")&&it.data.number("ends_at")==0L&&it.data.number("starts_at") in from until until }
                 val slot=RemoteViews(context.packageName,R.layout.calendar_widget_busy_slot)
                 slot.setInt(R.id.calendar_busy_fill,"setBackgroundColor",blendWidgetColor(palette.track,palette.accent,busy))
                 slot.setTextViewText(R.id.calendar_busy_point,if(point)"•" else "");slot.setTextColor(R.id.calendar_busy_point,palette.accent)
@@ -164,7 +185,7 @@ open class CalendarWidget : AppWidgetProvider() {
             if(interactive)view.setOnClickPendingIntent(R.id.calendar_agenda,open(context,today))
             val state=(context.applicationContext as FieldNotesApplication).model.state.value
             view.setTextViewText(R.id.calendar_refresh,when {
-                !interactive->"Schedule visibility settings";!reveal->widgetHiddenLabel(cache,unlocked,authenticated);widgetProblem(context)->"Needs attention · open settings";state.connectionPaused->"Paused · open app";state.syncing->"Syncing…";cache.outbox.isNotEmpty()->"${cache.outbox.size} queued · retry";cache.preferences.liveUpdates->if(state.online)"Auto refresh · sync now" else "Offline · auto retry";cache.preferences.backgroundSync->"Periodic sync · refresh";else->"Manual sync · refresh"
+                !interactive->"Schedule visibility settings";!reveal->widgetHiddenLabel(cache,unlocked,authenticated);widgetProblem(context)->"Needs attention · open settings";else->widgetSyncLabel(state,Clock.System.now().epochSeconds)
             })
             if(interactive)view.setOnClickPendingIntent(R.id.calendar_refresh,if(!reveal||widgetProblem(context))widgetSettings(context) else if(state.connectionPaused)open(context,today) else PendingIntent.getBroadcast(context,43,Intent(context,WidgetRefreshReceiver::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             return view

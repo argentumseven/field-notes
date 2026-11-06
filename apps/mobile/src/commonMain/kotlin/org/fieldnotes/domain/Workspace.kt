@@ -36,9 +36,9 @@ class Workspace(
     suspend fun initialize() = connection.withLock {
         try {
             val loaded = vault.load()
-            _state.update { it.copy(cache = loaded,connectionPaused=loaded.preferences.connectionPaused,problem=loaded.lastSyncProblem.takeIf{it.isNotBlank()},contactAt=loaded.lastContactAt) }
+            _state.update { it.copy(cache = loaded,connectionPaused=loaded.preferences.connectionPaused,problem=loaded.lastSyncProblem.takeIf{it.isNotBlank()} ?: loaded.recoveryNotice.takeIf{it.isNotBlank()},contactAt=loaded.lastContactAt) }
             if (loaded.keys == null) {
-                check(loaded.config==null && loaded.enrollment==null && loaded.snapshot==null && loaded.history==null && loaded.outbox.isEmpty() && loaded.drafts.isEmpty() && loaded.conflicts.isEmpty()) { "Saved phone identity is missing. Original records are preserved; recover the identity or use Android app settings." }
+                check(loaded.config==null && loaded.enrollment==null && loaded.snapshot==null && loaded.history==null && loaded.recoveryPending==null && loaded.outbox.isEmpty() && loaded.drafts.isEmpty() && loaded.conflicts.isEmpty()) { "Saved phone identity is missing. Original records are preserved; recover the identity or use Android app settings." }
                 val keys = transport.keys(); update { it.copy(keys = keys) }
             }
             var networkError:String?=null
@@ -50,7 +50,7 @@ class Workspace(
     }
     /** Persist the claim nonce before any network operation. A retry resumes the same device. */
     suspend fun beginEnrollment(invitation: Invitation, name: String) = connection.withLock {
-        check(cache.config == null && cache.enrollment == null && cache.snapshot == null && cache.outbox.isEmpty() && cache.drafts.isEmpty() && cache.conflicts.isEmpty()) { "This workspace already has a connection or retained data." }
+        check(cache.config == null && cache.enrollment == null && cache.snapshot == null && cache.outbox.isEmpty() && cache.drafts.isEmpty() && cache.conflicts.isEmpty()&&cache.recoveryPending==null) { "This workspace already has a connection or retained data." }
         require(name.trim().encodeToByteArray().size in 1..80) { "Enter a short phone name." }
         if(invitation.version==2)invitation.tunnelConfiguration(checkNotNull(cache.keys))
         val secret = (newId() + newId()).replace("-", "")
@@ -159,13 +159,13 @@ class Workspace(
     /** Only abandon an expired, never-activated attempt; keys and queued work stay intact. */
     suspend fun forgetExpiredEnrollment() = connection.withLock {
         val current=checkNotNull(cache.enrollment)
-        check(current.invitation.expires<=Clock.System.now().epochSeconds && current.activationSecret==null && cache.config==null && cache.snapshot==null && cache.outbox.isEmpty() && cache.drafts.isEmpty() && cache.conflicts.isEmpty()) { "Keep this pairing attempt; it may have activated or contain retained work." }
+        check(current.invitation.expires<=Clock.System.now().epochSeconds && current.activationSecret==null && cache.config==null && cache.snapshot==null && cache.outbox.isEmpty() && cache.drafts.isEmpty() && cache.conflicts.isEmpty()&&cache.recoveryPending==null) { "Keep this pairing attempt; it may have activated or contain retained work." }
         transport.stop();prepared=false;pairingGeneration.update { it+1 }
         update { it.copy(enrollment=null,preferences=it.preferences.copy(connectionPaused=false)) }
         _state.update { it.copy(connectionPaused=false,error=null) }
     }
     suspend fun resetConnection(newKeys:Boolean=false) = connection.withLock {
-        check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Copy and resolve retained changes before enrolling again." }
+        check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty() && cache.recoveryPending==null) { "Copy and resolve retained changes before enrolling again." }
         pauseConnection(); vault.clearImages()
         val keys = if(newKeys)transport.keys() else cache.keys ?: transport.keys()
         update { Cache(keys = keys, preferences = it.preferences.copy(connectionPaused=true)) }
@@ -173,7 +173,7 @@ class Workspace(
     }
     suspend fun discardRetainedChanges() { update { it.copy(outbox = emptyList(), conflicts = emptyList(), drafts = emptyMap()) } }
     suspend fun pair(raw: String) = connection.withLock {
-        check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Resolve retained changes before changing servers." }
+        check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty() && cache.recoveryPending==null) { "Resolve retained changes before changing servers." }
         val public = WireJson.parseToJsonElement(raw).jsonObject
         check(public.keys.all { it in setOf("address", "endpoint", "server_key", "preshared_key", "api", "ca_pem") }) { "Unexpected pairing fields. Private keys must stay on this device." }
         val private = cache.keys?.get("private_key") ?: error("Generate this device's key first.")
@@ -233,6 +233,67 @@ class Workspace(
         check(!state.value.needsLogin&&cache.token!=null){"Sign in to retrieve this attachment."}
         exchange("/api/transfer/media/$id",null,cache.token)
     }
+    suspend fun recovery(action:String,extra:JsonObject=obj()):JsonObject {
+        require(action in setOf("status","versions","checkpoints","preview")){"Recovery mutations must use the durable confirmation path."}
+        require(action in setOf("status","versions","checkpoints","preview"))
+        val expected=checkNotNull(cache.snapshot){"Synchronize before opening recovery."}
+        return connection.withLock {
+            check(cache.snapshot?.basis==expected.basis&&cache.snapshot?.actor?.user_id==expected.actor.user_id){"The account or workspace changed. Open recovery again."}
+            check(cache.supportsRecovery()){"Update the paired server to use saved versions and checkpoints. Your notes are kept."}
+            val response=request("/api/recovery",JsonObject(extra+obj("action" to action.j(),"epoch" to expected.epoch.j(),"generation" to expected.generation.j())))
+            check(response.text("epoch")==expected.epoch&&response.number("generation")==expected.generation){"The workspace changed. Sync before opening recovery again."}
+            response
+        }
+    }
+    suspend fun createCheckpoint(name:String):JsonObject {
+        val status=recovery("status");val snap=checkNotNull(cache.snapshot)
+        return executeRecovery(obj("action" to "checkpoint.create".j(),"epoch" to snap.epoch.j(),"generation" to snap.generation.j(),"operation_id" to newId().j(),"name" to name.trim().j(),"history_revision" to status.number("history_revision").j()))
+    }
+    suspend fun applyRecovery(preview:RecoveryPreview):JsonObject=executeRecovery(preview.applyRequest(newId()))
+    private suspend fun executeRecovery(body:JsonObject):JsonObject {
+        val expected=checkNotNull(cache.snapshot){"Synchronize first."}
+        return connection.withLock {
+            val current=checkNotNull(cache.snapshot)
+            check(current.basis==expected.basis&&current.actor.user_id==expected.actor.user_id){"The account or workspace changed. Make a new recovery preview."}
+            check(body.text("epoch")==current.epoch&&body.number("generation")==current.generation){"This recovery preview belongs to an earlier workspace. Review it again."}
+            check(cache.supportsRecovery()&&current.actor.role!="viewer"){"Your current account cannot restore content."}
+            check(cache.recoveryPending==null){"Review the previous recovery action before starting another."}
+            check(body.text("action") in setOf("apply","checkpoint.create")&&WireJson.encodeToString(body).length<=4096){"Invalid recovery request."}
+            // Persist the exact idempotent request before any network write.
+            update { it.copy(recoveryPending=RecoveryIntent(current.actor.user_id,current.actor.session_id,body)) }
+            sendPendingRecovery()
+        }
+    }
+    private fun pendingRecovery(requireSameSession:Boolean=true):RecoveryIntent {
+        val pending=checkNotNull(cache.recoveryPending){"There is no recovery action awaiting confirmation."}
+        val actor=checkNotNull(cache.snapshot).actor
+        check(pending.actor==actor.user_id&&(!requireSameSession||pending.session==actor.session_id)&&pending.request.text("epoch")==cache.snapshot?.epoch){"This recovery action belongs to another account, session or server state. Review its status before dismissing it."}
+        return pending
+    }
+    private suspend fun confirmRecoveryResult(result:JsonObject):JsonObject {
+        check(result["ok"]?.jsonPrimitive?.booleanOrNull==true){"The server did not confirm recovery. Review its status."}
+        try {update { it.copy(recoveryPending=null,recoveryNotice="Recovery completed on the server. Sync to download its current state.") }}
+        catch(e:Exception){if(e is CancellationException)throw e;throw IllegalStateException("The server confirmed recovery, but its confirmation could not be saved locally. Review the pending action before starting another.",e)}
+        try {pullSnapshot();update {it.copy(lastSyncedAt=Clock.System.now().epochSeconds,lastContactAt=Clock.System.now().epochSeconds,lastSyncProblem="",recoveryNotice="")};_state.update{it.copy(online=true,error=null,problem=null)}}catch(e:Exception){if(e is CancellationException)throw e;_state.update { it.copy(problem="Recovery completed; the local cache could not refresh. Sync again. Saved edits are kept.",error="Recovery completed; sync again to download the current shared state.") }}
+        return result
+    }
+    private suspend fun sendPendingRecovery():JsonObject {
+        val pending=pendingRecovery()
+        val result=try {request("/api/recovery",pending.request)}catch(e:Exception){
+            if(e is CancellationException)throw e
+            try { update { c->c.copy(recoveryPending=c.recoveryPending?.copy(error=(e.message ?: "Result could not be confirmed").take(500))) } }catch(storage:Exception){if(storage is CancellationException)throw storage}
+            throw IllegalStateException("Recovery was not confirmed. Its exact request is saved; check its status before trying a different restore. "+(e.message ?: ""),e)
+        }
+        return confirmRecoveryResult(result)
+    }
+    suspend fun checkRecoveryResult():JsonObject?=connection.withLock {
+        val pending=pendingRecovery(false)
+        val result=request("/api/recovery",obj("action" to "result".j(),"epoch" to pending.request.getValue("epoch"),"generation" to (cache.snapshot?.generation ?: 0).j(),"operation_id" to pending.request.getValue("operation_id")))
+        if(result["known"]?.jsonPrimitive?.booleanOrNull==true)confirmRecoveryResult(checkNotNull(result["result"] as? JsonObject){"The recovery result was incomplete."}) else null
+    }
+    suspend fun retryRecovery():JsonObject=connection.withLock {sendPendingRecovery()}
+    suspend fun dismissRecoveryStatus() {update { it.copy(recoveryPending=null) }}
+    suspend fun reauthenticate(password:String)=connection.withLock {request("/api/reauth",obj("password" to password.j()));Unit}
     suspend fun history(filter:HistoryFilter,zone:kotlinx.datetime.TimeZone,anchor:Long?=null,before:Long?=null):HistoryPage {
         val expected=checkNotNull(cache.snapshot){"Sync the workspace before opening History."}
         return connection.withLock {
@@ -263,13 +324,13 @@ class Workspace(
         val r = request("/api/login", obj("name" to name.j(), "password" to password.j(), "device" to "Field Notes Android".j()), token = null)
         val actor = WireJson.decodeFromJsonElement<Actor>(r.getValue("actor"))
         val old = cache.snapshot?.actor?.user_id
-        check(old == null || old == actor.user_id || (cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty())) { "Retained edits belong to another account. Sign in to that account before switching." }
+        check(old == null || old == actor.user_id || (cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()&&cache.recoveryPending==null)) { "Retained edits or a recovery action belong to another account. Review them before switching." }
         if (old != null && old != actor.user_id) vault.clearImages()
         update { it.copy(token = r.text("token"), enrollment = null, snapshot = if (old == actor.user_id) it.snapshot else null, people = if(old == actor.user_id)it.people else emptyList(),recoveredImports=if(old==actor.user_id)it.recoveredImports else emptyList()) }
         _state.update { it.copy(needsLogin = false, error = null) }
     }
     suspend fun removeInstallation() = connection.withLock {
-        check(cache.outbox.isEmpty()&&cache.drafts.isEmpty()&&cache.conflicts.isEmpty()) { "Sync or review retained changes before removing this installation." }
+        check(cache.outbox.isEmpty()&&cache.drafts.isEmpty()&&cache.conflicts.isEmpty()&&cache.recoveryPending==null) { "Sync or review retained changes before removing this installation." }
         val result=request("/api/device/revoke-self",obj())
         check(result["authorization_revoked"]==JsonPrimitive(true)){"The server did not confirm device revocation."}
         _state.update { it.copy(needsLogin=true) }
@@ -278,7 +339,7 @@ class Workspace(
         update { Cache(preferences=Preferences(backgroundSync=false,reminders=false,liveUpdates=false)) }
     }
     suspend fun logout() = connection.withLock {
-        check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()) { "Resolve queued changes, drafts and conflicts before signing out." }
+        check(cache.outbox.isEmpty() && cache.conflicts.isEmpty() && cache.drafts.isEmpty()&&cache.recoveryPending==null) { "Resolve queued changes, drafts, conflicts and pending recovery before signing out." }
         request("/api/logout", obj())
         vault.clearImages()
         update { it.copy(token = null, snapshot = null, people = emptyList(), reminded = emptySet(),recoveredImports=emptyList()) }
@@ -293,7 +354,9 @@ class Workspace(
         update { c ->
             check(c.outbox.size + c.conflicts.size < 500) { "Resolve pending changes before adding more." }
             val stamp = basis ?: snap.basis
-            val command = Command(newId(), stamp.epoch, stamp.generation, action, target, revision, data)
+            val parent=if(action in setOf("comment.create","image.create"))projectRecords(c).firstOrNull { it.record.id==data.text("task_id") }?.record else null
+            val protectedData=if(parent!=null&&c.supportsRecovery())JsonObject(data+("parent_incarnation" to parent.data.number("recovery_incarnation").j()))else data
+            val command = Command(newId(), stamp.epoch, stamp.generation, action, target, revision, protectedData)
             val predecessor = c.outbox.lastOrNull { it.command.target == target }?.command?.operation_id
             c.copy(outbox = c.outbox + Pending(command, predecessor))
         }
@@ -312,14 +375,20 @@ class Workspace(
         }
     }
     suspend fun clearCheckedItems(items:List<Record>,basis:Basis) {
+        changeCheckedItems(items,basis,"task.delete")
+    }
+    suspend fun reuseCheckedItems(items:List<Record>,basis:Basis) {
+        changeCheckedItems(items,basis,"task.reopen")
+    }
+    private suspend fun changeCheckedItems(items:List<Record>,basis:Basis,action:String) {
         update { c ->
             val snap=c.snapshot ?: error("Synchronize first.")
-            check(snap.basis==basis){"The workspace changed. Reopen this list before clearing items."}
+            check(snap.basis==basis){"The workspace changed. Reopen this list before changing checked items."}
             check(snap.actor.role!="viewer"){"Your role is read-only."}
             val rows=projectRecords(c).map { it.record };val ids=items.map { it.id }.toSet()
-            check(ids.size==items.size&&items.all { r->r.kind=="task"&&r.data.text("status")=="done"&&isChecklistItem(r,rows) }){"Choose checked list items."}
-            check(c.outbox.size+c.conflicts.size+items.size<=500){"Synchronize pending work before clearing this many items."}
-            val commands=items.map { row->Pending(Command(newId(),snap.epoch,snap.generation,"task.delete",row.id,row.revision,obj()),c.outbox.lastOrNull { it.command.target==row.id }?.command?.operation_id) }
+            check(items.isNotEmpty()&&ids.size==items.size&&items.all { r->r.kind=="task"&&r.data.text("status")=="done"&&isChecklistItem(r,rows) }){"Choose checked list items."}
+            check(c.outbox.size+c.conflicts.size+items.size<=500){"Synchronize pending work before changing this many items."}
+            val commands=items.map { row->Pending(Command(newId(),snap.epoch,snap.generation,action,row.id,row.revision,obj()),c.outbox.lastOrNull { it.command.target==row.id }?.command?.operation_id) }
             c.copy(outbox=c.outbox+commands)
         }
     }
@@ -367,6 +436,24 @@ class Workspace(
     }
     suspend fun observeCompatibility(reply:JsonObject)=rememberCompatibility(reply)
 
+    private suspend fun pullSnapshot():Snapshot {
+        val fresh = SyncJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
+        check(fresh.protocol == 1) { "Update this client before using the server's new protocol." }
+        val directoryReply = try { request("/api/people") } catch(e:ApiError) { if(e.status==404)obj("people" to JsonArray(emptyList())) else throw e }
+        val directory=SyncJson.decodeFromJsonElement<List<HouseholdPerson>>(directoryReply.getValue("people"))
+        update { c ->
+            val ids = fresh.records.map { it.id }.toSet()
+            val orphaned = c.drafts.values.filter { d ->
+                d.epoch != fresh.epoch || d.generation != fresh.generation ||
+                    (d.target !in ids && c.outbox.none { it.command.target == d.target && it.command.action.endsWith(".create") && it.command.epoch == fresh.epoch && it.command.generation == fresh.generation })
+            }
+            c.copy(snapshot = fresh, people = directory, recoveredImports=if(c.snapshot?.basis==fresh.basis)c.recoveredImports else emptyList(), directoryRevision=directoryReply.number("revision"), drafts = c.drafts - orphaned.map { it.target }.toSet(), conflicts = c.conflicts + orphaned.map { d ->
+                Conflict(Command(newId(), d.epoch, d.generation, d.action, d.target, d.revision, d.data), "The server item was removed or restored. Copy this draft to a new item if needed.")
+            })
+        }
+        return fresh
+    }
+
     suspend fun sync() {
         if (!connection.tryLock()) return
         if (cache.config == null || cache.token == null || !_state.value.ready) { connection.unlock(); return }
@@ -374,20 +461,7 @@ class Workspace(
         try {
             if(cache.compatibility==null || Clock.System.now().epochSeconds-cache.compatibility!!.checkedAt>3600)inspectCompatibility()
             check(cache.compatibility?.blocked!=true) { cache.compatibility!!.message }
-            val fresh = SyncJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
-            check(fresh.protocol == 1) { "Update this client before using the server's new protocol." }
-            val directoryReply = try { request("/api/people") } catch(e:ApiError) { if(e.status==404)obj("people" to JsonArray(emptyList())) else throw e }
-            val directory=SyncJson.decodeFromJsonElement<List<HouseholdPerson>>(directoryReply.getValue("people"))
-            update { c ->
-                val ids = fresh.records.map { it.id }.toSet()
-                val orphaned = c.drafts.values.filter { d ->
-                    d.epoch != fresh.epoch || d.generation != fresh.generation ||
-                        (d.target !in ids && c.outbox.none { it.command.target == d.target && it.command.action.endsWith(".create") && it.command.epoch == fresh.epoch && it.command.generation == fresh.generation })
-                }
-                c.copy(snapshot = fresh, people = directory, recoveredImports=if(c.snapshot?.basis==fresh.basis)c.recoveredImports else emptyList(), directoryRevision=directoryReply.number("revision"), drafts = c.drafts - orphaned.map { it.target }.toSet(), conflicts = c.conflicts + orphaned.map { d ->
-                    Conflict(Command(newId(), d.epoch, d.generation, d.action, d.target, d.revision, d.data), "The server item was removed or restored. Copy this draft to a new item if needed.")
-                })
-            }
+            val fresh = pullSnapshot()
             while (true) {
                 val item = cache.outbox.firstOrNull() ?: break
                 val c = item.command
@@ -417,7 +491,7 @@ class Workspace(
                 }
             }
             val final = SyncJson.decodeFromJsonElement<Snapshot>(request("/api/snapshot"))
-            update { it.copy(snapshot = final,lastSyncedAt=Clock.System.now().epochSeconds,lastContactAt=Clock.System.now().epochSeconds,lastSyncProblem="") }
+            update { it.copy(snapshot = final,lastSyncedAt=Clock.System.now().epochSeconds,lastContactAt=Clock.System.now().epochSeconds,lastSyncProblem="",recoveryNotice="") }
             _state.update { it.copy(online = true, error = null,problem=null,contactAt=Clock.System.now().epochSeconds) }
         } catch (e: Exception) {
             report(e); _state.update { it.copy(online = false) };runCatching{update { it.copy(lastSyncProblem=(e.message ?: "Sync failed").take(600)) }}
@@ -434,7 +508,7 @@ class Workspace(
             val head=request("/api/head")
             rememberCompatibility(head)
             check(cache.compatibility?.blocked!=true) { cache.compatibility!!.message }
-            changed=cache.snapshot?.let { it.epoch!=head.text("epoch")||it.generation!=head.number("generation")||it.sequence!=head.number("sequence")||cache.directoryRevision!=head.number("directory_revision") }?:true
+            changed=cache.snapshot?.let { it.epoch!=head.text("epoch")||it.generation!=head.number("generation")||it.sequence!=head.number("sequence")||it.history_revision!=head.number("history_revision")||cache.directoryRevision!=head.number("directory_revision") }?:true
             if(cache.outbox.isNotEmpty())changed=true
             val now=Clock.System.now().epochSeconds
             if(now-cache.lastContactAt>=300||cache.lastSyncProblem.isNotBlank())update { it.copy(lastContactAt=now,lastSyncProblem="") }
@@ -461,7 +535,12 @@ class Workspace(
                 val current = snap.records.firstOrNull { it.id == old.target }
                 check(current != null || old.action.endsWith(".create")) { "The item was deleted. Copy this text into a new item instead." }
                 check(snap.actor.role != "viewer") { "Your role is read-only." }
-                c.copy(conflicts = c.conflicts.filterNot { it.command.operation_id == id }, outbox = c.outbox + Pending(old.copy(operation_id = newId(), epoch = snap.epoch, generation = snap.generation, expected_revision = current?.revision)))
+                check(current==null||!old.action.endsWith(".create")){"This item already exists. Compare its current copy before discarding the retained create; it was not duplicated."}
+                val parent=if(old.action in setOf("comment.create","image.create"))snap.records.firstOrNull {it.id==old.data.text("task_id")&&it.kind=="task"} ?: error("The parent task is unavailable. Restore it or copy this retained work to another task.") else null
+                // Only an explicit Reapply may adopt the current parent fence.
+                // Ordinary synchronization always preserves the original one.
+                val reviewedData=if(parent!=null)JsonObject(old.data-"parent_incarnation"+(if(c.supportsRecovery())mapOf("parent_incarnation" to parent.data.number("recovery_incarnation").j())else emptyMap()))else old.data
+                c.copy(conflicts = c.conflicts.filterNot { it.command.operation_id == id }, outbox = c.outbox + Pending(old.copy(operation_id = newId(), epoch = snap.epoch, generation = snap.generation, expected_revision = current?.revision,data=reviewedData)))
             }
         }
     }

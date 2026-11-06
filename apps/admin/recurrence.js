@@ -215,13 +215,87 @@ window.FieldRecurrence = (() => {
             )
             .join(", ")
         : r.frequency === "monthly"
-          ? r.interval === 1
-            ? "Monthly"
-            : `Every ${r.interval} months`
+          ? r.interval === 12
+            ? "Every year"
+            : r.interval % 12 === 0
+              ? `Every ${r.interval / 12} years`
+              : r.interval === 1
+                ? "Monthly"
+                : `Every ${r.interval} months`
           : `${r.dates.length} chosen dates`;
+  }
+  function preset(r) {
+    if (!r) return "none";
+    if (r.frequency === "daily" && r.interval === 2) return "alternate";
+    if (r.frequency === "weekly" && r.interval === 2) return "fortnightly";
+    if (
+      r.frequency === "weekly" &&
+      r.interval === 1 &&
+      [...r.weekdays].sort().join(",") === "1,2,3,4,5"
+    )
+      return "weekdays";
+    if (r.frequency === "monthly" && r.interval === 12) return "yearly";
+    return r.interval === 1 || r.frequency === "dates" ? r.frequency : "custom";
+  }
+  function nextDates(r, first, from, limit = 5) {
+    validate(r);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10)
+      throw Error("Choose up to 10 preview dates.");
+    const after = first > from ? first : from;
+    if (r.until && after > r.until) return [];
+    if (r.frequency === "dates")
+      return [...r.dates]
+        .sort()
+        .filter((d) => d >= after && matches(r, first, d))
+        .slice(0, limit);
+    const result = [],
+      take = (day) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day >= after && matches(r, first, day) && result.length < limit)
+          result.push(day);
+      };
+    if (r.frequency === "monthly") {
+      const anchor = +first.slice(0, 4) * 12 + +first.slice(5, 7) - 1;
+      const offset = +after.slice(0, 4) * 12 + +after.slice(5, 7) - 1 - anchor;
+      let month = anchor + Math.floor(offset / r.interval) * r.interval;
+      for (
+        let i = 0;
+        i < 1024 && result.length < limit;
+        i++, month += r.interval
+      ) {
+        const year = Math.floor(month / 12),
+          number = (month % 12) + 1;
+        if (year > 9999) break;
+        const day = `${String(year).padStart(4, "0")}-${String(number).padStart(2, "0")}-${first.slice(8)}`;
+        if (r.until && day > r.until) break;
+        if (new Date(day + "T12:00Z").toISOString().slice(0, 10) === day)
+          take(day);
+      }
+    } else {
+      const weekly = r.frequency === "weekly",
+        step = r.interval * (weekly ? 7 : 1);
+      const anchor = weekly ? shift(first, -(weekday(first) % 7)) : first;
+      let day = shift(
+        anchor,
+        Math.floor((dayNumber(after) - dayNumber(anchor)) / step) * step,
+      );
+      for (
+        let i = 0;
+        i < 256 && result.length < limit;
+        i++, day = shift(day, step)
+      ) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || r.until && day > r.until) break;
+        for (let n = 0; n < (weekly ? 7 : 1); n++) take(shift(day, n));
+      }
+    }
+    return result;
   }
   function controls(parent, initial, getStart, changed) {
     let rule = initial ? structuredClone(initial) : null;
+    let custom = preset(rule) === "custom";
+    let customUnit =
+      rule?.frequency === "monthly" && rule.interval % 12 === 0
+        ? "yearly"
+        : rule?.frequency || "weekly";
     const box = el("section", "repeat-editor");
     parent.append(box);
     const seed = () => ({
@@ -280,26 +354,19 @@ window.FieldRecurrence = (() => {
         ["weekly", "Weekly · choose days"],
         ["fortnightly", "Alternate weeks"],
         ["monthly", "Monthly"],
+        ["yearly", "Every year"],
         ["dates", "Choose individual dates"],
         ["custom", "Custom interval"],
       ];
-      const selected = !rule
-        ? "none"
-        : rule.frequency === "daily" && rule.interval === 2
-          ? "alternate"
-          : rule.frequency === "weekly" && rule.interval === 2
-            ? "fortnightly"
-            : rule.frequency === "weekly" &&
-                rule.interval === 1 &&
-                rule.weekdays.join(",") === "1,2,3,4,5"
-              ? "weekdays"
-              : rule.interval === 1
-                ? rule.frequency
-                : "custom";
-      const preset = select("Repeat", options, selected);
-      box.append(addField(el("div"), preset).parentElement);
-      preset.node.onchange = () => {
-        const key = preset.node.value;
+      const choice = select(
+        "Repeat",
+        options,
+        custom && rule ? "custom" : preset(rule),
+      );
+      box.append(addField(el("div"), choice).parentElement);
+      choice.node.onchange = () => {
+        const key = choice.node.value;
+        custom = key === "custom";
         if (key === "none") rule = null;
         else {
           rule = rule || seed();
@@ -308,43 +375,68 @@ window.FieldRecurrence = (() => {
               ? "daily"
               : ["weekdays", "weekly", "fortnightly"].includes(key)
                 ? "weekly"
-                : key;
-            rule.interval = ["alternate", "fortnightly"].includes(key) ? 2 : 1;
+                : key === "yearly"
+                  ? "monthly"
+                  : key;
+            rule.interval =
+              key === "yearly"
+                ? 12
+                : ["alternate", "fortnightly"].includes(key)
+                  ? 2
+                  : 1;
             if (key === "weekdays") rule.weekdays = [1, 2, 3, 4, 5];
             if (rule.frequency === "weekly" && !rule.weekdays.length)
               rule.weekdays = [weekday(getStart())];
           }
+          customUnit =
+            rule.frequency === "monthly" && rule.interval % 12 === 0
+              ? "yearly"
+              : rule.frequency;
         }
         notify();
       };
       if (!rule) return;
-      const frequency = select(
-          "Pattern",
-          [
-            ["daily", "Days"],
-            ["weekly", "Weeks"],
-            ["monthly", "Months"],
-            ["dates", "Individual dates"],
-          ],
-          rule.frequency,
-        ),
-        interval = input("Every", String(rule.interval), "number");
-      interval.node.min = 1;
-      interval.node.max = 365;
-      const line = el("div", "view-filters");
-      line.append(
-        addField(el("div"), interval).parentElement,
-        addField(el("div"), frequency).parentElement,
-      );
-      box.append(line);
-      interval.node.onchange = () => {
-        rule.interval = Number(interval.node.value);
-        notify();
-      };
-      frequency.node.onchange = () => {
-        rule.frequency = frequency.node.value;
-        notify();
-      };
+      if (custom) {
+        const frequency = select(
+            "Repeat every",
+            [
+              ["daily", "Days"],
+              ["weekly", "Weeks"],
+              ["monthly", "Months"],
+              ["yearly", "Years"],
+              ["dates", "Individual dates"],
+            ],
+            customUnit,
+          ),
+          interval = input(
+            "Every",
+            String(
+              customUnit === "yearly" ? rule.interval / 12 : rule.interval,
+            ),
+            "number",
+          );
+        interval.node.min = 1;
+        interval.node.max = customUnit === "yearly" ? 30 : 365;
+        const line = el("div", "view-filters");
+        line.append(
+          ...(rule.frequency === "dates"
+            ? []
+            : [addField(el("div"), interval).parentElement]),
+          addField(el("div"), frequency).parentElement,
+        );
+        box.append(line);
+        interval.node.onchange = () => {
+          rule.interval =
+            Number(interval.node.value) * (customUnit === "yearly" ? 12 : 1);
+          notify();
+        };
+        frequency.node.onchange = () => {
+          customUnit = frequency.node.value;
+          rule.frequency = customUnit === "yearly" ? "monthly" : customUnit;
+          rule.interval = customUnit === "yearly" ? 12 : 1;
+          notify();
+        };
+      }
       if (rule.frequency === "weekly") {
         const days = el("div", "repeat-days");
         ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((name, i) => {
@@ -383,35 +475,32 @@ window.FieldRecurrence = (() => {
           "muted",
           "Repeats in " +
             rule.zone.replaceAll("_", " ") +
-            ". Monthly dates missing from a month are skipped. Skipped clock-change times are skipped.",
+            ". February 29 repeats in leap years. Missing dates and nonexistent clock-change times are skipped.",
         ),
       );
       // Place the exception controls in their disclosure while retaining one renderer.
       const oldCount = box.childNodes.length;
       addDate("Skipped date", "excluded");
       for (const node of [...box.childNodes].slice(oldCount)) skip.append(node);
-      const preview = [];
       try {
-        validate(rule);
-        for (
-          let d = getStart(), i = 0;
-          i < 370 && preview.length < 5;
-          i++, d = shift(d, 1)
-        )
-          if (matches(rule, getStart(), d))
-            preview.push(
-              new Date(d + "T12:00").toLocaleDateString([], {
-                month: "short",
-                day: "numeric",
-              }),
-            );
+        const preview = nextDates(
+          rule,
+          getStart(),
+          civil(parts(Date.now() / 1000, rule.zone)),
+        ).map((d) =>
+          new Date(d + "T12:00").toLocaleDateString([], {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }),
+        );
         box.append(
           el(
             "p",
             "muted",
             label(rule) +
               " · Next: " +
-              (preview.join(" · ") || "none within the next year"),
+              (preview.join(" · ") || "none with these repeat settings"),
           ),
         );
       } catch (e) {
@@ -428,6 +517,8 @@ window.FieldRecurrence = (() => {
     parts,
     validate,
     label,
+    preset,
+    nextDates,
     controls,
     shift,
   };

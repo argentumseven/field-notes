@@ -64,6 +64,19 @@ class NativeDeviceTest {
             assertEquals(200,history.status)
             val trail=WireJson.parseToJsonElement(history.body).jsonObject.getValue("entries").jsonArray
             assertEquals(2,trail.size);assertEquals("task.start",trail.first().jsonObject.text("action"));assertEquals(title,trail.last().jsonObject.text("title"))
+            suspend fun recovery(action:String,extra:JsonObject=obj()):JsonObject {
+                val reply=transport.exchange("/api/recovery",token,JsonObject(extra+obj("action" to action.j(),"epoch" to meta.getValue("epoch"),"generation" to meta.getValue("generation"))),peer)
+                assertEquals(reply.body,200,reply.status);return WireJson.parseToJsonElement(reply.body).jsonObject
+            }
+            val saved=recovery("versions",obj("target" to task.j())).getValue("entries").jsonArray.last().jsonObject
+            val restorePlan=recovery("preview",obj("source" to saved.getValue("id")))
+            val restoreRequest=obj("preview_id" to restorePlan.getValue("preview_id"),"operation_id" to UUID.randomUUID().toString().j(),"confirmation" to "RESTORE ITEM".j())
+            val restored=recovery("apply",restoreRequest);assertTrue(restored.number("changed")>0)
+            assertEquals(restored,recovery("apply",restoreRequest))
+            val afterRestore=transport.exchange("/api/snapshot",token,serverKey=peer)
+            val restoredTask=WireJson.parseToJsonElement(afterRestore.body).jsonObject.getValue("records").jsonArray.map {it.jsonObject}.first {it.text("id")==task}
+            assertEquals(3L,restoredTask.number("revision"));assertEquals(1L,restoredTask.getValue("data").jsonObject.number("recovery_incarnation"))
+            assertEquals(409,command("comment.create",UUID.randomUUID().toString(),obj("task_id" to task.j(),"body" to "Stale pre-restore draft".j())).status)
             val exported=transport.exchange("/api/transfer/export",token,serverKey=peer);assertEquals(200,exported.status)
             val manifest=WireJson.parseToJsonElement(exported.body).jsonObject
             val prepared=transport.exchange("/api/transfer/prepare",token,obj("manifest" to manifest),peer);assertEquals(200,prepared.status)

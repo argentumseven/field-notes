@@ -190,12 +190,12 @@ func TestRealWireGuardHTTPSAndBoundaries(t *testing.T) {
 }
 
 func TestPortableRoutesStayNarrow(t *testing.T) {
-	for _, path := range []string{"/api/history", "/api/transfer/export", "/api/transfer/recovered", "/api/transfer/prepare", "/api/transfer/review", "/api/transfer/image", "/api/transfer/commit", "/api/transfer/cancel", "/api/transfer/restore", "/api/transfer/discard", "/api/transfer/media/12345678-1234-1234-1234-123456789abc"} {
+	for _, path := range []string{"/api/recovery", "/api/history", "/api/transfer/export", "/api/transfer/recovered", "/api/transfer/prepare", "/api/transfer/review", "/api/transfer/image", "/api/transfer/commit", "/api/transfer/cancel", "/api/transfer/restore", "/api/transfer/discard", "/api/transfer/media/12345678-1234-1234-1234-123456789abc"} {
 		if !devicePath(path) {
 			t.Errorf("Missing fixed content route %s", path)
 		}
 	}
-	for _, path := range []string{"/api/transfer/admin", "/api/transfer/media/not-a-uuid", "/api/transfer/media/../../admin", "/api/transfer/prepare/extra", "/api/admin/backup", "/downloads/legacy/field-notes.apk"} {
+	for _, path := range []string{"/api/recovery/admin", "/api/recovery/extra", "/api/transfer/admin", "/api/transfer/media/not-a-uuid", "/api/transfer/media/../../admin", "/api/transfer/prepare/extra", "/api/admin/backup", "/downloads/legacy/field-notes.apk"} {
 		if devicePath(path) {
 			t.Errorf("Unexpected route allowed %s", path)
 		}

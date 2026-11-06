@@ -17,7 +17,7 @@ fun JsonObject.number(key: String, default: Long = 0) = (get(key) as? JsonPrimit
 @Serializable data class Actor(val user_id: String, val name: String, val role: String, val session_id: String, val elevated: Boolean = false)
 @Serializable data class HouseholdPerson(val id:String,val name:String,val can_assign:Boolean)
 @Serializable data class Record(val id: String, val kind: String, val revision: Long, val data: JsonObject)
-@Serializable data class Snapshot(val protocol: Int, val epoch: String, val generation: Long, val sequence: Long, val records: List<Record>, val actor: Actor)
+@Serializable data class Snapshot(val protocol: Int, val epoch: String, val generation: Long, val sequence: Long, val records: List<Record>, val actor: Actor,val history_revision:Long=0)
 @Serializable data class Command(val operation_id: String, val epoch: String, val generation: Long, val action: String, val target: String, val expected_revision: Long?, val data: JsonObject)
 @Serializable data class Basis(val epoch: String, val generation: Long)
 val Snapshot.basis get() = Basis(epoch, generation)
@@ -35,6 +35,8 @@ val Snapshot.basis get() = Basis(epoch, generation)
     val lastContactAt:Long=0,val lastSyncProblem:String="",
     val recoveredImports:List<JsonObject> = emptyList(),
     val history:HistoryCache? = null,
+    val recoveryPending:RecoveryIntent? = null,
+    val recoveryNotice:String = "",
 )
 data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0)
 data class Reply(val status: Int, val body: String = "", val binary: String? = null)

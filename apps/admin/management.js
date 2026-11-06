@@ -570,6 +570,7 @@ async function renderAdmin() {
     ),
   );
   root.append(health);
+  FieldRecovery.management(root, data.recovery);
   const audit = el("section", "panel wide");
   audit.append(el("h2", "", "Administrative activity"));
   if (!data.audit.length)

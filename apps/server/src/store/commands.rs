@@ -105,6 +105,9 @@ impl Store {
         } else {
             Vec::new()
         };
+        let recovery_targets = self.recovery_subjects(c, &record, &removed_children);
+        let mut recovery_protected =
+            self.recovery_capture(&actor, &recovery_targets, "baseline.before_change")?;
         if c.data.get("reminder_options").is_none() {
             if let Some(incoming) = c.data.get("reminders") {
                 let changed = record.data.get("reminders") != Some(incoming);
@@ -304,16 +307,18 @@ impl Store {
                 )?;
             }
             "comment.create" => {
-                fields(&c.data, &["task_id", "body"])?;
+                fields(&c.data, &["task_id", "body", "parent_incarnation"])?;
                 let tid = text(&c.data, "task_id", 36)?;
                 Self::task(&self.record(&tid)?)?;
+                self.recovery_parent_fence(&tid, &c.data)?;
                 parent = Some(tid.clone());
                 record.data = json!({"task_id":tid,"body":text(&c.data,"body",8192)?,"author":actor.name,"author_id":actor.user_id,"created_at":now()});
             }
             "image.create" => {
-                fields(&c.data, &["task_id", "name", "bytes"])?;
+                fields(&c.data, &["task_id", "name", "bytes", "parent_incarnation"])?;
                 let tid = text(&c.data, "task_id", 36)?;
                 Self::task(&self.record(&tid)?)?;
+                self.recovery_parent_fence(&tid, &c.data)?;
                 parent = Some(tid.clone());
                 let bytes = STANDARD
                     .decode(text(
@@ -389,6 +394,10 @@ impl Store {
                     "UPDATE objects SET deleted=1,revision=revision+1 WHERE id=? OR parent=?",
                     params![c.target, c.target],
                 )?;
+                self.recovery_compact_deleted(&c.target)?;
+                for child in &removed_children {
+                    self.recovery_compact_deleted(&child.id)?;
+                }
                 record.revision += 1;
                 record.data = json!({"deleted":true});
             }
@@ -446,6 +455,8 @@ impl Store {
                 None
             },
         )?;
+        recovery_protected.extend(self.recovery_capture(&actor, &recovery_targets, &c.action)?);
+        self.recovery_trim(&recovery_protected)?;
         let result = json!({"record":record,"sequence":sequence,"operation_id":c.operation_id});
         let bytes = self.vault.seal(
             &format!("operation:{}", c.operation_id),

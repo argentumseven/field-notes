@@ -75,7 +75,7 @@ def bundle_info(folder,current,recover=False):
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -154,8 +154,10 @@ def apply(host,record,folder,engine=None,health=readiness,recover=False):
  master=config/'master.key';meta=master.stat()
  if master.is_symlink() or meta.st_uid not in (host.owner,record['uid']) or meta.st_mode&0o777 not in (0o600,0o640):raise ValueError('Recovery key ownership/mode requires review; never replace the key')
  data_bytes=sum(p.stat().st_size for p in host.path(record['data']).rglob('*') if p.is_file())
- required=sum(p.stat().st_size for p in prefix.rglob('*') if p.is_file())+data_bytes*(2 if recover else 1)+256*1024*1024
+ shared_disk=config.stat().st_dev==host.path(record['data']).stat().st_dev
+ required=sum(p.stat().st_size for p in prefix.rglob('*') if p.is_file())+data_bytes*((4 if recover else 3) if shared_disk else (2 if recover else 1))+256*1024*1024
  if shutil.disk_usage(config).free<required:raise ValueError('Insufficient room for the private program snapshot and encrypted backup')
+ if not shared_disk and shutil.disk_usage(host.path(record['data'])).free<data_bytes*2+64*1024*1024:raise ValueError('Insufficient room on the data disk for the streaming backup snapshot')
  backup=config/('upgrade-'+uuid.uuid4().hex);backup.mkdir(mode=0o700)
  for name in ('deployment.json','compose.json',RECORD):shutil.copy2(config/name,backup/name)
  target_record=copy.deepcopy(record);target_record['docker']={'settings':plan['settings'],'tags':plan['tags']}

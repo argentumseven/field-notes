@@ -3,17 +3,23 @@ const recordCategories = {
   general: "General",
   action: "Action",
   food: "Food & cooking",
-  honey_do: "Honey-do",
-  home: "Home & maintenance",
+  home: "Household",
   errands: "Errands",
   work: "Work",
   personal: "Personal",
 };
+const categoryKey = (value) =>
+  value === "honey_do" ? "home" : value || "general";
+const categoryChoices = (value) =>
+  Object.entries(recordCategories).map(([key, label]) => [
+    key === "home" && value === "honey_do" ? value : key,
+    label,
+  ]);
 function categoryField(record) {
   return {
     key: "category",
     label: "Category",
-    options: Object.entries(recordCategories),
+    options: categoryChoices(record?.data.category),
     value: record?.data.category || "general",
   };
 }
@@ -54,7 +60,7 @@ function typeBadges(record) {
       el(
         "span",
         "type-badge category-" + category,
-        recordCategories[category] || "General",
+        recordCategories[categoryKey(category)] || "General",
       ),
     );
   return group;

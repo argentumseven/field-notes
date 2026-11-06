@@ -65,7 +65,7 @@ import org.fieldnotes.domain.*
         }
         if(occupied)Text("Clear or move this collection's items before deleting it.",style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-    }},confirmButton={Button(enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
+    }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
         val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to JsonPrimitive(itemReminders)) else emptyMap()) else emptyMap()
         val fields=JsonObject(mapOf("title" to title.j(),"notes" to notes.j())+(if(kind=="list")listConfiguration(template,choices,perpetual) else emptyMap())+extra)
         model.enqueue(kind+if(record==null)".create" else ".update",record?.id ?: model.newId(),fields,record?.revision,basis);close();model.sync()
@@ -73,7 +73,7 @@ import org.fieldnotes.domain.*
         if(record!=null)SecondaryButton(onClick={remove=true},enabled=!occupied&&!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
         SecondaryButton(onClick=close,enabled=!busy){Text("Cancel")}
     }})
-    if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={Text("The empty $kind will be removed from your household.")},confirmButton={Button(onClick={model.enqueueAsync("$kind.delete",record.id,obj(),record.revision,basis);remove=false;close()}){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
+    if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={Text("The empty $kind will be removed from your household.")},confirmButton={Button(shape=ControlShape,onClick={model.enqueueAsync("$kind.delete",record.id,obj(),record.revision,basis);remove=false;close()}){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
 }
 
 @Composable internal fun NewNoteDialog(model:Workspace,state:WorkspaceState,initialRadar:Boolean=false,device:DeviceActions=DeviceActions(),close:()->Unit) {
@@ -86,23 +86,25 @@ import org.fieldnotes.domain.*
         if(state.cache.supportsPlannerV3()){CategoryPicker(category){category=it};FollowUpControls(onRadar,remindAt,device.use24Hour){radar,at->onRadar=radar;remindAt=at}}
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(pinned,{pinned=it});Text("Pin this note")}
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-    }},confirmButton={Button(enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);close();model.sync() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text("Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
+    }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);close();model.sync() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text("Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
 @Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,storeChanged:(String)->Unit={}) {
     val rows=projectRecords(state.cache);val all=rows.filter { it.record.kind=="task"&&it.record.data.text("project_id")==list.id }
     val fields=listFields(list);val writable=state.cache.snapshot!!.actor.role!="viewer"
     var query by rememberSaveable(list.id){mutableStateOf("")};var store by rememberSaveable(list.id){mutableStateOf("*")};var sort by rememberSaveable(list.id){mutableStateOf("title")};var status by rememberSaveable(list.id){mutableStateOf("open")}
-    var confirm by remember { mutableStateOf(false) }
+    var confirmAction by remember { mutableStateOf<String?>(null) };var changingChecked by remember { mutableStateOf(false) }
+    var checkedSelection by remember { mutableStateOf<Pair<Basis,List<Record>>?>(null) }
     LaunchedEffect(fields){if("store" !in fields){store="*";storeChanged("")};if(sort !in setOf("title","added","updated")+fields.filter{it !in setOf("notes","images","store","link_url")})sort="title"}
     val stores=all.map { storeName(it.record) }.distinct().sortedWith(compareBy { it.lowercase() })
-    val filtered=all.filter { row->val d=row.record.data;("store" !in fields||store=="*"||storeName(row.record)==store)&&(listOf(d.text("title"),d.text("notes"),d.text("store"),d.text("quantity"),d.text("link_url"),d.text("price")).joinToString(" ").contains(query,true))&&(status=="all"||((d.text("status")=="done")== (status=="done"))) }
+    val matching=all.filter { row->val d=row.record.data;("store" !in fields||store=="*"||storeName(row.record)==store)&&(listOf(d.text("title"),d.text("notes"),d.text("store"),d.text("quantity"),d.text("link_url"),d.text("price")).joinToString(" ").contains(query,true)) }
+    val filtered=matching.filter { status=="all"||((it.record.data.text("status")=="done")==(status=="done")) }
     val comparator=Comparator<VisibleRecord> { a,b->
         val x=a.record.data;val y=b.record.data
         val order=when(sort){"added"->y.number("created_at").compareTo(x.number("created_at"));"updated"->y.number("last_activity_at",y.number("updated_at")).compareTo(x.number("last_activity_at",x.number("updated_at")));"price"->x.text("currency","USD").compareTo(y.text("currency","USD")) .takeIf { it!=0 } ?: (x.text("price").toDoubleOrNull() ?: Double.POSITIVE_INFINITY).compareTo(y.text("price").toDoubleOrNull() ?: Double.POSITIVE_INFINITY);"priority","estimate_minutes"->x.number(sort).compareTo(y.number(sort));else->x.text(sort).ifBlank { "~" }.compareTo(y.text(sort).ifBlank { "~" },true)}
         order.takeIf { it!=0 } ?: x.text("title").compareTo(y.text("title"),true).takeIf { it!=0 } ?: a.record.id.compareTo(b.record.id)
     }
-    val sorted=filtered.sortedWith(comparator);val checked=sorted.filter { it.record.data.text("status")=="done" }
+    val sorted=filtered.sortedWith(comparator);val checked=matching.filter { it.record.data.text("status")=="done" }
     RecordBadges(list)
     if(list.data.text("notes").isNotBlank())Text(list.data.text("notes"),style=MaterialTheme.typography.bodyMedium)
     OutlinedTextField(query,{query=it},label={Text("Search titles and item content")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(vertical=8.dp))
@@ -111,7 +113,10 @@ import org.fieldnotes.domain.*
         ViewChoice("Show",status,listOf("open" to "Unchecked","all" to "All items","done" to "Checked")){status=it}
         ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
         if(writable)SecondaryButton(onClick=edit){Text("List settings")}
-        if(writable&&checked.isNotEmpty())SecondaryButton(onClick={confirm=true}){Text("Clear checked (${checked.size})")}
+        if(writable&&checked.isNotEmpty()) {
+            if(list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"}){Text("Reuse checked (${checked.size})")}
+            SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="clear"}){Text("Clear checked (${checked.size})")}
+        }
     }
     Text("${sorted.size} of ${all.size} items · ${all.count { it.record.data.text("status")!="done" }} unchecked",Modifier.padding(vertical=8.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     if(list.data["notify_additions"]==JsonPrimitive(false)||list.data["item_reminders"]==JsonPrimitive(false))Text(listOfNotNull(if(list.data["notify_additions"]==JsonPrimitive(false))"Item-addition alerts muted" else null,if(list.data["item_reminders"]==JsonPrimitive(false))"Scheduled item reminders muted" else null).joinToString(" · "),style=MaterialTheme.typography.labelSmall)
@@ -138,7 +143,15 @@ import org.fieldnotes.domain.*
             }
         }
     }
-    if(confirm)EditorDialog(onDismissRequest={confirm=false},title={Text("Clear ${checked.size} checked items?")},text={Text("Only these checked items matching your filters will be removed. Unchecked items and revision conflicts are kept.")},confirmButton={Button(onClick={model.launch { model.clearCheckedItems(checked.map { it.record },state.cache.snapshot!!.basis);confirm=false;model.sync() }}){Text("Clear checked")}},dismissButton={SecondaryButton(onClick={confirm=false}){Text("Keep items")}})
+    if(confirmAction!=null) {
+        val reuse=confirmAction=="reuse"
+        val selection=checkedSelection!!
+        EditorDialog(onDismissRequest={if(!changingChecked)confirmAction=null},title={Text("${if(reuse)"Reuse" else "Clear"} ${selection.second.size} checked items?")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+            Text(if(reuse)"Uncheck the completed items matching your search and store to use the list again. Notes, quantities, stores, images and history are kept. Changed items stay for review." else "Only these checked items matching your search and store will be removed. Unchecked items and revision conflicts are kept.")
+            Text(selection.second.take(5).joinToString(" · "){it.data.text("title")})
+            state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
+        }},confirmButton={Button(shape=ControlShape,enabled=!changingChecked,onClick={changingChecked=true;model.launch {try {if(reuse)model.reuseCheckedItems(selection.second,selection.first)else model.clearCheckedItems(selection.second,selection.first);confirmAction=null;model.sync()}finally{changingChecked=false}}}){Text(if(reuse)"Uncheck and reuse" else "Clear checked")}},dismissButton={SecondaryButton(enabled=!changingChecked,onClick={confirmAction=null}){Text("Keep items")}})
+    }
 }
 
 private val itemKeys=setOf("title","notes","quantity","store","category","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
@@ -191,7 +204,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
             if(revision!=record.revision&&visible?.pending!=true) { Text("Changed elsewhere. Your draft is kept.",color=MaterialTheme.colorScheme.error);SecondaryButton(onClick={revision=record.revision}){Text("Keep my edits for a new save")};SecondaryButton(onClick={dataJson=itemEditingData(record.data).toString();revision=record.revision;dirty=false;model.launch{model.discardDraft(id)}}){Text("Use latest version")} }
         }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-    }},confirmButton={if(writable)Button(enabled=data.text("title").isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
+    }},confirmButton={if(writable)Button(shape=ControlShape,enabled=data.text("title").isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
         data["reminders"]?.let { validateReminders(WireJson.decodeFromJsonElement(it)) }
         val payload=if(state.cache.supportsRemindersV2())data["reminder_options"]?.let {
             val options=prunedReminderOptions(SyncJson.decodeFromJsonElement<ReminderOptions>(it),itemReminderRules(data,id));validateReminderOptions(options)

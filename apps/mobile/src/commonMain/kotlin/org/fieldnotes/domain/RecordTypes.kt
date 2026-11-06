@@ -1,7 +1,9 @@
 package org.fieldnotes.domain
 
 /** Small, named household categories. Labels never replace the record's kind. */
-val recordCategories = linkedMapOf("general" to "General", "action" to "Action", "food" to "Food & cooking", "honey_do" to "Honey-do", "home" to "Home & maintenance", "errands" to "Errands", "work" to "Work", "personal" to "Personal")
+val recordCategories = linkedMapOf("general" to "General", "action" to "Action", "food" to "Food & cooking", "home" to "Household", "errands" to "Errands", "work" to "Work", "personal" to "Personal")
+fun categoryKey(value:String)=if(value=="honey_do")"home" else value.ifBlank { "general" }
+fun categoryChoices(value:String)=recordCategories.map { (key,label)->(if(key=="home"&&value=="honey_do")value else key) to label }
 fun recordTypeLabel(record:Record):String = when {
     record.kind=="list" -> listTemplates[record.data.text("template","general")] ?: "List"
     record.kind=="note"&&record.flag("on_radar") -> "Later & reminders"
@@ -9,7 +11,7 @@ fun recordTypeLabel(record:Record):String = when {
     record.kind=="project" -> "Project"
     else -> "Task"
 }
-fun categoryLabel(record:Record)=recordCategories[record.data.text("category","general")] ?: "General"
+fun categoryLabel(record:Record)=recordCategories[categoryKey(record.data.text("category","general"))] ?: "General"
 fun isChecklistItem(record:Record,records:List<Record>)=record.kind=="task"&&records.any { it.id==record.data.text("project_id")&&it.kind=="list" }
 fun plannerTasks(cache:Cache):List<VisibleRecord> {
     val rows=projectRecords(cache);val lists=rows.filter { it.record.kind=="list" }.map { it.record.id }.toSet()

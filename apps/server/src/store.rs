@@ -8,6 +8,7 @@ mod lists;
 mod media;
 mod organization;
 mod planning;
+mod recovery;
 mod recurrence;
 mod reminder_options;
 mod reminders;
@@ -106,6 +107,7 @@ pub struct Command {
 }
 #[derive(Serialize)]
 pub struct Snapshot {
+    pub history_revision: i64,
     pub protocol: u16,
     pub epoch: String,
     pub generation: i64,
@@ -188,14 +190,16 @@ impl Store {
             )
             .map_err(|e| e.to_string())?;
         }
-        Ok(Self {
+        let store = Self {
             db,
             vault,
             network: None,
             peer_status: None,
             development: false,
             data_dir: data.to_path_buf(),
-        })
+        };
+        store.recovery_schema().map_err(|error| error.1)?;
+        Ok(store)
     }
     pub fn meta(&self) -> Result<(String, i64, i64)> {
         Ok(self.db.query_row("SELECT epoch,generation,COALESCE((SELECT MAX(seq) FROM events),0) FROM meta WHERE id=1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?)
@@ -215,8 +219,8 @@ impl Store {
             .map_err(|_| Fault(500, "Invalid encrypted data".into()))?;
         if kind == "task" {
             let created: i64 = self.db.query_row(
-                "SELECT COALESCE(MIN(at),0) FROM events WHERE object_id=?",
-                [oid],
+                "SELECT COALESCE(MIN(at),0) FROM events WHERE object_id=? AND generation>=?",
+                params![oid, self.recovery_start_generation()?],
                 |r| r.get(0),
             )?;
             let object = data
@@ -228,6 +232,10 @@ impl Store {
             object.entry("planned_for").or_insert(json!(""));
             object.entry("pinned").or_insert(json!(false));
             object.entry("blocked").or_insert(json!(false));
+            let incarnation = self.recovery_incarnation(oid)?;
+            if incarnation > 0 {
+                object.insert("recovery_incarnation".into(), json!(incarnation));
+            }
         }
         Ok(Record {
             id: oid.into(),
@@ -237,8 +245,12 @@ impl Store {
         })
     }
     fn save(&self, r: &Record, parent: Option<&str>) -> Result<()> {
+        let mut data = r.data.clone();
+        if let Some(data) = data.as_object_mut() {
+            data.remove("recovery_incarnation");
+        }
         let raw =
-            serde_json::to_vec(&r.data).map_err(|_| Fault(500, "Serialization failed".into()))?;
+            serde_json::to_vec(&data).map_err(|_| Fault(500, "Serialization failed".into()))?;
         let used: i64 = self.db.query_row(
             "SELECT COALESCE(SUM(length(data)),0) FROM objects",
             [],
@@ -269,6 +281,7 @@ impl Store {
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Snapshot {
+            history_revision: self.recovery_revision()?,
             protocol: 1,
             epoch,
             generation,
@@ -288,9 +301,8 @@ impl Store {
         )?;
         Ok(())
     }
-    pub fn export_backup(&self) -> Result<Vec<u8>> {
-        let data = self.db.serialize("main")?;
-        Ok(self.vault.seal("backup:v1", &data)?)
+    pub fn export_backup(&self) -> Result<crate::backup::BackupFile> {
+        crate::backup::create(self, &self.data_dir).map_err(|message| Fault(500, message))
     }
     pub fn stats(&self) -> Result<BTreeMap<String, i64>> {
         let mut out = BTreeMap::new();

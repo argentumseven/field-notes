@@ -481,6 +481,25 @@ async function eventEditor(record, selectedTime) {
     initialEnd = d.ends_at
       ? new Date(d.ends_at * 1000)
       : new Date(initialStart.getTime() + 3600000);
+  const editZone =
+    d.recurrence?.zone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const editParts = (at) => FieldRecurrence.parts(at, editZone);
+  const editDay = (at) => {
+    const p = editParts(at);
+    return `${p.year}-${p.month}-${p.day}`;
+  };
+  const editTime = (at) => {
+    const p = editParts(at);
+    return `${p.hour}:${p.minute}`;
+  };
+  const editInstant = (day, time, original) => {
+    const at = FieldRecurrence.instant(day, time, editZone, original);
+    if (at === null)
+      throw Error(
+        "That time is skipped when the clocks change. Choose another time.",
+      );
+    return at;
+  };
   let reminderSettings = structuredClone(
       FieldReminders.rulesFor(record) || {
         alerts: [
@@ -498,8 +517,7 @@ async function eventEditor(record, selectedTime) {
     recurrence = d.recurrence ? structuredClone(d.recurrence) : null;
   await formDialog(
     record ? "Edit event" : "New event",
-    "Times are local · " +
-      Intl.DateTimeFormat().resolvedOptions().timeZone.replaceAll("_", " "),
+    "Times shown in · " + editZone.replaceAll("_", " "),
     [
       { key: "title", label: "Event title", value: d.title, max: 240 },
       categoryField(record),
@@ -521,13 +539,13 @@ async function eventEditor(record, selectedTime) {
         key: "start_date",
         label: "Starts",
         type: "date",
-        value: d.start_date || FieldPlanning.localDay(initialStart),
+        value: d.start_date || editDay(initialStart.getTime() / 1000),
       },
       {
         key: "start_time",
         label: "Start time",
         type: "time",
-        value: FieldPlanning.localTime(initialStart),
+        value: editTime(initialStart.getTime() / 1000),
       },
       {
         key: "has_end",
@@ -541,13 +559,13 @@ async function eventEditor(record, selectedTime) {
         type: "date",
         value: d.end_date
           ? FieldPlanning.shiftDay(d.end_date, -1)
-          : FieldPlanning.localDay(initialEnd),
+          : editDay(initialEnd.getTime() / 1000),
       },
       {
         key: "end_time",
         label: "End time",
         type: "time",
-        value: FieldPlanning.localTime(initialEnd),
+        value: editTime(initialEnd.getTime() / 1000),
       },
       ...(record
         ? [
@@ -579,15 +597,11 @@ async function eventEditor(record, selectedTime) {
         throw Error("The last day cannot be before the first day.");
       const start = all
           ? 0
-          : FieldPlanning.scheduledInstant(
-              v.start_date,
-              v.start_time,
-              d.starts_at,
-            ),
+          : editInstant(v.start_date, v.start_time, d.starts_at),
         end =
           all || !v.has_end
             ? 0
-            : FieldPlanning.scheduledInstant(v.end_date, v.end_time, d.ends_at);
+            : editInstant(v.end_date, v.end_time, d.ends_at);
       if (!all && v.has_end && end <= start)
         throw Error(
           "Choose an end time after the start. For an overnight event, change the end date too.",

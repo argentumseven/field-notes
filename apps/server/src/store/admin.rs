@@ -10,7 +10,7 @@ impl Store {
         let audit=self.db.prepare("SELECT actor,action,target,at FROM audit ORDER BY seq DESC LIMIT 100")?.query_map([],|r|Ok(json!({"actor":r.get::<_,String>(0)?,"action":r.get::<_,String>(1)?,"target":r.get::<_,String>(2)?,"at":r.get::<_,i64>(3)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let (epoch, generation, sequence) = self.meta()?;
         Ok(
-            json!({"users":users,"sessions":sessions,"audit":audit,"epoch":epoch,"generation":generation,"sequence":sequence,"version":env!("CARGO_PKG_VERSION")}),
+            json!({"users":users,"sessions":sessions,"audit":audit,"epoch":epoch,"generation":generation,"sequence":sequence,"version":env!("CARGO_PKG_VERSION"),"recovery":{"policy":self.recovery_policy()?,"usage":self.recovery_usage()?,"history_revision":self.recovery_revision()?}}),
         )
     }
     pub fn admin(&mut self, token: &str, body: Value) -> Result<Value> {
@@ -30,6 +30,7 @@ impl Store {
         let action = text(&b, "action", 40)?;
         let target = b["target"].as_str().unwrap_or("");
         match action.as_str() {
+            "recovery.policy" | "recovery.purge" => return self.recovery_admin(&a, &b),
             "user.create" => {
                 fields(&b, &["action", "name", "password", "role"])?;
                 let role = text(&b, "role", 20)?;
@@ -153,6 +154,7 @@ impl Store {
                     return fail(409, "Confirmation or workspace generation does not match");
                 }
                 self.transfer_schema()?;
+                self.recovery_clear()?;
                 let counts = self
                     .db
                     .prepare("SELECT kind,COUNT(*) FROM objects WHERE deleted=0 GROUP BY kind")?

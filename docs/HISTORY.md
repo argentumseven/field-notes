@@ -8,8 +8,9 @@ Each entry shows the item type, title, person, local date/time and its list or
 task context. **Show changes** expands readable Previous/Now values. **Open
 item** opens content that still exists. Removed items stay identifiable in the
 trail; deleting a task also records its removed comments and attachments.
-History does not retain image pixels or offer an undo that can revive deleted
-work.
+**Item versions** opens full retained states, including deleted items. History
+entries contain readable excerpts; recovery versions retain complete content.
+See [Restoring versions and content checkpoints](RECOVERY.md).
 
 Search includes titles, people, collection names and both sides of recorded
 field changes. Filter by Added/Changed/Removed, person, item type or date range.
@@ -45,8 +46,9 @@ existing action/person/timestamp and last-known item name where available. They
 are explicitly marked as lacking retained field details; current values are
 never presented as a fabricated earlier version.
 
-The server retains detailed entries for the latest 10,000 events, up to 64 MiB.
-Older actions and timestamps remain for the current workspace. Individual
+By default, the server retains change details for 90 days, up to 10,000 events
+and 64 MiB. Management → History & recovery storage configures age, count and
+size, and can purge the trail, item versions, checkpoints or all recovery copies. Individual
 entries are bounded to 32 KiB and 64 changed fields. Long values show marked
 excerpts around the edit; large arrays and exceptionally large changes are
 summarized. History is for reviewing changes, rather than replacing a backup.
@@ -58,7 +60,7 @@ preserves the restored trail under a fresh epoch. Portable content files do not
 replace or forge authoritative history: accepted imports generate new entries
 marked Imported.
 
-History is read-only and uses the existing household permissions and private
+Reading history uses the existing household permissions and private
 phone API. Detail payloads are encrypted on the server and contain allowed
 content fields only. Passwords, sessions, pairing secrets, private keys and
 image bytes are excluded. Account/device/security activity remains in the web

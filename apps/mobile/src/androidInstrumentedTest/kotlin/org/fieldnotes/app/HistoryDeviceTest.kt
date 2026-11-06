@@ -64,6 +64,7 @@ class HistoryDeviceTest {
             compose.onNodeWithTag("history-timeline").performScrollToNode(hasText("Load older changes"))
             compose.onNodeWithText("Load older changes").performClick()
             compose.waitUntil(60_000){model.state.value.cache.currentHistory()?.entries?.size==4}
+            compose.onNodeWithTag("history-timeline").performScrollToIndex(0)
             compose.onNodeWithTag("history-search").performClick().performTextInput("Two for breakfast")
             compose.waitUntil(60_000){transport.lastQuery=="Two for breakfast"&&transport.lastCount==2}
             // Reproduce the constrained layout with a real sync warning as
@@ -85,11 +86,20 @@ class HistoryDeviceTest {
             compose.onNodeWithText("Refresh history").performClick()
             compose.waitUntil(60_000){compose.onAllNodesWithText("History needs attention").fetchSemanticsNodes().isEmpty()}
             runBlocking {model.preferences(model.state.value.cache.preferences.copy(theme="light"))};compose.waitForIdle();shot("62-history-light")
+            compose.onAllNodesWithText("Item versions").onFirst().performScrollTo().performClick()
+            waitText("#1");shot("75-native-item-versions")
+            compose.onAllNodesWithText("Preview restore").onLast().performScrollTo().performClick()
+            waitText("Restore preview");compose.onNodeWithText("Restore item version").performScrollTo().assertIsDisplayed();shot("76-native-restore-preview")
+            compose.onNodeWithText("Restore item version").performClick()
+            waitText("Recovery completed.")
+            val restored=WireJson.decodeFromJsonElement<Snapshot>(fixture.getValue("recovery_after"))
+            compose.waitUntil(60_000){model.state.value.cache.snapshot?.records==restored.records}
+            assertNull(model.state.value.cache.recoveryPending);assertEquals(keys,model.state.value.cache.keys);shot("77-native-restored-item")
             }catch(failure:Throwable){runCatching{shot("failure")};throw failure}
         }} finally {app.model=original;scope.cancel()}
     }
 }
-private class HistoryFixtureTransport(private val fixture:JsonObject,private val snapshot:Snapshot,private val history:HistoryPage):Transport {
+private class HistoryFixtureTransport(private val fixture:JsonObject,private var snapshot:Snapshot,private val history:HistoryPage):Transport {
     var offline=false
     @Volatile var lastQuery=""
     @Volatile var lastCount=0
@@ -99,6 +109,12 @@ private class HistoryFixtureTransport(private val fixture:JsonObject,private val
     override suspend fun exchange(path:String,token:String?,body:JsonObject?,serverKey:String?):Reply {
         if(offline)error("The home server is offline. Cached history and queued changes stay on this phone. Reconnect to refresh.")
         val value=when(path){
+            "/api/recovery"->when(checkNotNull(body).text("action")) {
+                "versions"->fixture.getValue("recovery_versions")
+                "preview"->fixture.getValue("recovery_preview")
+                "apply"->{snapshot=WireJson.decodeFromJsonElement(fixture.getValue("recovery_after"));fixture.getValue("recovery_result")}
+                else->error("Unexpected synthetic recovery action")
+            }
             "/api/history"->{
                 val request=checkNotNull(body);val anchor=request.number("anchor",history.anchor);val before=request.number("before",anchor+1)
                 val filter=HistoryFilter(query=request.text("query"),actor=request.text("actor"),kind=request.text("kind"),action=request.text("action"))

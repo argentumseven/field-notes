@@ -3,7 +3,7 @@ package org.fieldnotes.domain
 data class TaskFilters(val category:String="",val person:String="*",val status:String="all",val priority:Int=0,val sort:String="priority")
 fun filterTasks(rows:List<VisibleRecord>,filters:TaskFilters):List<VisibleRecord> {
     val selected=rows.filter { row->val d=row.record.data
-        (filters.category.isBlank()||d.text("category","general")==filters.category)&&
+        (filters.category.isBlank()||categoryKey(d.text("category","general"))==categoryKey(filters.category))&&
             (filters.person=="*"||d.text("assignee")==filters.person)&&
             (filters.status=="all"||if(filters.status=="open")d.text("status")!="done" else d.text("status")==filters.status)&&
             (filters.priority==0||d.number("priority",3).toInt()==filters.priority)

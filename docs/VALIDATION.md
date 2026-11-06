@@ -1,5 +1,82 @@
 # Implementation and validation record
 
+## 0.8 planner refinements and content recovery — 2026-11-06
+
+Item versions and named whole-content checkpoints are available from History on
+web and Android. Full before/after states and normalized attached images are
+encrypted in SQLite; image bytes are shared by retained digest. Version indices
+remain monotonic through restores and manual purges. Restores preview readable
+field differences, append new canonical revisions, and preserve newer retained
+states for rolling forward. Checkpoints preserve current accounts, roles, keys,
+pairings and security settings. Explicit full backup restoration still uses its
+existing fresh-epoch/session-revocation policy.
+
+Preview fences cover source, current scope including child changes, session,
+people directory, generation and retention revision. Missing parents can be
+recovered without replacing an existing parent. Revived task ancestors receive
+the same child-write fence as explicit task restores. Queued stale comments and
+uploads are rejected for review. The phone saves the exact recovery request before
+sending it; lost replies and failed local confirmation writes remain visible,
+with result lookup and exact-request retry. No restore is automatically retried.
+Corrupt saved states remain labeled unreadable while other versions can load.
+
+LAN Management controls automatic versions, age/count/size bounds and manual
+purging. Limits protect newly captured before/after states until commit; capacity
+failure rolls back the edit. Retention revisions invalidate connected history
+caches; disconnected copies require reconnecting. Recovery copies do not replace
+canonical content or provide forensic disk erasure. Full versions begin with 0.8
+changes, capturing an older item's baseline before its first new edit.
+
+Every year and custom Years retain the existing monthly interval wire format.
+Cross-language previews cover leap days, skipped dates, inclusive end dates,
+long intervals and the supported upper year. Existing series edit in their saved
+timezone. Rolling lists can reuse checked original items with frozen selections,
+revision arbitration and preserved images/comments. Household consolidates the
+stored Home/Honey-do choices without rewriting them. Controls share an 8 px/dp
+radius. Widget day links explicitly select Day; statuses show cache age and the
+Live/Periodic/Manual update choice. Bounded automatic catch-up respects pause and
+manual settings. Successful rendering clears only the widget's own stale error.
+
+New full backups use authenticated 256 KiB frames, compact SQLite snapshots and
+streamed downloads/files. Header length, stream identifier, frame order and full
+ending are authenticated/checked; truncation, corruption, wrong keys and appended
+data fail. Private restore staging validates the database before publishing a new
+destination; existing directories are refused. Older backup files remain readable.
+Large legacy single-record restores retain their original memory characteristics.
+Upgrade disk preflight includes temporary snapshot/encrypted copies and separate
+data filesystems; compatible 0.8 runtime recovery is supported.
+
+Automated checks include **83 API/codec workflows**, **23 Chromium workflows**,
+**95 shared Kotlin tests**, **126 Python checks**, **15 Rust tests**, Clippy and
+Go vet/race. Recovery cases exercise long untruncated notes, deleted task/parent/
+comment/image restoration, image sharing/garbage collection, backward and forward
+checkpoints, author/viewer permissions, child/directory/session fences, replay,
+expired previews, concurrent restore winners, SQL transaction failure, actual
+storage exhaustion, age-out, restart, encrypted backup restoration and portable
+export/import after restore, including damaged live-image repair and retention-only
+background invalidation of open web recovery dialogs. Backup tests include old-format compatibility and
+reject corrupt or truncated archives before destination publication.
+
+A real 0.7 executable/data directory upgraded to 0.8 with its existing session,
+epoch, content, recovery key and network configuration intact; the first new edit
+captured a usable baseline. The immutable app image backed up and restored an
+actual **200 MiB database of bounded records on disk under a 128 MiB memory
+limit**, nonroot, with a read-only root, no network/capabilities, preserving full
+recovery rows and key bytes. No home-server deployment is implied.
+
+Actual dedicated-AVD checks passed for month/week launcher hosting, automatic
+offline repaint and day links from a previous Month view; native history,
+restore preview/apply, real keyboard and Keystore-backed cache; and real Android
+JNI → WireGuard → TLS → Rust recovery with replay and stale-child rejection.
+A same-signer **0.7/code 13 → 0.8/code 14** install-over update preserved actual
+Keystore-backed keys, binding and queued work without re-enrollment. The capture
+harness keeps the disposable AVD awake during long launcher checks; the shipped
+app keeps screenshot protection. Physical GrapheneOS profile forwarding, DND,
+VPN coexistence and battery timing remain separate device checks.
+
+[Recovery guide](RECOVERY.md) · [Planner comparison](PLANNER-COMPARISON.md) ·
+[Updated screenshots](WALKTHROUGH.md).
+
 ## Upgrade rollback images and failure reports — 2026-11-06
 
 Normal upgrades check both installed immutable image IDs before a source build

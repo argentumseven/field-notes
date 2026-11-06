@@ -24,6 +24,35 @@ const repeat = (extra = {}) => ({
   zone: "America/New_York",
   ...extra,
 });
+
+test("yearly presets and long-range previews agree with native calendar cases", async () => {
+  const cases = JSON.parse(
+    await readFile(
+      new URL("./fixtures/repeat-previews.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const item of cases) {
+    const rule = repeat(item);
+    assert.deepEqual(
+      Array.from(recurrence.nextDates(rule, item.first, item.from)),
+      item.expected,
+      item.name,
+    );
+  }
+  assert.equal(
+    recurrence.preset(repeat({ frequency: "monthly", interval: 12 })),
+    "yearly",
+  );
+  assert.equal(
+    recurrence.label(repeat({ frequency: "monthly", interval: 12 })),
+    "Every year",
+  );
+  assert.equal(
+    recurrence.label(repeat({ frequency: "monthly", interval: 24 })),
+    "Every 2 years",
+  );
+});
 const event = (day, extra = {}) => ({
   id: "event",
   kind: "event",

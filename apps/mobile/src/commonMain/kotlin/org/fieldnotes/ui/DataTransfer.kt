@@ -35,7 +35,7 @@ import org.fieldnotes.domain.*
             OutlinedTextField(password,{password=it},Modifier.fillMaxWidth(),label={Text("Export passphrase")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),singleLine=true)
             OutlinedTextField(confirm,{confirm=it},Modifier.fillMaxWidth(),label={Text("Confirm passphrase")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),singleLine=true)
             Text("At least 12 characters. Keep this passphrase: the server cannot recover the exported file.",style=MaterialTheme.typography.bodySmall)
-            Button(onClick={device.exportData(password);password="";confirm="";exporting=false},enabled=!state.busy&&password==confirm&&password.encodeToByteArray().size in 12..256){Text("Choose where to save")}
+            Button(shape=ControlShape,onClick={device.exportData(password);password="";confirm="";exporting=false},enabled=!state.busy&&password==confirm&&password.encodeToByteArray().size in 12..256){Text("Choose where to save")}
         }
         HorizontalDivider();Text("Import with a preview",style=MaterialTheme.typography.titleMedium)
         Text("Matching items are skipped. Different versions are kept as alternatives for review. No current item is overwritten.",style=MaterialTheme.typography.bodySmall)
@@ -43,14 +43,14 @@ import org.fieldnotes.domain.*
         if(state.fileName.isNotEmpty())Text(state.fileName,style=MaterialTheme.typography.labelLarge)
         if(state.fileName.isNotEmpty()&&state.preview==null){
             OutlinedTextField(importPassword,{importPassword=it},Modifier.fillMaxWidth(),label={Text("Archive passphrase")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),singleLine=true)
-            Button(onClick={device.previewImport(importPassword);importPassword=""},enabled=!state.busy&&importPassword.isNotEmpty()){Text("Unlock and preview")}
+            Button(shape=ControlShape,onClick={device.previewImport(importPassword);importPassword=""},enabled=!state.busy&&importPassword.isNotEmpty()){Text("Unlock and preview")}
         }
         state.preview?.let{preview->
             Text("${preview.number("new_items")} new · ${preview.number("already_present")} already present · ${preview.number("retained_changes")} retained changes",style=MaterialTheme.typography.titleSmall)
             for(raw in preview["people"]!!.jsonArray){val person=raw.jsonObject;var target by remember(person.text("id")){mutableStateOf(person.text("target"))};ViewChoice("Archived ${person.text("name")} →",target,cache.people.filter{it.can_assign}.map{it.id to it.name},enabled=!state.busy){target=it;device.mapImportPerson(person.text("id"),it)}}
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 SecondaryButton(onClick=device.reviewImport,enabled=!state.busy){Text("Review again")}
-                Button(onClick=device.commitImport,enabled=!state.busy&&state.reviewed){Text("Import items")}
+                Button(shape=ControlShape,onClick=device.commitImport,enabled=!state.busy&&state.reviewed){Text("Import items")}
             }
         }
         if(state.fileName.isNotEmpty())SecondaryButton(onClick=device.cancelImport,enabled=!state.busy){Text("Cancel preview")}
@@ -73,6 +73,6 @@ import org.fieldnotes.domain.*
             }}
         }
     }},confirmButton={SecondaryButton(onClick=close,enabled=!state.busy){Text("Close")}})
-    if(removing!=null)EditorDialog(onDismissRequest={removing=null},title={Text("Remove recovered copy?")},text={Text("Current planner items stay. Keep an encrypted export if you still need this alternative; existing backups are unchanged.")},confirmButton={Button(onClick={device.discardRecovered(removing!!);removing=null}){Text("Remove copy")}},dismissButton={SecondaryButton(onClick={removing=null}){Text("Keep it")}})
+    if(removing!=null)EditorDialog(onDismissRequest={removing=null},title={Text("Remove recovered copy?")},text={Text("Current planner items stay. Keep an encrypted export if you still need this alternative; existing backups are unchanged.")},confirmButton={Button(shape=ControlShape,onClick={device.discardRecovered(removing!!);removing=null}){Text("Remove copy")}},dismissButton={SecondaryButton(onClick={removing=null}){Text("Keep it")}})
 
 }
