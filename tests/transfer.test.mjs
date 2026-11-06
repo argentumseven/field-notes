@@ -199,6 +199,23 @@ test("portable round-trip preserves planner content and images, skips duplicates
       list = saved.records.find((r) => r.kind === "list"),
       note = saved.records.find((r) => r.kind === "note");
     assert.equal(saved.records.length, 6);
+    const trail = await b.request("/api/history", {
+      token: target.token,
+      body: { epoch: saved.epoch, generation: saved.generation },
+    });
+    assert.equal(trail.status, 200);
+    assert.equal(
+      trail.data.entries.length,
+      7,
+      "six imports and their accepted completion; a receipt retry adds no events",
+    );
+    assert(
+      trail.data.entries.every(
+        (entry) =>
+          entry.source === "import" && entry.actor_id === saved.actor.user_id,
+      ),
+      "imports cannot claim another actor's authoritative history",
+    );
     assert.equal(task.data.status, "done");
     assert.equal(task.data.store, "Costco");
     assert.equal(task.data.assignee, target.snapshot.actor.user_id);

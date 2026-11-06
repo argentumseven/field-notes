@@ -34,6 +34,7 @@ val Snapshot.basis get() = Basis(epoch, generation)
     val compatibility:ServerCompatibility?=null,
     val lastContactAt:Long=0,val lastSyncProblem:String="",
     val recoveredImports:List<JsonObject> = emptyList(),
+    val history:HistoryCache? = null,
 )
 data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0)
 data class Reply(val status: Int, val body: String = "", val binary: String? = null)

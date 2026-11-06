@@ -60,6 +60,10 @@ class NativeDeviceTest {
             assertEquals(200,created.status);assertEquals(title,WireJson.parseToJsonElement(created.body).jsonObject["record"]!!.jsonObject["data"]!!.jsonObject.text("title"))
             val start=command("task.start",task,obj(),1);assertEquals(200,start.status)
             val repeat=command("task.start",task,obj(),1);assertEquals(409,repeat.status)
+            val history=transport.exchange("/api/history",token,obj("epoch" to meta.getValue("epoch"),"generation" to meta.getValue("generation"),"query" to "Kitchen shelves".j()),peer)
+            assertEquals(200,history.status)
+            val trail=WireJson.parseToJsonElement(history.body).jsonObject.getValue("entries").jsonArray
+            assertEquals(2,trail.size);assertEquals("task.start",trail.first().jsonObject.text("action"));assertEquals(title,trail.last().jsonObject.text("title"))
             val exported=transport.exchange("/api/transfer/export",token,serverKey=peer);assertEquals(200,exported.status)
             val manifest=WireJson.parseToJsonElement(exported.body).jsonObject
             val prepared=transport.exchange("/api/transfer/prepare",token,obj("manifest" to manifest),peer);assertEquals(200,prepared.status)

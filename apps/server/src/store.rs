@@ -3,6 +3,7 @@ mod assignment;
 mod auth;
 mod commands;
 mod enrollment;
+mod history;
 mod lists;
 mod media;
 mod organization;
@@ -151,6 +152,8 @@ impl Store {
           CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,session_id TEXT NOT NULL,digest TEXT NOT NULL,result BLOB NOT NULL);
           CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,generation INTEGER NOT NULL,object_id TEXT NOT NULL,action TEXT NOT NULL,actor TEXT NOT NULL,at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY AUTOINCREMENT,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,at INTEGER NOT NULL,data BLOB NOT NULL);
+          CREATE TABLE IF NOT EXISTS history_details(seq INTEGER PRIMARY KEY REFERENCES events(seq) ON DELETE CASCADE,parent_id TEXT,collection_id TEXT,data BLOB NOT NULL);
+          CREATE INDEX IF NOT EXISTS events_history ON events(generation,seq DESC);
           CREATE TABLE IF NOT EXISTS blobs(id TEXT PRIMARY KEY REFERENCES objects(id) DEFERRABLE INITIALLY DEFERRED,bytes BLOB NOT NULL);
           CREATE TABLE IF NOT EXISTS login_limits(key TEXT PRIMARY KEY,attempts INTEGER NOT NULL,until_time INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS enrollment_invites(id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,issuer TEXT NOT NULL REFERENCES users(id),user_id TEXT NOT NULL REFERENCES users(id),role TEXT NOT NULL,expires INTEGER NOT NULL,device_id TEXT,data BLOB NOT NULL);

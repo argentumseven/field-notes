@@ -99,6 +99,12 @@ impl Store {
             }
             r
         };
+        let history_before = (record.revision > 0).then(|| record.clone());
+        let removed_children = if c.action == "task.delete" {
+            self.history_removed_children(&c.target)?
+        } else {
+            Vec::new()
+        };
         if c.data.get("reminder_options").is_none() {
             if let Some(incoming) = c.data.get("reminders") {
                 let changed = record.data.get("reminders") != Some(incoming);
@@ -422,11 +428,25 @@ impl Store {
                 }
             }
         }
+        self.history_cascade(generation, &actor, &removed_children)?;
         self.db.execute(
             "INSERT INTO events(generation,object_id,action,actor,at) VALUES(?,?,?,?,?)",
             params![generation, c.target, c.action, actor.user_id, now()],
         )?;
-        let result = json!({"record":record,"sequence":self.db.last_insert_rowid(),"operation_id":c.operation_id});
+        let sequence = self.db.last_insert_rowid();
+        self.history_capture(
+            sequence,
+            &actor,
+            history_before.as_ref(),
+            (!c.action.ends_with(".delete")).then_some(&record),
+            importing,
+            if c.action == "task.override" {
+                c.data.get("reason")
+            } else {
+                None
+            },
+        )?;
+        let result = json!({"record":record,"sequence":sequence,"operation_id":c.operation_id});
         let bytes = self.vault.seal(
             &format!("operation:{}", c.operation_id),
             &serde_json::to_vec(&result).map_err(|_| Fault(500, "Serialization".into()))?,

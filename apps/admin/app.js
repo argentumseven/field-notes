@@ -88,7 +88,7 @@ function notice(message) {
   clearTimeout(notice.timer);
   notice.timer = setTimeout(() => n.classList.remove("visible"), 6500);
 }
-async function api(path, body, method) {
+async function api(path, body, method, live = () => true) {
   const h = { Accept: "application/json", "X-Field-Protocol": "1" };
   if (body !== undefined) {
     h["Content-Type"] = "application/json";
@@ -103,11 +103,13 @@ async function api(path, body, method) {
       credentials: "same-origin",
     });
   } catch (e) {
+    if (!live()) throw new DialogCanceled();
     state.online = false;
     updateSync();
     throw Error("Server unavailable. Your open draft is kept in this tab.");
   }
   const data = await r.json();
+  if (!live()) throw new DialogCanceled();
   if (!r.ok) {
     if (r.status === 401 && state.actor && path !== "/reauth") {
       const username = state.actor.name;
@@ -190,6 +192,7 @@ function brand() {
   return n;
 }
 function renderLogin({ username = "", message = "" } = {}) {
+  FieldHistory.leave();
   state.dismissDialog?.();
   state.elevatedUntil = 0;
   $("#app").replaceChildren();
@@ -346,6 +349,12 @@ function visibleTasks() {
     );
 }
 function render() {
+  if (state.actor && state.page === "history" && FieldHistory.isOpen()) {
+    updateSync();
+    FieldHistory.changed();
+    return;
+  }
+  FieldHistory.leave();
   if (state.actor && state.page === "archive" && FieldArchive.isOpen()) {
     updateSync();
     return;
@@ -398,6 +407,7 @@ function render() {
         ["lists", "Lists"],
         ["projects", "Projects"],
         ["notes", "Notes"],
+        ["history", "History"],
       ],
       true,
     ],
@@ -558,6 +568,7 @@ function render() {
             projects: "Projects",
             admin: "Management",
             archive: "Export & import",
+            history: "History",
           }[state.page],
     ),
     el(
@@ -580,6 +591,8 @@ function render() {
         admin: "People, enrolled devices and server maintenance.",
         archive:
           "Encrypted copies, duplicate-safe imports and retained alternatives.",
+        history:
+          "Who added, changed or removed something, with server timestamps.",
       }[state.page],
     ),
   );
@@ -591,6 +604,7 @@ function render() {
     syncChoice,
     button("Refresh now", async () => {
       await refresh();
+      if (state.page === "history") await FieldHistory.refresh();
       render();
     }),
   );
@@ -598,6 +612,10 @@ function render() {
   shell.append(side, main);
   $("#app").replaceChildren(shell);
   updateSync();
+  if (state.page === "history") {
+    FieldHistory.render(main);
+    return;
+  }
   if (state.page === "admin") {
     main.append(el("div", "admin-grid"));
     renderAdmin().catch((e) => notice(e.message));

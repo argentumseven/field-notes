@@ -17,7 +17,43 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
-## Current 0.6 planner and content files
+## Change history on web and phone — 0.7
+
+Open **Library → History** on either client. These new captures show the same
+synthetic Rust household: Sophia adds groceries, Alex changes a quantity/note
+and removes an item. The trail preserves the person, item/list context, time
+and Previous/Now values after deletion. Filters and search work across recorded
+values. [History behavior and retention](HISTORY.md).
+
+![Web history with added, changed and removed items](screenshots/web/56-history.png)
+![Previous and new notes and quantity](screenshots/web/57-history-details.png)
+![History in the light theme](screenshots/web/58-history-light.png)
+
+| Android history | Recorded field changes | Cached history offline |
+| --- | --- | --- |
+| <img src="screenshots/android/59-history.png" width="250" alt="Native Android History with people, context, timestamps and obvious buttons"> | <img src="screenshots/android/60-history-details.png" width="250" alt="Native Previous and Now values"> | <img src="screenshots/android/61-history-offline.png" width="250" alt="History remains available from the encrypted phone cache with a visible offline status"> |
+
+| Light theme | Keyboard and offline warning |
+| --- | --- |
+| <img src="screenshots/android/62-history-light.png" width="250" alt="Android History in the light theme"> | <img src="screenshots/android/63-history-keyboard.png" width="250" alt="Actual keyboard and connection warning with the final history content scrolled fully above the IME"> |
+
+The Android fixture seeds actual Rust history into a test-only transport and
+uses the app's real Keystore-encrypted vault. The IME check deliberately includes
+a connection warning and reaches the final content above the real keyboard.
+The normal APK retains screenshot protection. Reproduce these captures only on
+the dedicated disposable AVD after its emulator build:
+
+```bash
+FIELD_NOTES_CAPTURE_HISTORY=synthetic-only node --test tests/history.browser.test.mjs
+node scripts/capture-history.mjs
+```
+
+The phone capture requires a genuine APK bundle under
+`dist/server/linux-x86_64/downloads`, or `FIELD_NOTES_DOWNLOADS`. Neither helper
+connects to the home installation. The separate native network check exercises
+History through the actual JNI/WireGuard/TLS stack.
+
+## Planner and content files introduced in 0.6
 
 These captures show the current website, using a synthetic household and the
 real Rust API. Calendar alignment is measured with 12 px and 28 px scrollbars

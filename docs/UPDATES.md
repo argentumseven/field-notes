@@ -40,7 +40,8 @@ An in-place Android update preserves app data, the Keystore alias, phone private
 key, PSK, pinned CA/server binding and pending edits. The app never calls reset,
 clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2**,
 **0.3.2 → 0.3.3**, **0.3.2/code 5 → 0.4.0/code 10**, and
-**0.3.2/code 5 → 0.6.0/code 12** APK upgrades
+**0.3.2/code 5 → 0.6.0/code 12**, and
+**0.3.2/code 5 → 0.7.0/code 13** APK upgrades
 were exercised on the disposable AVD with the actual Keystore-backed vault and
 queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults
@@ -54,7 +55,7 @@ features. A newer app can keep syncing with an older server; unsupported editor
 controls stay disabled. A retained edit requiring a newer feature is explained
 in Retained changes. Incompatible protocol/minimum requirements stop uploads
 with a persistent warning and preserve the cache, outbox and keys. The current
-server recommends code 12 and supports the code-10 core during rollout. Update
+server recommends code 13 and supports the code-10 core during rollout. Update
 older clients before relying on repeat-event expansion and its reminders.
 
 A missing/corrupt/mismatched APK bundle or failed transfer produces a visible
@@ -63,6 +64,16 @@ APK keeps its current version and compatible sync. It is never downgraded to
 match a server string. Metadata/signature/network failures are surfaced in
 Settings, the app's persistent status, widget footer and a notification when
 Android permits posting. The system cannot report a new error while force-stopped.
+
+## History in version 0.7
+
+Upgrade the paired server and install its matching APK to add **Library →
+History** on web and phone. Existing content, users, pairing, keys and queued
+changes are preserved. The additive encrypted history table starts recording
+new before/after details; older event metadata remains available with an honest
+label. Server backups include history. Phone caches are fenced by account,
+workspace generation and server epoch. No export/reimport or new enrollment is
+needed. See [HISTORY.md](HISTORY.md).
 
 ## Planner version 0.6
 

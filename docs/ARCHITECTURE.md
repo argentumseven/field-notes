@@ -5,6 +5,24 @@ web interface, and a Kotlin Multiplatform Android client. The server can decrypt
 content. iOS and native desktop packaging are deferred; Linux and Windows use
 the LAN website. See [VALIDATION.md](VALIDATION.md) for executed checks.
 
+## Household history boundary
+
+`store/history.rs` records encrypted, bounded field differences alongside the
+existing authoritative event sequence. A content command, its cascaded removals,
+receipt and history commit in one transaction. Read-only `/api/history` checks
+the active session, epoch/generation, bounded filters and sequence cursor. It is
+a shared-content route on both listeners; administrative audit payloads remain
+behind the existing LAN management boundary. History cannot be imported as an
+authoritative event stream. Clear removes prior content details; backup/restore
+preserves the encrypted table with the rest of the store.
+
+`apps/admin/history.js` owns its view lifecycle, request fences, filters and
+expanded differences without persisting content in browser storage. Shared
+`domain/History.kt` defines the wire/cache types, local formatting and cache
+scope; `ui/History.kt` owns the Compose timeline. Android uses the existing
+restricted transport, encrypted vault and sync/account fences. Optional history
+cache entries cannot displace pending commands or drafts.
+
 ## Boundaries and source map
 
 | Location | Responsibility |

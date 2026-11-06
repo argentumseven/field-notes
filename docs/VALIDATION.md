@@ -1,8 +1,55 @@
 # Implementation and validation record
 
+## 0.7.0 household change history — 2026-11-05
+
+The active implementation is **0.7.0 / Android code 13**, protocol 1 and schema 2.
+Library → History is implemented on web and Android, with actor/server time,
+item/list context, readable Previous/Now differences, action/person/type/date
+filters, search across recorded values, stable sequence paging and read-only
+links to current items. Imports are distinguished from ordinary changes.
+
+Encrypted details commit in the content transaction, including cascaded comment
+and image removals. Replayed receipts create no duplicate events; failed history
+writes roll back content. Older metadata is labeled without fabricated field
+values. Clear removes prior content details and fences caches/cursors; encrypted
+backup/restore retains the restored trail under its new epoch. Detail retention
+is bounded and surfaced in the UI. Android caches up to 200 loaded entries in
+its encrypted vault; history cannot displace queued edits or cross account,
+workspace-generation or epoch boundaries.
+
+The full checks passed: **66 API/codec**, **16 Chromium workflows**,
+**83 shared Kotlin**, **117 Python**, **12 Rust**, Clippy and Go vet/race.
+New coverage includes history persistence/encryption, actor attribution,
+before/after values, deletion/cascades, receipt replay, fixed-watermark paging,
+bounded searches through empty pages, date filters, permission failures,
+transaction rollback, long-note excerpts, backup/restore, cache/account fences,
+keyboard focus, stale browser replies, XSS handling and visible connection errors.
+The native keyboard check exposed fixed controls exhausting the remaining
+viewport when a warning and the IME were visible. History now puts its controls,
+notices and trail in a single scrollable viewport.
+
+The actual Android History check passed with a real Rust-generated synthetic
+seed, native Compose interactions and Keystore-backed cache persistence. It
+exercised before/after details, pagination, filtering, cached reads after a
+connection failure, both themes, and the real keyboard with an offline warning.
+The complete history footer remained reachable above the IME. Scaffold content
+now consumes its supplied insets before applying IME padding, avoiding a second
+reservation for bottom navigation space. The import check also confirms that
+receipt retries add no extra audit entries and that the authenticated importer
+is the recorded actor, rather than an identity supplied by the archive.
+
+Both actual Android native/manifest checks passed, including a History request
+through JNI → WireGuard → pinned TLS → Rust. The same-signer
+**0.3.2/code 5 → 0.7.0/code 13** upgrade retained its actual Keystore-backed
+identity, server/CA/PSK binding, original preferences and pending task command.
+No pairing purge, data copy or re-enrollment occurs between its upgrade phases.
+Final public artifact evidence is recorded after publication.
+No home-VM deployment or physical GrapheneOS test is implied by these checks.
+See [HISTORY.md](HISTORY.md) and the [walkthrough](WALKTHROUGH.md).
+
 ## 0.6.0 household planner and portable content — 2026-11-05
 
-The active implementation is **0.6.0 / Android code 12**, protocol 1 and schema 2.
+This historical baseline is **0.6.0 / Android code 12**, protocol 1 and schema 2.
 New task/event/note reminders default to Everyone without changing existing
 personal choices. Typed rows, task filters, store-grouped list subviews, Later
 notes, irregular recurrence, granular household-addition notices and separate

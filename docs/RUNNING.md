@@ -227,7 +227,7 @@ authenticated chunks on the private notes endpoint. See
 [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for verification and custom signers.
 
 Explicit local development build output:
-`dist/android/field-notes-0.6.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
+`dist/android/field-notes-0.7.0-android-arm64-debug.apk`, `.sha256`, `.signer.txt`.
 Copy the APK to the phone, verify its hash/signing-certificate fingerprint, and
 open it with your file manager. Temporarily allow installation from that source.
 The debug APK is signed with the development key in the external tool cache;
@@ -260,7 +260,7 @@ source scripts/dev-env.sh
 bash scripts/check.sh
 bash scripts/android.sh hostTest lintDebug
 bash scripts/build/android.sh debug
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.6.0-android-arm64-debug.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.7.0-android-arm64-debug.apk \
   bash scripts/build/server.sh
 ```
 

@@ -10,7 +10,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.6.0.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.7.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -18,7 +18,7 @@ services. iOS/native desktop packages are deferred.
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
 [Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [List types and fields](docs/LISTS.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
-[Household planning](docs/PLANNER-0.6.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
+[Household planning](docs/PLANNER-0.6.md) · [History](docs/HISTORY.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/50-sunday-week-aligned.png)
 
@@ -47,6 +47,7 @@ services. iOS/native desktop packages are deferred.
 - Later & reminders keeps undated ideas and optional follow-up alerts outside occupied calendar time. Searches include titles and content, with category/person/status filters and useful sort fields.
 - Granular shared-addition notices name the person, item and list. Each list can mute additions and scheduled item reminders separately.
 - Encrypted content export/import works on phone and web, preserves offline changes and images, skips duplicates and retains conflicting alternatives without overwriting current work.
+- History on web and phone shows who added, changed or removed content, with server timestamps, Previous/Now field details, search and filters. Removed items stay identifiable; recent phone history is cached offline. [History and retention](docs/HISTORY.md).
 - Task notes, image attachments and comments; encrypted offline edits/outbox,
   replay-safe retries, server-arbitrated claims and retained conflicts.
 - QR enrollment: bind the phone public key on your PC, scan, enter the phone's code

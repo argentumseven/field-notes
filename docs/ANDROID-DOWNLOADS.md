@@ -27,7 +27,7 @@ Google account, store or public service is required on the installed server or p
 
 The public APK uses the release variant and the pinned public certificate. A
 local development build, when explicitly requested, is written to
-`dist/android/field-notes-0.6.0-android-arm64-debug.apk`, with `.sha256` and
+`dist/android/field-notes-0.7.0-android-arm64-debug.apk`, with `.sha256` and
 `.signer.txt` alongside. This is a signed **development** build. Keep the same
 signing key for in-place updates; changing signers normally requires uninstall
 and loses phone-local keys and unsynchronized edits. Never uninstall over retained
@@ -104,7 +104,7 @@ bash scripts/setup/cloud.sh --server
 bash scripts/build/server.sh
 # Explicit custom build, with the original local signer retained:
 bash scripts/build/android.sh debug
-FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.6.0-android-arm64-debug.apk \
+FIELD_NOTES_ANDROID_APK=dist/android/field-notes-0.7.0-android-arm64-debug.apk \
   bash scripts/build/server.sh
 ```
 
@@ -149,8 +149,8 @@ The public release certificate is pinned in `release.json`. Build and package
 from a clean source tag, then queue the verified payload through GitHub Actions:
 
 ```bash
-python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.6.0-android-arm64-release.apk --output dist/android-release
-python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.6.0 --queue --apply
+python3 -B scripts/android_artifact.py --apk dist/android/field-notes-0.7.0-android-arm64-release.apk --output dist/android-release
+python3 -B scripts/publish-android.py --directory dist/android-release --tag v0.7.0 --queue --apply
 ```
 
 The existing tag must already be pushed and point to this clean checkout on

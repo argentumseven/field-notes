@@ -369,6 +369,14 @@ async fn command(
         .await?,
     ))
 }
+async fn history(
+    State(app): State<App>,
+    h: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, Fault> {
+    let token = credential(&h, app.device)?;
+    Ok(Json(blocking(app, move |s| s.history(&token, body)).await?))
+}
 async fn image(
     State(app): State<App>,
     h: HeaderMap,
@@ -750,6 +758,7 @@ pub fn router(app: App) -> Router {
         .route("/api/snapshot", get(snapshot))
         .route("/api/people", get(people))
         .route("/api/head", get(head))
+        .route("/api/history", post(history))
         .route("/api/commands", post(command))
         .route("/api/images/{id}", get(image));
     routes = routes.merge(
@@ -833,6 +842,15 @@ pub fn router(app: App) -> Router {
                     (
                         [("content-type", "text/javascript; charset=utf-8")],
                         include_str!("../../admin/reminders.js"),
+                    )
+                }),
+            )
+            .route(
+                "/history.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/history.js"),
                     )
                 }),
             )

@@ -303,7 +303,7 @@ func devicePath(path string) bool {
 		return true
 	case "/api/transfer/export", "/api/transfer/recovered", "/api/transfer/prepare", "/api/transfer/review", "/api/transfer/image", "/api/transfer/commit", "/api/transfer/cancel", "/api/transfer/restore", "/api/transfer/discard":
 		return true
-	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/device/activate", "/api/device/revoke-self", "/api/device/update":
+	case "/health", "/api/login", "/api/logout", "/api/session", "/api/reauth", "/api/snapshot", "/api/people", "/api/head", "/api/commands", "/api/history", "/api/device/activate", "/api/device/revoke-self", "/api/device/update":
 		return true
 	}
 	if tail, ok := strings.CutPrefix(path, "/api/device/update/chunks/"); ok {

@@ -25,7 +25,10 @@ class Workspace(
     private val cache get() = _state.value.cache
 
     private suspend fun update(transform: (Cache) -> Cache) = writes.withLock {
-        val next = transform(cache)
+        val candidate = transform(cache)
+        var next = if(candidate.history!=null&&candidate.currentHistory()==null)candidate.copy(history=null) else candidate
+        // A disposable read cache must never displace queued edits or drafts.
+        if(next.history!=null&&WireJson.encodeToString(next).encodeToByteArray().size>32*1024*1024)next=next.copy(history=null)
         require(WireJson.encodeToString(next).encodeToByteArray().size <= 32 * 1024 * 1024) { "Local encrypted cache is full. Sync or resolve pending images before adding more." }
         vault.save(next) // Failure never publishes an unpersisted command as saved.
         _state.update { it.copy(cache = next) }
@@ -35,7 +38,7 @@ class Workspace(
             val loaded = vault.load()
             _state.update { it.copy(cache = loaded,connectionPaused=loaded.preferences.connectionPaused,problem=loaded.lastSyncProblem.takeIf{it.isNotBlank()},contactAt=loaded.lastContactAt) }
             if (loaded.keys == null) {
-                check(loaded.config==null && loaded.enrollment==null && loaded.snapshot==null && loaded.outbox.isEmpty() && loaded.drafts.isEmpty() && loaded.conflicts.isEmpty()) { "Saved phone identity is missing. Original records are preserved; recover the identity or use Android app settings." }
+                check(loaded.config==null && loaded.enrollment==null && loaded.snapshot==null && loaded.history==null && loaded.outbox.isEmpty() && loaded.drafts.isEmpty() && loaded.conflicts.isEmpty()) { "Saved phone identity is missing. Original records are preserved; recover the identity or use Android app settings." }
                 val keys = transport.keys(); update { it.copy(keys = keys) }
             }
             var networkError:String?=null
@@ -229,6 +232,26 @@ class Workspace(
         require(id.matches(Regex("[a-f0-9-]{36}")))
         check(!state.value.needsLogin&&cache.token!=null){"Sign in to retrieve this attachment."}
         exchange("/api/transfer/media/$id",null,cache.token)
+    }
+    suspend fun history(filter:HistoryFilter,zone:kotlinx.datetime.TimeZone,anchor:Long?=null,before:Long?=null):HistoryPage {
+        val expected=checkNotNull(cache.snapshot){"Sync the workspace before opening History."}
+        return connection.withLock {
+            check(cache.snapshot?.basis==expected.basis&&cache.snapshot?.actor?.user_id==expected.actor.user_id){"The account or workspace changed. Open History again."}
+            check(!state.value.needsLogin&&cache.token!=null){"Sign in to load History."}
+            check(cache.supportsHistory()){"Update the paired server to view History. Notes and saved work are kept."}
+            try {
+                val response=request("/api/history",filter.body(expected.basis,zone,anchor,before))
+                val page=SyncJson.decodeFromJsonElement<HistoryPage>(response)
+                check(page.entries.size<=50&&page.entries.all { it.sequence>0&&it.sequence<=page.anchor&&it.changes.size<=64&&it.total_fields>=it.changes.size }&&page.entries.zipWithNext().all { (a,b)->a.sequence>b.sequence }&&(!page.has_more||page.next_before<(before?:page.anchor+1))){"The server returned invalid history pagination."}
+                check(cache.snapshot?.basis==expected.basis&&cache.snapshot?.actor?.user_id==expected.actor.user_id){"The account or workspace changed while loading History."}
+                update { it.copy(history=mergeHistory(it,page,Clock.System.now().epochSeconds)) }
+                page
+            } catch(e:Exception) {
+                if(e is CancellationException)throw e
+                if(e is ApiError&&e.status in setOf(401,403))report(e)
+                throw e
+            }
+        }
     }
     private suspend fun request(path: String, body: JsonObject? = null, token: String? = cache.token): JsonObject {
         val r=exchange(path,body,token)
