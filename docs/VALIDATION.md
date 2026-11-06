@@ -34,6 +34,23 @@ checks also verify that a missing parent's restored name comes from the selected
 state rather than its newer tombstone. Screenshots use only the synthetic
 household. No physical GrapheneOS or home-server deployment is implied.
 
+The public [v0.8.1 APK](https://github.com/argentumseven/field-notes/releases/tag/v0.8.1)
+uses clean tagged source `f930f0eab04b8609e7429f37d72f598bff8cc34a`, code 15,
+and the unchanged public signing certificate. The [verified publication workflow](https://github.com/argentumseven/field-notes/actions/runs/42267193394)
+succeeded. Fresh versioned/latest downloads and all four public assets match
+byte for byte after actual signature/package inspection. APK SHA-256:
+`ecde58c5e3dfefb97847b379354bcb5b4dbeec188ec44f4a0f7aff2c253f8e90`.
+The ordinary Linux x86_64 build fetched those exact public assets; archive,
+program/helper and download checks passed, followed by three whole-item API
+workflows against the packaged release executable.
+
+Packaging also exposed a repair-helper admission list still limited to 0.8.0.
+Main includes the 0.8.1 correction, preserving identical-executable/Android-code
+requirements for explicit same-version runtime recovery and refusing ordinary
+same-version replacements or downgrades. Its regression now reads the actual
+release version instead of hardcoding 0.8.0. All 126 Python checks passed. The
+Android APK is unchanged by this host-helper correction.
+
 
 ## 0.8 planner refinements and content recovery — 2026-11-06
 

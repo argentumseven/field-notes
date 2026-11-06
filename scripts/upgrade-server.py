@@ -75,7 +75,7 @@ def bundle_info(folder,current,recover=False):
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0','0.8.1') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
