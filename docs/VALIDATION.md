@@ -1,5 +1,40 @@
 # Implementation and validation record
 
+## 0.8.1 whole-item history — 2026-11-06
+
+Web and Android History show one entry per item, grouping task comments and
+attachments with their task. The server ranks each item's latest matching
+activity before applying the stable page cursor. Attribute edits cannot repeat
+an item across pages. Task/type/action filters include child activity as a task
+change. The raw encrypted audit trail remains available underneath; existing
+versions, indices and retention settings are preserved.
+
+A selected version opens one whole item state, including unchanged content,
+properties, comments and attachment names. Current/selected state switches and
+optional settings/comparison disclosures replace the default field-by-field
+wall. Only populated or active basic properties are displayed. A long list of
+children has an explicit 20-entry preview boundary; every child is restored.
+Whole-item restoration remains one fenced transaction. No per-attribute restore
+operation was added. The state response uses the existing recovery authorization
+and excludes internal restore identities, keys and image bytes.
+
+All 85 API/codec and 23 Chromium workflows passed. After the final grouped-filter
+and presentation refinements, all 24 history/recovery storage workflows and six
+focused Chromium workflows passed again. Tests cover repeated attribute edits,
+child grouping, stable pagination while new edits arrive, actor/type/action
+filters, unchanged saved fields, child content, switching selected/current states,
+whole-item restoration and the existing failure/replay/permission paths. All 15
+Rust tests and Clippy passed. All 97 shared Kotlin tests and release lint passed.
+The actual dedicated Android AVD check passed through history filtering, offline
+Keystore-backed cache, the real keyboard, whole-state preview, scrolling to the
+restore action and applying the restored snapshot without changing phone keys.
+It uses Rust-generated synthetic responses through the documented test transport;
+the real API workflows separately verify server transactions. Two focused recovery
+checks also verify that a missing parent's restored name comes from the selected
+state rather than its newer tombstone. Screenshots use only the synthetic
+household. No physical GrapheneOS or home-server deployment is implied.
+
+
 ## 0.8 planner refinements and content recovery — 2026-11-06
 
 Item versions and named whole-content checkpoints are available from History on

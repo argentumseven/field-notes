@@ -377,6 +377,106 @@ impl Store {
         }
         Ok(entries)
     }
+    // Presentation is a complete item, rather than a list of attribute deltas.
+    // Image bytes stay in the encrypted store; previews name attached files.
+    fn recovery_item_view(&self, content: &ContentState, target: &str) -> Result<Value> {
+        let Some(root) = content
+            .records
+            .iter()
+            .find(|r| r.record.id == target && !r.deleted)
+        else {
+            return Ok(Value::Null);
+        };
+        let mut fields = Vec::new();
+        for field in [
+            "title",
+            "name",
+            "body",
+            "notes",
+            "status",
+            "priority",
+            "category",
+            "project_id",
+            "assignee",
+            "due",
+            "planned_for",
+            "quantity",
+            "store",
+            "link_url",
+            "price",
+            "currency",
+            "estimate_minutes",
+            "pinned",
+            "blocked",
+            "all_day",
+            "start_date",
+            "end_date",
+            "starts_at",
+            "ends_at",
+            "recurrence",
+            "remind_at",
+            "on_radar",
+            "reminders",
+            "reminder_options",
+            "template",
+            "fields",
+            "perpetual",
+            "notify_additions",
+            "item_reminders",
+        ] {
+            if let Some(value) = root.record.data.get(field) {
+                if !value.is_null() && value != &json!("") && value != &json!([]) {
+                    let display = if field == "project_id" {
+                        // A missing parent will be restored from this state.
+                        // Its retained title can differ from the live tombstone.
+                        content
+                            .records
+                            .iter()
+                            .find(|r| !r.deleted && value.as_str() == Some(r.record.id.as_str()))
+                            .map(|r| json!(Self::recovery_title(&r.record)))
+                    } else {
+                        None
+                    };
+                    fields.push(json!({"field":field,"label":super::super::history::history_label(field),"value":display.unwrap_or(self.recovery_display_value(field,value)?)}));
+                }
+            }
+        }
+        let children = content
+            .records
+            .iter()
+            .filter(|r| !r.deleted && r.parent.as_deref() == Some(target))
+            .collect::<Vec<_>>();
+        Ok(
+            json!({"title":Self::recovery_title(&root.record),"kind":root.record.kind,"fields":fields,
+            "comments":children.iter().filter(|r|r.record.kind=="comment").count(),
+            "images":children.iter().filter(|r|r.record.kind=="image").count(),
+            "children":children.iter().take(20).map(|r|json!({"kind":r.record.kind,"title":Self::recovery_title(&r.record),"body":r.record.data["body"],"author":r.record.data["author"]})).collect::<Vec<_>>(),
+            "children_limited":children.len()>20}),
+        )
+    }
+    fn recovery_display_value(&self, path: &str, value: &Value) -> Result<Value> {
+        match value {
+            Value::Object(object) => Ok(Value::Object(
+                object
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "id")
+                    .map(|(key, value)| {
+                        Ok((
+                            key.clone(),
+                            self.recovery_display_value(&format!("{path}.{key}"), value)?,
+                        ))
+                    })
+                    .collect::<Result<_>>()?,
+            )),
+            Value::Array(items) if !path.ends_with(".people") => Ok(Value::Array(
+                items
+                    .iter()
+                    .map(|value| self.recovery_display_value(path, value))
+                    .collect::<Result<_>>()?,
+            )),
+            _ => self.history_value(path, value),
+        }
+    }
     pub(super) fn recovery_preview(&self, actor: &Actor, body: &Value) -> Result<Value> {
         fields(body, &["action", "epoch", "generation", "source"])?;
         let sid = text(body, "source", 36)?;
@@ -420,6 +520,9 @@ impl Store {
                 )?
             ],
         )?;
+        let item_state = saved.content.root.as_deref().map(|target| -> Result<Value> {
+            Ok(json!({"current":self.recovery_item_view(&current,target)?,"saved":self.recovery_item_view(&desired,target)?}))
+        }).transpose()?;
         let count = changes.len();
         let overrides_work = current.records.iter().any(|r| {
             !r.deleted
@@ -429,7 +532,7 @@ impl Store {
                     .is_some_and(|id| !id.is_empty() && id != actor.user_id)
         });
         Ok(
-            json!({"preview_id":preview,"expires_at":expires,"epoch":plan.epoch,"generation":plan.generation,"source":sid,"source_index":index,"title":saved.name,"checkpoint":checkpoint,"reauth_required":(checkpoint||overrides_work)&&!actor.elevated,"change_count":count,"restored":changes.iter().filter(|c|c["action"]=="restore").count(),"removed":changes.iter().filter(|c|c["action"]=="remove").count(),"changed":changes.iter().filter(|c|c["action"]=="change").count(),"changes":changes.into_iter().take(50).collect::<Vec<_>>(),"preview_limited":count>50,"saves_current_state":true,"clears_claims":true,"fences_offline_writes":checkpoint}),
+            json!({"preview_id":preview,"expires_at":expires,"epoch":plan.epoch,"generation":plan.generation,"source":sid,"source_index":index,"title":saved.name,"checkpoint":checkpoint,"reauth_required":(checkpoint||overrides_work)&&!actor.elevated,"change_count":count,"restored":changes.iter().filter(|c|c["action"]=="restore").count(),"removed":changes.iter().filter(|c|c["action"]=="remove").count(),"changed":changes.iter().filter(|c|c["action"]=="change").count(),"changes":changes.into_iter().take(50).collect::<Vec<_>>(),"preview_limited":count>50,"saves_current_state":true,"clears_claims":true,"fences_offline_writes":checkpoint,"item_state":item_state}),
         )
     }
     pub(super) fn recovery_receipt(

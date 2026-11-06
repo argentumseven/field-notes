@@ -55,18 +55,18 @@ class HistoryDeviceTest {
             compose.waitUntil(90_000){compose.onAllNodesWithContentDescription("Browse workspace").fetchSemanticsNodes().isNotEmpty()}
             compose.onNodeWithContentDescription("Browse workspace").performClick()
             compose.onNodeWithTag("drawer-history").performScrollTo().performClick()
-            waitText("Bananas");compose.onNodeWithText("Who changed what, and when.").assertIsDisplayed()
+            waitText("Bananas");compose.onNodeWithText("One entry per item. Open its saved states to inspect or restore it.").assertIsDisplayed()
             shot("59-history")
-            compose.onNodeWithText("Show changes (2) ▾").performScrollTo().performClick()
+            compose.onAllNodesWithText("Latest activity details ▾").onFirst().performScrollTo().performClick()
             compose.onNodeWithText("Four for the breakfast smoothies").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Two for breakfast").assertIsDisplayed();shot("60-history-details")
-            compose.onNodeWithText("Hide changes ▴").performScrollTo().performClick()
+            compose.onNodeWithText("Hide activity details ▴").performScrollTo().performClick()
             compose.onNodeWithTag("history-timeline").performScrollToNode(hasText("Load older changes"))
             compose.onNodeWithText("Load older changes").performClick()
-            compose.waitUntil(60_000){model.state.value.cache.currentHistory()?.entries?.size==4}
+            compose.waitUntil(60_000){model.state.value.cache.currentHistory()?.entries?.size==3}
             compose.onNodeWithTag("history-timeline").performScrollToIndex(0)
             compose.onNodeWithTag("history-search").performClick().performTextInput("Two for breakfast")
-            compose.waitUntil(60_000){transport.lastQuery=="Two for breakfast"&&transport.lastCount==2}
+            compose.waitUntil(60_000){transport.lastQuery=="Two for breakfast"&&transport.lastCount==1}
             // Reproduce the constrained layout with a real sync warning as
             // well as the IME; removing the warning must not be the fix.
             transport.offline=true;runBlocking {withTimeout(30_000){while(model.state.value.problem==null){model.poll();delay(50)}}}
@@ -89,7 +89,7 @@ class HistoryDeviceTest {
             compose.onAllNodesWithText("Item versions").onFirst().performScrollTo().performClick()
             waitText("#1");shot("75-native-item-versions")
             compose.onAllNodesWithText("Preview restore").onLast().performScrollTo().performClick()
-            waitText("Restore preview");compose.onNodeWithText("Restore item version").performScrollTo().assertIsDisplayed();shot("76-native-restore-preview")
+            waitText("Restore preview");compose.onNode(hasText("Two for breakfast") and !hasTestTag("history-search")).performScrollTo().assertIsDisplayed();shot("76-native-restore-preview");compose.onNodeWithTag("recovery-content").performScrollToNode(hasText("Restore item version"));compose.onNodeWithText("Restore item version").assertIsDisplayed()
             compose.onNodeWithText("Restore item version").performClick()
             waitText("Recovery completed.")
             val restored=WireJson.decodeFromJsonElement<Snapshot>(fixture.getValue("recovery_after"))

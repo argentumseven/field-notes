@@ -284,14 +284,16 @@ test("deleted tasks recover their images, comments and missing collection with t
       await s.f.request("/api/images/" + image, { token: s.token })
     ).data;
     const old = (await s.versions(task))[0];
+    assert.equal((await s.send("list.update", list, {title:"Later household label"}, 1)).status, 200);
     assert.equal((await s.send("task.delete", task, {}, 1)).status, 200);
-    assert.equal((await s.send("list.delete", list, {}, 1)).status, 200);
+    assert.equal((await s.send("list.delete", list, {}, 2)).status, 200);
     assert.equal(
       (await s.f.request("/api/images/" + image, { token: s.token })).status,
       404,
     );
     const preview = await s.preview(old.id);
     assert.equal(preview.restored, 4);
+    assert.equal(preview.item_state.saved.fields.find(f=>f.field==="project_id").value,"Household repairs");
     const restored = await s.apply(s.applyBody(preview));
     assert.equal(restored.status, 200, JSON.stringify(restored.data));
     const snapshot = await s.snapshot();
@@ -1102,4 +1104,23 @@ test("saved image bytes can repair a damaged live attachment even when its metad
   } finally {
     await s.close();
   }
+});
+
+test("item previews present complete selected/current states including unchanged fields and child content", async () => {
+  const s=await scene();
+  try {
+    const task=randomUUID(),comment=randomUUID();
+    assert.equal((await s.send("task.create",task,{title:"Household plan",notes:"Unchanged reference notes",priority:2,store:"Local market"})).status,200);
+    assert.equal((await s.send("comment.create",comment,{task_id:task,body:"Keep this comment with the item"})).status,200);
+    const saved=(await s.versions(task))[0];
+    assert.equal((await s.send("task.update",task,{priority:1},1)).status,200);
+    const plan=await s.preview(saved.id), old=plan.item_state.saved, current=plan.item_state.current;
+    const field=(state,key)=>state.fields.find(f=>f.field===key)?.value;
+    assert.equal(old.title,"Household plan");assert.equal(field(old,"priority"),2);assert.equal(field(current,"priority"),1);
+    assert.equal(field(old,"notes"),"Unchanged reference notes");assert.equal(field(current,"notes"),"Unchanged reference notes");assert.equal(field(old,"store"),"Local market");
+    assert.equal(old.comments,1);assert.equal(old.children[0].body,"Keep this comment with the item");
+    assert.equal(old.fields.some(f=>f.field==="recovery_incarnation"),false);
+    assert.equal((await s.apply(s.applyBody(plan))).status,200);
+    const after=await s.snapshot();assert.equal(after.records.find(r=>r.id===task).data.priority,2);assert.equal(after.records.find(r=>r.id===comment).data.body,"Keep this comment with the item");
+  } finally {await s.f.close();}
 });

@@ -2035,3 +2035,14 @@ dialog,
 .recovery-difference {border-top:1px solid var(--border);padding:10px 0;overflow-wrap:anywhere;white-space:pre-wrap;}
 .recovery-difference p {margin:6px 0;}
 .recovery-warning,.recovery-pending {border:1px solid var(--accent);padding:14px;border-radius:8px;}
+
+/* Recovery opens one whole item; attribute comparisons are an optional drill-in. */
+.recovery-item-state {border:1px solid var(--border);border-radius:var(--control-radius,8px);padding:16px;margin:12px 0;background:var(--bg);}
+.recovery-item-state h3 {margin:0 0 12px;}
+.recovery-state-content {white-space:pre-wrap;overflow-wrap:anywhere;}
+.recovery-state-fields {display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:8px 16px;font-size:.9rem;}
+.recovery-state-fields dt {color:var(--muted);}
+.recovery-state-fields dd {margin:0;overflow-wrap:anywhere;white-space:pre-wrap;}
+.recovery-state-settings,.recovery-comparison {margin-top:14px;}
+.recovery-state-settings summary,.recovery-comparison summary {cursor:pointer;padding:10px 0;font-weight:600;}
+.recovery-state-child {border-top:1px solid var(--border);padding-top:10px;margin-top:10px;}

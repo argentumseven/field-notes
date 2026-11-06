@@ -85,4 +85,21 @@ class HistoryTest {
         assertEquals("Green for later",historyValue(historyChange,historyChange.before,zone))
         assertEquals("Grocery item",historyEntry.typeLabel)
     }
+    @Test fun oldCachedAttributeAndChildRowsBecomeOneLatestWholeItem() {
+        val child=historyEntry.copy(sequence=5,target="comment",item_target="task",title="Comment text",parent_title="Bananas",kind="comment",item_type="comment",action="comment.create")
+        val rows=historyItems(listOf(historyEntry,child,historyEntry.copy(sequence=1),historyEntry.copy(sequence=4,target="other",title="Other item")))
+        assertEquals(listOf("task","other"),rows.map {it.target})
+        assertEquals("Bananas",rows.first().title);assertEquals("task",rows.first().kind);assertEquals("task.update",rows.first().action)
+        assertEquals("Sophia",rows.first().actor_name)
+    }
+    @Test fun completeItemStateDecodesUnchangedFieldsAndChildrenWithoutUsingDeltas() {
+        val json="""{"current":null,"saved":{"title":"Bananas","kind":"task","fields":[{"field":"notes","label":"Notes","value":"Keep green"},{"field":"priority","label":"Priority","value":2}],"comments":1,"images":1,"children":[{"kind":"comment","title":"Comment","body":"Choose ripe ones","author":"Sophia"},{"kind":"image","title":"Reference photo"}]}}"""
+        val pair=WireJson.decodeFromString<ItemStatePair>(json)
+        assertNull(pair.current);val state=assertNotNull(pair.saved)
+        assertEquals("Keep green",state.fields.first().value.jsonPrimitive.content)
+        assertEquals("High",itemStateValue("priority",state.fields.last().value,TimeZone.UTC))
+        assertEquals("Choose ripe ones",state.children.first().body.jsonPrimitive.content)
+        assertNull(state.children.last().body.jsonPrimitive.contentOrNull)
+    }
+
 }

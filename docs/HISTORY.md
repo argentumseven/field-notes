@@ -4,20 +4,33 @@ Open **Library → History** in either the web GUI or the Android app. The same
 server-recorded trail shows who added, changed, completed, reopened, started,
 released or removed an item, and when the server accepted that change.
 
-Each entry shows the item type, title, person, local date/time and its list or
-task context. **Show changes** expands readable Previous/Now values. **Open
-item** opens content that still exists. Removed items stay identifiable in the
-trail; deleting a task also records its removed comments and attachments.
-**Item versions** opens full retained states, including deleted items. History
-entries contain readable excerpts; recovery versions retain complete content.
+History shows **one entry per item**, ordered by its latest matching activity.
+A task's comments and attachments belong to that task's entry. Repeated edits
+and attribute changes do not produce another top-level row. The person and
+server timestamp identify the latest matching activity, including when filters
+are active. **Open item** opens content that still exists; deleted items remain
+available through retained versions.
+
+**Item versions** lists complete saved states with increasing indices. Opening a
+version shows the selected item as a whole: title, content, populated properties,
+comments and attachment names. Switch between **Selected state** and **Current
+state** without a long field-by-field comparison. Scheduling/reminder settings
+and technical comparisons are optional disclosures. Restoring applies the entire
+state atomically, including its children; individual attributes cannot be
+restored separately. Later retained states stay available for rolling forward.
 See [Restoring versions and content checkpoints](RECOVERY.md).
 
-Search includes titles, people, collection names and both sides of recorded
-field changes. Filter by Added/Changed/Removed, person, item type or date range.
-Date ranges include the whole selected local day, including clock changes.
-**Load older changes** uses a fixed server sequence so new activity cannot
-duplicate or skip entries while paging. **Back to latest changes** returns to
-the newest activity. A very long trail loads in bounded sections.
+Search includes titles, people, collection names and both sides of the displayed
+latest activity. Filter by Added/Changed/Removed, person, item type or date range.
+Child additions/removals count as changes to the task. Date ranges include the
+whole selected local day, including clock changes. **Load older changes** uses a
+fixed server watermark and ranks each item before applying its page cursor, so
+an item cannot reappear on another page. **Back to latest changes** returns to
+the newest activity.
+
+**Latest activity details** keeps the detailed audit information available on
+demand. The underlying encrypted audit trail and full recovery snapshots are
+preserved; this presentation change does not discard existing history.
 
 The normal auto-refresh preference applies. Browsing older entries does not
 pull you back to the top; new changes have an explicit Show latest action.

@@ -59,10 +59,11 @@ import org.fieldnotes.domain.*
     LaunchedEffect(snapshot.sequence,loading,cache.preferences.autoRefresh) {
         if(!loading&&!olderLoaded&&cache.preferences.autoRefresh&&page?.let {snapshot.sequence>it.anchor}==true)reload++
     }
+    val itemEntries=historyItems(entries)
     VisibleLazyColumn(Modifier.weight(1f).testTag("history-timeline"),contentPadding=PaddingValues(top=8.dp,bottom=28.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item { Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth().padding(top=10.dp,bottom=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Text("Who changed what, and when.",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium)
+                    Text("One entry per item. Open its saved states to inspect or restore it.",Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium)
                     SecondaryButton(onClick={focus.clearFocus();reload++},enabled=!loading){Text("Refresh history")}
                 }
                 if(cache.supportsRecovery()){RecoveryPendingCard(model,state);SecondaryButton(onClick={recoveryTarget="";recoveryTitle="Content checkpoints"}){Text("Content checkpoints")}}
@@ -76,7 +77,7 @@ import org.fieldnotes.domain.*
                     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                         val people=(cache.people.map {it.id to it.name}+entries.map {it.actor_id to it.actor_name}).distinctBy {it.first}
                         ViewChoice("Person",actor,listOf("" to "Everyone")+people){actor=it}
-                        ViewChoice("Type",kind,listOf("" to "All types","task" to "Tasks & list items","list" to "Lists","project" to "Projects","event" to "Calendar events","note" to "Notes","comment" to "Comments","image" to "Attachments","workspace" to "Workspace")){kind=it}
+                        ViewChoice("Type",kind,listOf("" to "All types","task" to "Tasks & list items","list" to "Lists","project" to "Projects","event" to "Calendar events","note" to "Notes","workspace" to "Workspace")){kind=it}
                     }
                     DateField("From day",from){from=it};DateField("Through day",to){to=it}
                 }
@@ -86,19 +87,19 @@ import org.fieldnotes.domain.*
                     Text(message,style=MaterialTheme.typography.bodySmall)
                     SecondaryButton(onClick={reload++},enabled=!loading){Text("Try history again")}
                 }} }
-                if(offlineCopy&&entries.isNotEmpty())Text("Cached history · ${entries.size} changes available on this phone. Reconnect for the complete trail.",Modifier.padding(vertical=6.dp),style=MaterialTheme.typography.labelMedium)
+                if(offlineCopy&&entries.isNotEmpty())Text("Cached history · ${itemEntries.size} items available on this phone. Reconnect for the complete trail.",Modifier.padding(vertical=6.dp),style=MaterialTheme.typography.labelMedium)
                 if(olderLoaded)Button(shape=ControlShape,onClick={reload++}){Text(if(page?.let {snapshot.sequence>it.anchor}==true)"New changes · Show latest" else "Back to latest changes")}
         } }
         if(entries.isEmpty()&&!loading)item {
             Text(when{problem!=null->"No matching cached history. Your notes and queued changes are kept.";page?.has_more==true->"No match in this part of the trail. Search older changes below.";filter.active->"No changes match these filters.";else->"No changes yet. Added, changed and removed items will appear here."},Modifier.padding(vertical=20.dp))
         }
-        items(entries,key={it.sequence}) {entry->
+        items(itemEntries,key={it.target}) {entry->
             val current=snapshot.records.find {it.id==entry.target}
             val target=if(current?.kind in setOf("comment","image"))current?.data?.text("task_id") else current?.id
             HistoryCard(entry,zone,use24Hour,target?.let {id->{open(id)}},if(cache.supportsRecovery()&&entry.kind!="workspace"){{recoveryTarget=entry.target;recoveryTitle=entry.title}}else null)
         }
         if(!offlineCopy&&page?.has_more==true)item {SecondaryButton(onClick={focus.clearFocus();scope.launch {load(true)}},enabled=!loading,modifier=Modifier.fillMaxWidth()){Text(if(loading)"Loading history…" else if(entries.isEmpty())"Search older changes" else "Load older changes")}}
-        item {Text("Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Saved states and change details follow the server’s configurable age, count and storage limits. Account and device security activity is in web Management.",Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+        item {Text("Server timestamps determine order. Each saved state contains the complete item, including its comments and attachments. Unsynchronized edits appear after the server accepts them. Saved states and change details follow the server’s configurable age, count and storage limits. Account and device security activity is in web Management.",Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
     }
 }
 
@@ -117,7 +118,7 @@ import org.fieldnotes.domain.*
             if(entry.details!="recorded")Text("Earlier change · field details were not retained. The item name is its last known title.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             else if(entry.changes.isEmpty())Text("Saved without changing content fields.",style=MaterialTheme.typography.bodySmall)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                if(entry.changes.isNotEmpty())SecondaryButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide changes ▴" else "Show changes (${entry.total_fields}) ▾")}
+                if(entry.changes.isNotEmpty())SecondaryButton(onClick={expanded=!expanded}){Text(if(expanded)"Hide activity details ▴" else "Latest activity details ▾")}
                 if(versions!=null)SecondaryButton(onClick=versions){Text("Item versions")}
                 if(open!=null)SecondaryButton(onClick=open){Text("Open item")}
             }

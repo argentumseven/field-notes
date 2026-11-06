@@ -302,6 +302,7 @@ impl Store {
             &[
                 "epoch",
                 "generation",
+                "view",
                 "anchor",
                 "before",
                 "limit",
@@ -345,6 +346,11 @@ impl Store {
                 _ => fail(400, "Invalid history filter"),
             }
         };
+        let view = string("view", 10)?;
+        if !["", "items"].contains(&view.as_str()) {
+            return fail(400, "Choose a history view");
+        }
+        let items = view == "items";
         let query = string("query", 200)?.trim().to_lowercase();
         let who = string("actor", 36)?;
         if !who.is_empty() {
@@ -374,11 +380,14 @@ impl Store {
         if !["", "added", "changed", "removed"].contains(&action.as_str()) {
             return fail(400, "Choose a history action");
         }
-        let mut sql=String::from("SELECT e.seq,e.object_id,e.action,e.actor,e.at,COALESCE(u.name,'Former household member'),d.data FROM events e LEFT JOIN users u ON u.id=e.actor LEFT JOIN history_details d ON d.seq=e.seq LEFT JOIN objects o ON o.id=e.object_id LEFT JOIN objects p ON p.id=o.parent WHERE e.generation>=? AND e.seq<=? AND e.seq<? AND e.at>=? AND e.at<?");
+        // Rank before applying the page cursor: an older page must never
+        // surface another attribute edit of an item already listed. Child
+        // activity belongs to the complete task, not a separate history item.
+        let subject = "CASE WHEN e.action LIKE 'comment.%' OR e.action LIKE 'image.%' THEN COALESCE(NULLIF(d.parent_id,''),o.parent,e.object_id) ELSE e.object_id END";
+        let mut sql=format!("SELECT e.seq,e.object_id,e.action,e.actor,e.at,COALESCE(u.name,'Former household member'),d.data,{subject} AS history_target,ROW_NUMBER() OVER (PARTITION BY {subject} ORDER BY e.seq DESC) AS history_position FROM events e LEFT JOIN users u ON u.id=e.actor LEFT JOIN history_details d ON d.seq=e.seq LEFT JOIN objects o ON o.id=e.object_id LEFT JOIN objects p ON p.id=o.parent WHERE e.generation>=? AND e.seq<=? AND e.at>=? AND e.at<?");
         let mut args: Vec<SqlValue> = vec![
             self.recovery_start_generation()?.into(),
             anchor.into(),
-            before.into(),
             from.into(),
             to.into(),
         ];
@@ -396,18 +405,46 @@ impl Store {
             args.push(who.into());
         }
         if !kind.is_empty() {
-            sql.push_str(" AND substr(e.action,1,instr(e.action,'.')-1)=?");
-            args.push(kind.into());
+            if items && kind == "task" {
+                sql.push_str(" AND (e.action LIKE 'task.%' OR e.action LIKE 'comment.%' OR e.action LIKE 'image.%')");
+            } else {
+                sql.push_str(" AND substr(e.action,1,instr(e.action,'.')-1)=?");
+                args.push(kind.into());
+            }
         }
-        match action.as_str(){"added"=>sql.push_str(" AND e.action LIKE '%.create'"),"removed"=>sql.push_str(" AND (e.action LIKE '%.delete' OR e.action='workspace.clear')"),"changed"=>sql.push_str(" AND e.action NOT LIKE '%.create' AND e.action NOT LIKE '%.delete' AND e.action!='workspace.clear'"),_=>{}}
+        let filter_action = if items {
+            "CASE WHEN e.action LIKE 'comment.%' OR e.action LIKE 'image.%' THEN 'task.update' ELSE e.action END"
+        } else {
+            "e.action"
+        };
+        match action.as_str() {
+            "added" => sql.push_str(&format!(" AND ({filter_action}) LIKE '%.create'")),
+            "removed" => sql.push_str(&format!(" AND (({filter_action}) LIKE '%.delete' OR e.action='workspace.clear')")),
+            "changed" => sql.push_str(&format!(" AND ({filter_action}) NOT LIKE '%.create' AND ({filter_action}) NOT LIKE '%.delete' AND e.action!='workspace.clear'")),
+            _ => {}
+        }
         if !target.is_empty() {
             sql.push_str(" AND (e.object_id=? OR d.parent_id=? OR d.collection_id=? OR (d.seq IS NULL AND (o.parent=? OR p.parent=?)))");
             for _ in 0..5 {
                 args.push(target.clone().into());
             }
         }
-        sql.push_str(" ORDER BY e.seq DESC LIMIT 501");
-        type Row = (i64, String, String, String, i64, String, Option<Vec<u8>>);
+        if items {
+            sql = format!("SELECT * FROM ({sql}) WHERE history_position=1 AND seq<? ORDER BY seq DESC LIMIT 501");
+        } else {
+            sql.push_str(" AND e.seq<? ORDER BY e.seq DESC LIMIT 501");
+        }
+        args.push(before.into());
+        type Row = (
+            i64,
+            String,
+            String,
+            String,
+            i64,
+            String,
+            Option<Vec<u8>>,
+            String,
+        );
         let rows: Vec<Row> = self
             .db
             .prepare(&sql)?
@@ -420,13 +457,15 @@ impl Store {
                     r.get(4)?,
                     r.get(5)?,
                     r.get(6)?,
+                    r.get(7)?,
                 ))
             })?
             .collect::<std::result::Result<_, _>>()?;
         let mut entries = Vec::new();
         let mut examined = 0;
         let mut cursor = before;
-        for (seq, target, action, uid, at, name, bytes) in rows.iter().take(PAGE_SCAN) {
+        for (seq, target, action, uid, at, name, bytes, item_target) in rows.iter().take(PAGE_SCAN)
+        {
             if entries.len() >= limit {
                 break;
             }
@@ -447,6 +486,51 @@ impl Store {
             item["sequence"] = json!(seq);
             item["target"] = json!(target);
             item["action"] = json!(action);
+            item["item_target"] = json!(item_target);
+            if items && target != item_target {
+                let parent = self.history_record(item_target)?;
+                item["title"] = parent
+                    .as_ref()
+                    .map(Self::history_title)
+                    .map(Value::String)
+                    .unwrap_or_else(|| item["parent_title"].clone());
+                item["parent_title"] = json!(parent
+                    .as_ref()
+                    .map(|r| self.history_context(r).map(|v| v.2))
+                    .transpose()?
+                    .unwrap_or_default());
+                item["activity_kind"] = item["kind"].clone();
+                item["kind"] = json!("task");
+                let collection = parent
+                    .as_ref()
+                    .map(|r| self.history_context(r).map(|v| v.1))
+                    .transpose()?
+                    .unwrap_or_default();
+                let template = self
+                    .history_record(&collection)?
+                    .and_then(|r| r.data["template"].as_str().map(str::to_owned));
+                item["item_type"] = json!(match template.as_deref() {
+                    Some("groceries") => "grocery_item",
+                    Some("shopping") => "shopping_item",
+                    _ if !collection.is_empty() => "list_item",
+                    _ => "task",
+                });
+                item["target"] = json!(item_target);
+                let deleted = self
+                    .db
+                    .query_row(
+                        "SELECT deleted FROM objects WHERE id=?",
+                        [item_target],
+                        |r| r.get::<_, bool>(0),
+                    )
+                    .optional()?
+                    .unwrap_or(false);
+                item["action"] = json!(if deleted {
+                    "task.delete"
+                } else {
+                    "task.update"
+                });
+            }
             item["actor_id"] = json!(uid);
             item["at"] = json!(at);
             if query.is_empty()

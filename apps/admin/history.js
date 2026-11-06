@@ -150,7 +150,7 @@ const FieldHistory = (() => {
     view = null;
   }
   function requestBody(v, more) {
-    const body = { epoch: v.epoch, generation: v.generation, ...v.filters };
+    const body = { epoch: v.epoch, generation: v.generation, view: "items", ...v.filters };
     delete body.from;
     delete body.to;
     if (v.filters.from)
@@ -231,8 +231,8 @@ const FieldHistory = (() => {
       : v.problem
         ? "History could not refresh. Previously loaded changes remain in this tab."
         : v.entries.length +
-          (v.entries.length === 1 ? " change shown" : " changes shown") +
-          " · Newest first";
+          (v.entries.length === 1 ? " item shown" : " items shown") +
+          " · Latest activity per item";
     v.root.setAttribute("aria-busy", String(v.loading));
     v.refresh.disabled = v.loading;
     v.more.hidden = !v.page?.has_more;
@@ -278,7 +278,10 @@ const FieldHistory = (() => {
               : "No changes yet. Added, changed and removed items will appear here.",
         ),
       );
+    const seen = new Set();
     for (const entry of v.entries) {
+      if (seen.has(entry.target)) continue;
+      seen.add(entry.target);
       const date = new Intl.DateTimeFormat(undefined, {
         dateStyle: "full",
       }).format(new Date(entry.at * 1000));
@@ -349,7 +352,7 @@ const FieldHistory = (() => {
           summary = el(
             "summary",
             "",
-            "Show changes (" + entry.total_fields + ")",
+            "Latest activity details",
           );
         detail.open = v.expanded.has(entry.sequence);
         detail.ontoggle = () => {
@@ -463,8 +466,6 @@ const FieldHistory = (() => {
         ["project", "Projects"],
         ["note", "Notes"],
         ["event", "Calendar events"],
-        ["comment", "Comments"],
-        ["image", "Attachments"],
         ["workspace", "Workspace"],
       ],
       "",
@@ -515,7 +516,7 @@ const FieldHistory = (() => {
       el(
         "p",
         "muted",
-        "Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Saved versions and change details follow the age, count and storage limits in Management. Clearing the workspace removes earlier content recovery copies. Restores create new history entries. Account, device and password activity stays in Management. Server backups include history; portable content imports record new changes rather than replacing this trail.",
+        "One entry per item, including its comments and attachments. Open Item versions to inspect or restore a complete saved state. Server timestamps determine order. Unsynchronized edits appear after the server accepts them. Saved versions and change details follow the age, count and storage limits in Management. Clearing the workspace removes earlier content recovery copies. Restores create new history entries. Account, device and password activity stays in Management. Server backups include history; portable content imports record new changes rather than replacing this trail.",
       ),
     );
     root.append(about);

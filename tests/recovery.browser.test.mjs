@@ -116,6 +116,14 @@ test("web restores deleted and previous states with readable previews and keeps 
       .locator(".recovery-dialog")
       .filter({ has: page.getByRole("heading", { name: /Restore preview/ }) });
     assert.match(await preview.innerText(), /Original household plan/);
+    assert.equal(await page.locator(".history-view > .history-timeline > .history-entry").count(),1);
+    await preview.getByRole("article",{name:"Selected item state"}).waitFor();
+    assert.equal(await preview.locator(".recovery-comparison").getAttribute("open"),null);
+    await preview.getByRole("button",{name:"Current state",exact:true}).click();
+    assert.match(await preview.getByRole("article",{name:"Current item state"}).innerText(),/not present/);
+    await preview.getByRole("button",{name:"Selected state #1",exact:true}).click();
+    assert.match(await preview.getByRole("article",{name:"Selected item state"}).innerText(),/Original household plan/);
+
     assert.equal(
       await preview
         .locator(".recovery-body")

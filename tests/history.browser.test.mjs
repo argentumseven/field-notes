@@ -66,7 +66,7 @@ test("web history shows people, added/removed items, real field differences and 
   const s = await scene();
   try {
     const { page } = s;
-    assert.equal(await page.locator(".history-entry").count(), 5);
+    assert.equal(await page.locator(".history-entry").count(), 3);
     const latest = page.locator(".history-entry").first();
     assert.match(
       await latest.innerText(),
@@ -100,7 +100,7 @@ test("web history shows people, added/removed items, real field differences and 
       .getByLabel("Search titles, people and change details")
       .fill("Two for breakfast");
     await page.waitForFunction(
-      () => document.querySelectorAll(".history-entry").length === 2,
+      () => document.querySelectorAll(".history-entry").length === 1,
     );
     await page.locator(".history-filter-disclosure > summary").click();
     const sophiaId = (
@@ -115,7 +115,7 @@ test("web history shows people, added/removed items, real field differences and 
       .getByRole("button", { name: "Clear filters", exact: true })
       .click();
     await page.waitForFunction(
-      () => document.querySelectorAll(".history-entry").length === 5,
+      () => document.querySelectorAll(".history-entry").length === 3,
     );
     await page.evaluate(
       () => (document.documentElement.dataset.theme = "light"),
@@ -174,7 +174,7 @@ test("web history ignores stale filter responses, keeps focus and retains loaded
     await requested;
     await search.fill("Bananas");
     await page.waitForFunction(
-      () => document.querySelectorAll(".history-entry").length === 2,
+      () => document.querySelectorAll(".history-entry").length === 1,
     );
     release();
     await page
@@ -189,7 +189,7 @@ test("web history ignores stale filter responses, keeps focus and retains loaded
       .getByRole("button", { name: "Refresh now", exact: true })
       .click();
     await page.waitForFunction(
-      () => document.querySelectorAll(".history-entry").length === 2,
+      () => document.querySelectorAll(".history-entry").length === 1,
     );
     assert.equal(await search.inputValue(), "Bananas");
     await page.unroute("**/api/history");
@@ -201,7 +201,7 @@ test("web history ignores stale filter responses, keeps focus and retains loaded
       .getByRole("alert")
       .filter({ hasText: "Server unavailable" })
       .waitFor();
-    assert.equal(await page.locator(".history-entry").count(), 2);
+    assert.equal(await page.locator(".history-entry").count(), 1);
     assert.equal(await search.inputValue(), "Bananas");
     assert.deepEqual(s.errors, []);
   } finally {

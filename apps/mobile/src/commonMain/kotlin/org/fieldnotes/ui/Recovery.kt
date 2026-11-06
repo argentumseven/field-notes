@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -53,7 +54,7 @@ import org.fieldnotes.domain.*
                 SecondaryButton(onClick=close,enabled=!busy){Text("Close")}
             }
             HorizontalDivider()
-            VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            VisibleLazyColumn(Modifier.weight(1f).testTag("recovery-content"),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 item {
                     if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
                     if(problem.isNotBlank())Text(problem,color=MaterialTheme.colorScheme.error)
@@ -63,10 +64,20 @@ import org.fieldnotes.domain.*
                 val plan=preview
                 if(plan!=null) {
                     item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                        Text("${plan.restored} restored · ${plan.changed} changed · ${plan.removed} removed",style=MaterialTheme.typography.titleMedium)
-                        Text("Current state is saved first. This creates new versions, so you can return to a newer retained version. Working claims are cleared.")
+                        Text(if(plan.checkpoint)"${plan.restored} restored · ${plan.changed} changed · ${plan.removed} removed" else "Complete item version #${plan.source_index}",style=MaterialTheme.typography.titleMedium)
+                        Text("Current state is saved first. Later versions remain available. Working claims are cleared.",style=MaterialTheme.typography.bodySmall)
                         if(plan.checkpoint)Text("Replaces household content. Accounts, pairing and security settings stay current. Unsynchronized edits from the earlier state are retained for review instead of uploaded automatically.")
-                        if(!plan.checkpoint)Text(title,style=MaterialTheme.typography.titleMedium)
+                    }}
+                    plan.item_state?.let { pair->item {ItemStatePanel(pair,plan.source_index,zone,use24Hour)} }
+                    item {
+                        var compare by remember(plan.preview_id){mutableStateOf(false)}
+                        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                            if(plan.item_state!=null)SecondaryButton(onClick={compare=!compare}){Text(if(compare)"Hide comparison" else "Compare with current state")}
+                            if(plan.item_state==null||compare)for(change in plan.changes)RecoveryChangeCard(change,zone,use24Hour)
+                        }
+                    }
+                    if(plan.preview_limited)item {Text("Showing the first 50 of ${plan.change_count} affected items. The entire checkpoint is applied atomically.")}
+                    item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         if(plan.reauth_required)OutlinedTextField(password,{password=it},label={Text("Your account password")},modifier=Modifier.fillMaxWidth(),singleLine=true,visualTransformation=PasswordVisualTransformation())
                         Button(shape=ControlShape,onClick={run {
                             if(plan.reauth_required){model.reauthenticate(password);password=""}
@@ -74,22 +85,9 @@ import org.fieldnotes.domain.*
                         }},enabled=!busy&&state.cache.recoveryPending==null&&(!plan.reauth_required||password.isNotBlank()),modifier=Modifier.fillMaxWidth()){Text(if(plan.checkpoint)"Restore content checkpoint" else "Restore item version")}
                         SecondaryButton(onClick={preview=null;password=""},enabled=!busy){Text("Back to saved states")}
                     }}
-                    items(plan.changes,key={it.id}) {change->OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
-                        Text("${change.action.replaceFirstChar {it.uppercase()}} · ${change.title}",style=MaterialTheme.typography.titleMedium)
-                        Text(change.kind.replaceFirstChar {it.uppercase()},style=MaterialTheme.typography.labelMedium)
-                        for(field in change.changes){
-                            HorizontalDivider();Text(field.label.ifBlank {field.field},style=MaterialTheme.typography.labelLarge)
-                            val diff=HistoryChange(field.field,field.label,field.before,field.after)
-                            Text("Current: ${historyValue(diff,field.before,zone,use24Hour)}",style=MaterialTheme.typography.bodySmall)
-                            Text("Saved: ${historyValue(diff,field.after,zone,use24Hour)}",style=MaterialTheme.typography.bodySmall)
-                            if(field.truncated)Text("Excerpt; full saved value is restored.",style=MaterialTheme.typography.labelSmall)
-                        }
-                        if(change.total_fields>change.changes.size)Text("${change.changes.size} of ${change.total_fields} changed fields shown.",style=MaterialTheme.typography.labelSmall)
-                    }}}
-                    if(plan.preview_limited)item {Text("Showing the first 50 of ${plan.change_count} affected items. The entire checkpoint is applied atomically.")}
                 }else {
                     item {Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(if(target==null)"Save household content, comments and attached images together. Checkpoints do not contain accounts or security settings." else "Version indices never go backward. Preview any retained state, then restore it as a new version. Full versions begin with changes made after this feature was installed.")
+                        Text(if(target==null)"Save household content, comments and attached images together. Checkpoints do not contain accounts or security settings." else "Each version is one complete item state, including its comments and attachments. Open a state to inspect or restore it; later states stay available.")
                         if(target==null&&actor?.role in setOf("owner","admin")){
                             OutlinedTextField(name,{name=it.take(120)},label={Text("Checkpoint name")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                             Button(shape=ControlShape,onClick={run{model.createCheckpoint(name);name="";done="Content checkpoint saved.";load()}},enabled=!busy&&name.isNotBlank()&&state.cache.recoveryPending==null){Text("Save content checkpoint")}
@@ -100,7 +98,7 @@ import org.fieldnotes.domain.*
                     items(entries,key={it.id}) {entry->OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text("#${entry.index} · ${if(target==null)entry.title else recoveryVersionLabel(entry)}",style=MaterialTheme.typography.titleMedium)
                         Text("${entry.actor_name} · ${historyMoment(entry.at,zone,use24Hour)}",style=MaterialTheme.typography.bodySmall)
-                        Text("${entry.records} records · ${entry.images} images",style=MaterialTheme.typography.labelMedium)
+                        Text(if(target==null)"${entry.records} items · ${entry.images} images" else "Complete item state",style=MaterialTheme.typography.labelMedium)
                         if(entry.problem.isNotBlank())Text(entry.problem,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
                         if(entry.can_restore)SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text("Preview restore")}
                     }}}
@@ -110,4 +108,55 @@ import org.fieldnotes.domain.*
             }
         }
     }
+}
+
+@Composable private fun ItemStatePanel(pair:ItemStatePair,index:Long,zone:TimeZone,use24Hour:Boolean) {
+    var saved by remember(index){mutableStateOf(true)}
+    Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected=saved,onClick={saved=true},label={Text("Selected state #$index")},shape=ControlShape)
+            FilterChip(selected=!saved,onClick={saved=false},label={Text("Current state")},shape=ControlShape)
+        }
+        val state=if(saved)pair.saved else pair.current
+        OutlinedCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            if(state==null)Text("Item is not present in this state.") else {
+                Text(state.title,style=MaterialTheme.typography.titleLarge)
+                val advanced=setOf("recurrence","reminders","reminder_options","fields","notify_additions","item_reminders","perpetual","template")
+                for(field in state.fields.filter {it.field !in advanced&&it.field !in setOf("title","name")&&it.value!=JsonPrimitive(false)&&it.value!=0.j()}) {
+                    if(field.field !in setOf("body","notes"))Text(field.label,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(itemStateValue(field.field,field.value,zone,use24Hour),style=MaterialTheme.typography.bodyMedium)
+                }
+                val settings=state.fields.filter {it.field in advanced}
+                if(settings.isNotEmpty()) {
+                    var details by remember {mutableStateOf(false)}
+                    SecondaryButton(onClick={details=!details}){Text(if(details)"Hide settings" else "Scheduling, reminders & list settings")}
+                    if(details)for(field in settings){Text(field.label,style=MaterialTheme.typography.labelMedium);Text(itemStateValue(field.field,field.value,zone,use24Hour),style=MaterialTheme.typography.bodySmall)}
+                }
+                if(state.comments>0||state.images>0) {
+                    HorizontalDivider();Text("${state.comments} comments · ${state.images} attachments",style=MaterialTheme.typography.titleSmall)
+                    for(child in state.children) {
+                        Text(if(child.kind=="comment")child.author.jsonPrimitive.contentOrNull ?: "Comment" else child.title,style=MaterialTheme.typography.labelMedium)
+                        child.body.jsonPrimitive.contentOrNull?.let {Text(it,style=MaterialTheme.typography.bodyMedium)}
+                    }
+                    if(state.children_limited)Text("First 20 comments and attachments shown. The complete state is restored together.",style=MaterialTheme.typography.bodySmall)
+                }
+            }
+        }}
+        Text("Restores the entire selected item state, including comments and attachments. Individual attributes are not restored separately.",style=MaterialTheme.typography.bodySmall)
+    }
+}
+@Composable private fun RecoveryChangeCard(change:RecoveryChange,zone:TimeZone,use24Hour:Boolean) {
+    var details by remember(change.id){mutableStateOf(false)}
+    OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+        Text("${change.action.replaceFirstChar {it.uppercase()}} · ${change.title}",style=MaterialTheme.typography.titleMedium)
+        SecondaryButton(onClick={details=!details}){Text(if(details)"Hide field comparison" else "Field comparison")}
+        if(details)for(field in change.changes){
+            HorizontalDivider();Text(field.label.ifBlank {field.field},style=MaterialTheme.typography.labelLarge)
+            val diff=HistoryChange(field.field,field.label,field.before,field.after)
+            Text("Current: ${historyValue(diff,field.before,zone,use24Hour)}",style=MaterialTheme.typography.bodySmall)
+            Text("Saved: ${historyValue(diff,field.after,zone,use24Hour)}",style=MaterialTheme.typography.bodySmall)
+            if(field.truncated)Text("Excerpt; full saved value is restored.",style=MaterialTheme.typography.labelSmall)
+        }
+        if(details&&change.total_fields>change.changes.size)Text("${change.changes.size} of ${change.total_fields} changed fields shown.",style=MaterialTheme.typography.labelSmall)
+    }}
 }

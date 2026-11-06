@@ -519,3 +519,36 @@ test("bounded search advances its cursor across empty pages without skipping an 
     await f.close();
   }
 });
+
+test("item history paginates whole items once, groups child activity, and preserves the detailed audit trail", async () => {
+  const f = await fixture();
+  try {
+    const h = await household(f), a = randomUUID(), b = randomUUID(), c = randomUUID();
+    for (const [id,title] of [[a,"Pantry"],[b,"Weekend route"],[c,"Packing"]])
+      assert.equal((await h.send(h.owner,"task.create",id,{title,notes:"Whole item notes"})).status,200);
+    for (let revision=1; revision<=8; revision++)
+      assert.equal((await h.send(h.owner,"task.update",a,{quantity:String(revision)},revision)).status,200);
+    const comment=randomUUID();
+    assert.equal((await h.send(h.sophia,"comment.create",comment,{task_id:a,body:"Bring the reusable bags"})).status,200);
+    const response=await h.history({view:"items",limit:1});assert.equal(response.status,200,JSON.stringify(response.data));
+    const first=response.data;
+    for(const filters of [{kind:"task"},{action:"changed"}]) {
+      const filtered=await h.history({view:"items",...filters});assert.equal(filtered.status,200,JSON.stringify(filtered.data));assert.equal(filtered.data.entries[0].actor_name,"Sophia");
+    }
+    const added=(await h.history({view:"items",action:"added"})).data.entries;
+    assert.equal(added.length,3);assert.equal(added.every(e=>e.action==="task.create"),true);
+    assert.equal(first.entries.length,1);assert.equal(first.entries[0].target,a);
+    assert.equal(first.entries[0].title,"Pantry");assert.equal(first.entries[0].kind,"task");assert.equal(first.entries[0].action,"task.update");
+    // A newer edit cannot change a previously selected pagination watermark.
+    assert.equal((await h.send(h.owner,"task.update",a,{notes:"Later edit"},9)).status,200);
+    let page=first, entries=[...page.entries];
+    while(page.has_more){const r=await h.history({view:"items",limit:1,anchor:first.anchor,before:page.next_before});assert.equal(r.status,200);page=r.data;entries.push(...page.entries);}
+    assert.deepEqual(entries.map(e=>e.target),[a,c,b]);
+    const raw=(await h.history({target:a})).data.entries;
+    assert.equal(raw.filter(e=>e.action==="task.update").length,9);
+    assert.equal(raw.filter(e=>e.action==="comment.create").length,1);
+    const person=(await h.history({view:"items",actor:(await f.request("/api/people",{token:h.owner})).data.people.find(p=>p.name==="Sophia").id})).data.entries;
+    assert.equal(person.length,1);assert.equal(person[0].target,a);assert.equal(person[0].actor_name,"Sophia");
+    assert.equal((await h.history({view:"attributes"})).status,400);
+  } finally {await f.close();}
+});

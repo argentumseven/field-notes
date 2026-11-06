@@ -8,7 +8,7 @@ import kotlinx.serialization.json.*
 const val HISTORY_FEATURE="history-v1"
 fun Cache.supportsHistory()=compatibility?.let { !it.blocked&&HISTORY_FEATURE in it.features }==true
 @Serializable data class HistoryChange(val field:String,val label:String,val before:JsonElement=JsonNull,val after:JsonElement=JsonNull,val before_truncated:Boolean=false,val after_truncated:Boolean=false)
-@Serializable data class HistoryEntry(val sequence:Long,val target:String,val action:String,val actor_id:String,val actor_name:String,val at:Long,val title:String,val parent_title:String="",val kind:String,val item_type:String=kind,val source:String="edit",val changes:List<HistoryChange> = emptyList(),val total_fields:Int=changes.size,val details:String="unavailable") {
+@Serializable data class HistoryEntry(val sequence:Long,val target:String,val action:String,val actor_id:String,val actor_name:String,val at:Long,val title:String,val parent_title:String="",val kind:String,val item_type:String=kind,val source:String="edit",val changes:List<HistoryChange> = emptyList(),val total_fields:Int=changes.size,val details:String="unavailable",val item_target:String="",val activity_kind:String="") {
     val group get()=when {action.endsWith(".create")->"added";action.endsWith(".delete")||action=="workspace.clear"->"removed";else->"changed"}
     val verb get():String {
         val actionLabel=when(action.substringAfter('.')) {"create"->"Added";"delete"->"Removed";"complete"->"Completed";"reopen"->"Reopened";"start"->"Started";"release"->"Released";"override"->"Overrode working claim";"clear"->"Cleared";"restore"->"Restored";else->"Changed"}
@@ -68,4 +68,9 @@ fun mergeHistory(cache:Cache,page:HistoryPage,at:Long):HistoryCache {
     val entries=(page.entries+cache.currentHistory()?.takeIf {it.history_revision==page.history_revision}?.entries.orEmpty()).distinctBy { it.sequence }.sortedByDescending { it.sequence }.take(200).toMutableList()
     while(entries.isNotEmpty()&&WireJson.encodeToString(entries).encodeToByteArray().size>512*1024)entries.removeAt(entries.lastIndex)
     return HistoryCache(basis,page.actor_id,entries,at,page.history_revision)
+}
+
+// Collapse legacy cached audit rows too; children are part of their task state.
+fun historyItems(entries:List<HistoryEntry>):List<HistoryEntry> = entries.sortedByDescending {it.sequence}.distinctBy {it.item_target.ifBlank {it.target}}.map {entry->
+    if(entry.item_target.isNotBlank()&&entry.item_target!=entry.target)entry.copy(target=entry.item_target,title=entry.parent_title.ifBlank {entry.title},parent_title="",kind="task",item_type="task",action="task.update",activity_kind=entry.kind) else entry
 }

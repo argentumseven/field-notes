@@ -20,8 +20,10 @@ GrapheneOS optics and VPN policy remain separate phone checks.
 ## Indexed recovery and planner refinements — 0.8
 
 [Recovery guide](RECOVERY.md) · [Planner/list comparison](PLANNER-COMPARISON.md).
-Item versions retain full states and increasing indices, with previewed backward
-and forward restores. Checkpoints cover household content while preserving
+History now lists each item once, including task comments and attachments.
+Opening an indexed version displays one complete item state; current-state and
+field comparisons are optional. Restores apply the whole item together and keep
+later retained states available. Checkpoints cover household content while preserving
 accounts, pairing and security settings. Management shows retained storage and
 configurable age/count/size limits. All examples below are synthetic.
 

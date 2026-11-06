@@ -1,9 +1,10 @@
 # Versions and content checkpoints
 
 In web or Android **Library → History**, open **Item versions** on an item's
-history entry. Each retained state has an increasing **# index**, actor and
-server timestamp. Choose **Preview restore**, review Current/Saved differences,
-then restore. Restoring creates new canonical revisions and a new version index;
+history entry. History lists each item once. Each retained state has an increasing **# index**,
+actor and server timestamp. Choose **Preview restore** to open the whole item,
+then switch between its selected and current state. Attribute comparisons are
+optional. Restore applies the complete selected state in one transaction. Restoring creates new canonical revisions and a new version index;
 it does not erase later retained states. Select a later version to roll forward.
 The index and the record's sync revision are different: adding a comment can
 create another saved task state without editing the task's own fields.

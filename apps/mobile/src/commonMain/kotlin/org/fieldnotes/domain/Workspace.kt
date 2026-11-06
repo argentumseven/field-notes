@@ -301,7 +301,8 @@ class Workspace(
             check(!state.value.needsLogin&&cache.token!=null){"Sign in to load History."}
             check(cache.supportsHistory()){"Update the paired server to view History. Notes and saved work are kept."}
             try {
-                val response=request("/api/history",filter.body(expected.basis,zone,anchor,before))
+                val body=filter.body(expected.basis,zone,anchor,before)
+                val response=request("/api/history",if(cache.compatibility?.features?.contains("history-items-v1")==true)JsonObject(body+("view" to "items".j())) else body)
                 val page=SyncJson.decodeFromJsonElement<HistoryPage>(response)
                 check(page.entries.size<=50&&page.entries.all { it.sequence>0&&it.sequence<=page.anchor&&it.changes.size<=64&&it.total_fields>=it.changes.size }&&page.entries.zipWithNext().all { (a,b)->a.sequence>b.sequence }&&(!page.has_more||page.next_before<(before?:page.anchor+1))){"The server returned invalid history pagination."}
                 check(cache.snapshot?.basis==expected.basis&&cache.snapshot?.actor?.user_id==expected.actor.user_id){"The account or workspace changed while loading History."}

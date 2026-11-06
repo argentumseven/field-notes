@@ -33,7 +33,7 @@ try {
     (await f.f.request(path, { token: f.alex, base })).data;
   const history = await f.f.request("/api/history", {
     token: f.alex,
-    body: { epoch: f.snapshot.epoch, generation: f.snapshot.generation },
+    body: { epoch: f.snapshot.epoch, generation: f.snapshot.generation, view: "items" },
   });
   assert.equal(history.status, 200);
   const recovery = async(action,extra={})=>f.f.request('/api/recovery',{token:f.alex,body:{action,epoch:f.snapshot.epoch,generation:f.snapshot.generation,...extra}});
