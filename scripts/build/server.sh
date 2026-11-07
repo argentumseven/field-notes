@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source scripts/dev-env.sh
+python3 tools/sync-item-contexts.py --check
 python3 tools/sync-brand-icons.py --check
 [[ $(uname -s) == Linux ]] || { echo 'Server builds require Linux.' >&2; exit 1; }
 arch=$(uname -m)

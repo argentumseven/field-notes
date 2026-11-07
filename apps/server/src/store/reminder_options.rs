@@ -127,6 +127,12 @@ impl Store {
     /// people, including clients that predate recipient controls. Modern
     /// editors can still inspect the original rules in the additive field.
     pub fn notification_projection(mut record: Record, actor: &Actor) -> Record {
+        if let Some(rules) = record.data.get("reminders").cloned() {
+            if super::reminder_timing::extended_timing(&rules) {
+                record.data["reminder_timing_rules"] = rules.clone();
+            }
+            record.data["reminders"] = super::reminder_timing::legacy_rules(&rules);
+        }
         if matches!(record.kind.as_str(), "event" | "task" | "note")
             && !Self::reminder_recipient(&record, &actor.user_id)
         {
@@ -142,6 +148,6 @@ impl Store {
             "/../../release.json"
         )))
         .expect("valid release metadata");
-        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","project-workspaces-v1"]})
+        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","project-workspaces-v1","item-context-v1","reminder-timing-v1"]})
     }
 }

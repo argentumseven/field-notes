@@ -94,6 +94,7 @@ impl Store {
     }
     pub(super) fn list_item_fields(data: &Value, record: &mut Record) -> Result<()> {
         for (field, max) in [
+            ("item_category", 320),
             ("quantity", 80),
             ("store", 120),
             ("link_url", 2048),
@@ -108,6 +109,14 @@ impl Store {
                 .ok_or(Fault(400, format!("{field} must be text")))?;
             if s.len() > max {
                 return fail(400, "List field is too long");
+            }
+            if field == "item_category"
+                && (s.chars().count() > 80 || s.chars().any(char::is_control))
+            {
+                return fail(
+                    400,
+                    "Item category must be a single line of at most 80 characters",
+                );
             }
             if field == "price" && !s.is_empty() {
                 let parts: Vec<_> = s.split('.').collect();
@@ -146,6 +155,9 @@ impl Store {
                         "Use an HTTP or HTTPS link without embedded credentials",
                     );
                 }
+            }
+            if field == "item_category" && s.is_empty() && record.data.get(field).is_none() {
+                continue;
             }
             record.data[field] = value.clone();
         }

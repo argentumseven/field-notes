@@ -23,6 +23,109 @@ function categoryField(record) {
     value: record?.data.category || "general",
   };
 }
+function itemContext(data, parent) {
+  const key =
+    parent?.kind === "list"
+      ? parent.data.template === "groceries"
+        ? "groceries"
+        : parent.data.template === "shopping"
+          ? "shopping"
+          : !parent.data.template || parent.data.template === "general"
+            ? categoryKey(parent.data.category)
+            : "general"
+      : categoryKey(data.category ?? parent?.data.category);
+  const profile = itemContextProfiles[key] || itemContextProfiles.general;
+  return {
+    ...profile,
+    key: itemContextProfiles[key] ? key : "general",
+    scoped: profile.choices.length > 0,
+  };
+}
+function itemCategoryField(context, value = "") {
+  return context.scoped
+    ? {
+        key: "item_category",
+        label: context.label,
+        value,
+        options: [
+          ["", "Uncategorized"],
+          ...context.choices.map((v) => [v, v]),
+          ...(value && !context.choices.includes(value)
+            ? [[value, value + " · saved label"]]
+            : []),
+        ],
+        required: false,
+      }
+    : {
+        key: "item_category",
+        label: "Item category · optional",
+        value,
+        max: 80,
+        required: false,
+      };
+}
+function itemContextHint(context, value = "") {
+  return context.scoped
+    ? value && !context.choices.includes(value)
+      ? "Saved label kept. Choose a category for this context only if you want to reclassify it."
+      : context.label +
+        " choices follow the list’s purpose or task area. Uncategorized is allowed."
+    : "Use any item category, or leave it uncategorized. General and custom lists have no preset restrictions.";
+}
+function itemCategoryMatches(value, filter) {
+  return (
+    filter === "all" ||
+    (filter === "none" ? !value : filter === "value:" + (value || ""))
+  );
+}
+function itemCategoryFilters(items, selected = "all") {
+  const values = items.map((t) => t.data.item_category || "").filter(Boolean);
+  if (selected.startsWith("value:")) values.push(selected.slice(6));
+  return [
+    ["all", "All item categories"],
+    ["none", "Uncategorized"],
+    ...[...new Set(values)]
+      .sort((a, b) => a.localeCompare(b))
+      .map((v) => ["value:" + v, v]),
+  ];
+}
+function itemCategoryEditor(
+  host,
+  readContext,
+  value = "",
+  changed = () => {},
+  enabled = true,
+) {
+  const root = el("div", "item-category-editor");
+  host.append(root);
+  const editor = {
+    root,
+    value,
+    refresh() {
+      const context = readContext(),
+        field = itemCategoryField(context, editor.value);
+      const control = context.scoped
+        ? select(field.label, field.options, editor.value)
+        : input(field.label, editor.value);
+      control.node.disabled = !enabled;
+      if (!context.scoped) {
+        control.node.maxLength = 80;
+        control.node.autocomplete = "off";
+      }
+      control.node.addEventListener("input", () => {
+        editor.value = control.node.value;
+        changed(editor.value);
+      });
+      root.replaceChildren(
+        control.label,
+        control.node,
+        el("p", "item-sub", itemContextHint(context, editor.value)),
+      );
+    },
+  };
+  editor.refresh();
+  return editor;
+}
 function listForTask(record) {
   return records("list").find((list) => list.id === record.data.project_id);
 }
@@ -60,15 +163,24 @@ function recordTypeLabel(record) {
 function typeBadges(record) {
   const group = el("span", "type-badges");
   group.append(el("span", "type-badge", recordTypeLabel(record)));
+  const parent = record.kind === "task" ? byId(record.data.project_id) : null;
+  const scoped =
+    record.kind === "task" &&
+    parent?.kind === "list" &&
+    itemContext(record.data, parent).scoped;
   const category =
     record.data.category || listForTask(record)?.data.category || "general";
-  if (category !== "general")
+  if (!scoped && category !== "general")
     group.append(
       el(
         "span",
         "type-badge category-" + category,
         recordCategories[categoryKey(category)] || "General",
       ),
+    );
+  if (record.kind === "task" && record.data.item_category)
+    group.append(
+      el("span", "type-badge item-category", record.data.item_category),
     );
   return group;
 }

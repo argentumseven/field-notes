@@ -125,6 +125,7 @@ impl Store {
             "project_id",
             "quadrant",
             "category",
+            "item_category",
             "template",
             "fields",
             "perpetual",
@@ -575,6 +576,9 @@ pub(super) fn history_diff(
     new: Option<&Value>,
     out: &mut Vec<(String, Value, Value)>,
 ) {
+    if path.ends_with(".timing_version") {
+        return;
+    }
     if old == new {
         return;
     }
@@ -654,6 +658,7 @@ pub(super) fn history_excerpt(value: Value, other: &Value) -> (Value, bool) {
 pub(super) fn history_label(path: &str) -> String {
     let leaf = path.rsplit('.').next().unwrap_or(path);
     let label = match leaf {
+        "item_category" => "Item category",
         "project_id" => "List or project",
         "task_id" => "Task",
         "notes" => "Notes",
@@ -677,6 +682,8 @@ pub(super) fn history_label(path: &str) -> String {
         "notify_additions" => "Notify about added items",
         "item_reminders" => "Item reminders",
         "lead_minutes" => "Minutes before",
+        "amount" => "Amount before",
+        "unit" => "Time unit",
         "tone" => "Sound",
         "volume" => "Volume",
         "vibrate" => "Vibration",

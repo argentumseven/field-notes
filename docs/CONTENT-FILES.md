@@ -13,6 +13,10 @@ pairing material, CA/master keys and APK signing keys.
 Project/task-list hierarchy, task/reference list choices and project state are
 included. New exports require Field Notes 0.9 or newer to import (content manifest
 version 2); existing version 1 files remain supported.
+0.10 includes optional item categories and complete custom reminder timing.
+Files using those fields need the newer server; unsupported fields are rejected
+instead of discarded. Server exports and phone exports preserve the complete
+timing rules, including when legacy notification projections omit advanced leads.
 
 The website exports the current server workspace. Android exports its cached
 workspace, projected offline changes and retained drafts/conflicts. Changes hidden

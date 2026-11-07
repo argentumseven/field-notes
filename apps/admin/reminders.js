@@ -20,9 +20,10 @@
   };
   let activePreview = null;
   const rulesFor = (record) =>
-    record?.data && "reminder_rules" in record.data
+    record?.data?.reminder_timing_rules ??
+    (record?.data && "reminder_rules" in record.data
       ? record.data.reminder_rules
-      : record?.data?.reminders;
+      : record?.data?.reminders);
   const optionsFor = (record, kind) =>
     structuredClone(
       record?.data?.reminder_options || {
@@ -60,6 +61,8 @@
   function validate(rules) {
     if (!Array.isArray(rules.alerts) || rules.alerts.length > 8)
       throw Error("Use up to eight reminders.");
+    if (rules.timing_version !== undefined && rules.timing_version !== 1)
+      throw Error("Update the app for this reminder timing.");
     const ids = new Set();
     const check = (p) => {
       if (
@@ -75,6 +78,11 @@
     };
     for (const r of rules.alerts) {
       check(r);
+      if (r.lead_time) {
+        FieldReminderTiming.validate(r.lead_time);
+        if (rules.timing_version !== 1 || r.minutes_before !== 0)
+          throw Error("Check the reminder timing format.");
+      }
       if (
         !Number.isInteger(r.minutes_before) ||
         r.minutes_before < 0 ||
@@ -128,6 +136,7 @@
     section.append(summary, body);
     parent.append(section);
     const notify = () => {
+      rules.timing_version = 1;
       summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat ? " + recurring" : ""}`;
       changed(structuredClone(rules));
       if (extension) {
@@ -396,34 +405,75 @@
           [120, "2 hours before"],
           [1440, "1 day before"],
         ];
-        const isPreset = options.some(([n]) => n === r.minutes_before),
+        const isPreset =
+            !r.lead_time && options.some(([n]) => n === r.minutes_before),
           when = addField(
             head,
             select(
               `Reminder ${i + 1}`,
               options
                 .map(([n, t]) => [String(n), t])
-                .concat([["custom", "Custom minutes before"]]),
+                .concat([["custom", "Custom time…"]]),
               isPreset ? String(r.minutes_before) : "custom",
             ),
           );
-        const custom = field(row, "Minutes before", r.minutes_before, "number");
+        const customRow = el("div", "reminder-time-controls"),
+          initial = FieldReminderTiming.parts(r);
+        row.append(customRow);
+        const amountGroup = el("div"),
+          unitGroup = el("div");
+        customRow.append(amountGroup, unitGroup);
+        const custom = field(
+          amountGroup,
+          "Amount before",
+          initial.amount,
+          "number",
+        );
+        const unit = addField(
+          unitGroup,
+          select(
+            "Time unit",
+            Object.entries(FieldReminderTiming.units),
+            initial.unit,
+          ),
+        );
+        const help = el(
+          "p",
+          "item-sub",
+          "Months and years follow calendar dates. Other units count elapsed time.",
+        );
+        customRow.append(help);
         custom.min = "0";
-        custom.max = "43200";
-        custom.hidden = custom.previousElementSibling.hidden = isPreset;
-        custom.oninput = () => {
-          r.minutes_before = Number(custom.value);
+        custom.step = "1";
+        const configure = () => {
+          customRow.hidden = when.value !== "custom";
+          custom.required = !customRow.hidden;
+          custom.max = String(FieldReminderTiming.limits[unit.value]);
+          if (customRow.hidden) custom.setCustomValidity("");
+        };
+        const update = () => {
+          configure();
+          if (custom.value === "" || !custom.checkValidity()) return;
+          FieldReminderTiming.apply(
+            r,
+            Number(custom.value),
+            unit.value,
+            r.lead_time?.zone || localZone(),
+          );
           notify();
         };
+        custom.oninput = update;
+        unit.onchange = update;
         when.onchange = () => {
-          const c = when.value === "custom";
-          custom.hidden = custom.previousElementSibling.hidden = !c;
-          if (c) custom.focus();
+          configure();
+          if (when.value === "custom") custom.focus();
           else {
             r.minutes_before = Number(when.value);
+            delete r.lead_time;
             notify();
           }
         };
+        configure();
         head.append(
           button(
             "Remove",

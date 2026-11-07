@@ -17,6 +17,33 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Purpose-aware categories and reminder units — 0.10
+
+[Category inheritance](LISTS.md#categories-follow-purpose) ·
+[Custom reminder times](REMINDERS.md).
+
+| Web | What it shows |
+| --- | --- |
+| [Grocery categories](screenshots/web/97-grocery-category.png) | Relevant optional item categories, without the app-wide Work/Action picker |
+| [Household categories](screenshots/web/98-household-category.png) | Household/honey-do work uses Repairs, Maintenance and other relevant choices |
+| [Unrestricted custom list](screenshots/web/99-unrestricted-item-category.png) | A custom label remains allowed even when the list's broad area is Household |
+| [Custom reminder units](screenshots/web/105-custom-reminder-units.png) | Compact amount/unit controls for month and year reminders |
+
+| Android | What it shows |
+| --- | --- |
+| [Grocery choices](screenshots/android/100-native-grocery-category.png) | Native grocery picker; legacy unrelated area stays stored without being offered here |
+| [Household task choices](screenshots/android/101-native-household-category.png) | Task editor under a Household work list |
+| [Custom item label](screenshots/android/102-native-unrestricted-category.png) | Free text with a keyboard Done action |
+| [Reminder time](screenshots/android/103-native-reminder-time-units.png) | Amount and unit, without a raw minute-offset field |
+| [Month/year reminders](screenshots/android/104-native-month-year-reminders.png) | Distinct reminders with separate Time, Sound and Remove buttons |
+
+These use only synthetic fixtures, including the Sophia/Bananas/Costco example
+provided in the conversation. Native galleries use a test transport, actual
+Compose, the durable queue and Keystore-backed vault. They intentionally omit an
+APK bundle, so any missing-update warning in the fixture is retained. Actual
+home-server access or physical GrapheneOS alarm delivery is not established by
+these images.
+
 ## Live shopping and deletion — 0.9.1
 
 [Live updates](LIVE-UPDATES.md) explains the three-second visible-app checks,

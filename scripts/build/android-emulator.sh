@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source scripts/dev-env.sh
+python3 tools/sync-item-contexts.py --check
 compiler="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
 [[ -x $compiler ]] || { echo 'Run bash scripts/setup/cloud.sh --android first.' >&2; exit 1; }
 mkdir -p dist/native/android-x86_64 apps/mobile/src/androidMain/jniLibs/x86_64

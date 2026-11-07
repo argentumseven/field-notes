@@ -20,6 +20,52 @@ are reference checklists whose items stay in that list. A list can be standalone
 or grouped under a project; its work contributes to that project's progress.
 See [Tasks and projects](PROJECTS.md) for Household/honey-do examples and safe moves.
 
+## Categories follow purpose
+
+A list's **type** and broad **category** describe its purpose. The optional
+category on an item describes the item itself. They are separate fields.
+
+| List purpose or task area | Relevant item choices include |
+| --- | --- |
+| Groceries | Produce, Dairy & eggs, Pantry, Frozen, Cleaning & household, Pet supplies |
+| Online shopping | Clothing & shoes, Electronics, Home & garden, Books & media, Gifts |
+| Household / honey-do | Repairs, Maintenance, Cleaning, Garden & outdoors, Household admin |
+| Food & cooking | Meal planning, Cooking & prep, Baking, Recipes, Kitchen upkeep |
+| Errands | Pickup, Drop-off, Returns, Appointments, Service visits |
+| Work | Planning, Research, Writing, Review, Meetings & follow-ups, Administration |
+| Personal | Health & care, Fitness, Learning, Hobbies, Finance, Travel |
+| General, Action or untagged | Any item label you type, or no label |
+| Custom | Any item label, even when the list has a broad area such as Household |
+
+Specific purposes offer **Uncategorized**, relevant choices and **Other**.
+No category is mandatory. Grocery and shopping presets take precedence over
+an unrelated old item/area tag; grocery items do not show Work/Action choices.
+Other task/reference lists use their own area. A general/untagged list is a
+boundary: a containing project's category or words in its title do not impose
+an item vocabulary. Custom lists always stay open-ended.
+
+Standalone and direct project tasks use their chosen area, initially inherited
+from the parent. Choose General for unrestricted labels. This does not change
+assignments, dates, priorities, the work/reference distinction or reminder policy.
+
+Moving an item, changing a list's type/area, or updating software never clears
+its saved item category. A label outside the new choices remains selected as a
+**saved label** until you deliberately replace or clear it. Older broad item
+tags remain stored too; a scoped list hides the unrelated area picker. General
+and custom lists can still edit those broad tags freely.
+
+Labels appear on item rows, participate in title/content search, and can be
+filtered/sorted under **Item category** (Android: **List options**). Bulk cleanup
+respects this filter as well as search/store and still includes hidden checked
+items. Use **Clear filters** to return to all categories.
+
+The web and native vocabularies are generated from
+[shared/item-contexts.json](../shared/item-contexts.json). The server validates
+new choices against the current parent within the command transaction, while
+allowing unchanged saved labels and preserving imports/restores. General/custom
+labels have only ordinary text/size bounds, not a forced subject vocabulary.
+See [Updates](UPDATES.md) for compatible older phones and retained newer edits.
+
 Grocery items do not offer scheduled reminders or recipient/sound controls.
 Existing saved grocery reminder values are retained but do not schedule alerts.
 **Notify when items are added** is still available on the list, independently.

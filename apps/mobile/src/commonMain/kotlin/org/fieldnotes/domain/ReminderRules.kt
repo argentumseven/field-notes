@@ -1,22 +1,25 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 package org.fieldnotes.domain
 
 import kotlinx.datetime.*
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.json.*
 
 @Serializable data class AlertProfile(val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true,val duration:Int=0,val alarm:Boolean=false,val unmute:Boolean=false,val alarmVolume:Int=100)
-@Serializable data class ReminderAlert(val id:String,val minutes_before:Int=10,val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true) {
+@Serializable data class ReminderAlert(val id:String,val minutes_before:Int=10,val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true,@EncodeDefault(EncodeDefault.Mode.NEVER) val lead_time:ReminderLead?=null) {
     val profile get()=AlertProfile(importance,sound,volume,vibrate)
 }
 @Serializable data class ReminderWindow(val id:String,val weekdays:List<Int> = emptyList(),val starts_on:String,val ends_on:String="",val from:String="09:00",val until:String="18:00",val every_minutes:Int=60,val zone:String,
     val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true) { val profile get()=AlertProfile(importance,sound,volume,vibrate) }
-@Serializable data class ReminderSet(val alerts:List<ReminderAlert> = emptyList(),val repeat:ReminderWindow?=null)
-fun reminderSet(record:Record):ReminderSet? = (if(record.data.containsKey("reminder_rules"))record.data["reminder_rules"] else record.data["reminders"])?.takeUnless { it==JsonNull }?.let { runCatching { WireJson.decodeFromJsonElement<ReminderSet>(it) }.getOrNull() }
+@Serializable data class ReminderSet(val alerts:List<ReminderAlert> = emptyList(),val repeat:ReminderWindow?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val timing_version:Int?=null)
+fun reminderSet(record:Record):ReminderSet? = (record.data["reminder_timing_rules"] ?: if(record.data.containsKey("reminder_rules"))record.data["reminder_rules"] else record.data["reminders"])?.takeUnless { it==JsonNull }?.let { runCatching { WireJson.decodeFromJsonElement<ReminderSet>(it) }.getOrNull() }
 fun reminderData(value:ReminderSet)=WireJson.encodeToJsonElement(value).jsonObject
 fun validateReminders(value:ReminderSet) {
     require(value.alerts.size<=8) { "Use up to eight reminders." }
+    require(value.timing_version==null||value.timing_version==1){"Update the app for this reminder timing."}
     fun profile(p:AlertProfile) { require(p.importance in setOf("quiet","normal","urgent") && p.sound in setOf("chime","bell","pulse") && p.volume in setOf(25,50,75,100)) { "Choose a sound and importance." } }
-    value.alerts.forEach { require(it.minutes_before in 0..43200) { "Choose a reminder from the start to 30 days before." };profile(it.profile) }
+    value.alerts.forEach { require(it.minutes_before in 0..43200) { "Choose a valid reminder time." };it.lead_time?.let{lead->require(value.timing_version==1&&it.minutes_before==0);validateReminderLead(lead)};profile(it.profile) }
     value.repeat?.let { r ->
         val start=LocalDate.parse(r.starts_on);r.ends_on.takeIf { it.isNotBlank() }?.let { require(LocalDate.parse(it)>=start) { "Last day must follow first day." } }
         TimeZone.of(r.zone);LocalTime.parse(r.until);LocalTime.parse(r.from)
@@ -34,15 +37,19 @@ fun customAlerts(record:Record, now:Instant, deviceZone:TimeZone):List<LocalAler
     if(runCatching { validateReminders(rules) }.isFailure)return emptyList()
     val d=record.data;val today=now.toLocalDateTime(deviceZone).date
     val horizon=today.plus(8,DateTimeUnit.DAY).atStartOfDayIn(deviceZone).epochSeconds
-    val instances=if(record.kind=="event")eventInstances(record,today.minus(1,DateTimeUnit.DAY),today.plus(39,DateTimeUnit.DAY),deviceZone) else listOf(record)
-    val result=instances.flatMap { occurrence->
+    val result=rules.alerts.flatMap { r->
+      val range=reminderAnchorRange(r,now,horizon,deviceZone)
+      val instances=if(record.kind=="event")eventInstances(record,range.first,range.second,deviceZone) else listOf(record)
+      instances.mapNotNull { occurrence->
         val fields=occurrence.data
         val anchor=if(occurrence.kind=="event"&&!occurrence.flag("all_day"))fields.number("starts_at").takeIf { it>0 }
             else if(occurrence.kind=="note")fields.number("remind_at").takeIf { it>0 }
-            else runCatching { LocalDate.parse(if(occurrence.kind=="event")fields.text("start_date") else fields.text("due").ifBlank { fields.text("planned_for") }) }.getOrNull()?.let { LocalDateTime(it,LocalTime(9,0)).toInstant(deviceZone).epochSeconds }
-        rules.alerts.mapNotNull { r->anchor?.minus(r.minutes_before*60L)?.takeIf { it>=now.epochSeconds-600&&it<horizon }?.let {
-            LocalAlert("rule:${record.id}:${r.id}:$it",it,record.id,if(record.kind=="event")"calendar" else if(record.kind=="note")"note" else "task",effectiveAlertProfile(record,r.id,r.profile),"${record.id}:${r.id}",sourceAt=anchor)
-        } }
+            else runCatching { LocalDate.parse(if(occurrence.kind=="event")fields.text("start_date") else fields.text("due").ifBlank { fields.text("planned_for") }) }.getOrNull()?.let { LocalDateTime(it,LocalTime(9,0)).toInstant(r.lead_time?.takeIf{lead->lead.unit in setOf("months","years")}?.let{lead->TimeZone.of(lead.zone)} ?: deviceZone).epochSeconds }
+        anchor?.let{reminderAt(r,it)}?.takeIf { it>=now.epochSeconds-600&&it<horizon }?.let {
+            val key=if(r.lead_time==null)"rule:${record.id}:${r.id}:$it" else "rule:${record.id}:${r.id}:$anchor:$it"
+            LocalAlert(key,it,record.id,if(record.kind=="event")"calendar" else if(record.kind=="note")"note" else "task",effectiveAlertProfile(record,r.id,r.profile),if(r.lead_time==null)"${record.id}:${r.id}" else "${record.id}:${r.id}:$anchor",sourceAt=anchor)
+        }
+      }
     }.toMutableList()
     rules.repeat?.let { r ->
         val zone=TimeZone.of(r.zone);val localToday=now.toLocalDateTime(zone).date;val first=LocalDate.parse(r.starts_on);val last=r.ends_on.takeIf { it.isNotBlank() }?.let(LocalDate::parse)

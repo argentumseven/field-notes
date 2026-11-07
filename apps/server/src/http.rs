@@ -882,6 +882,15 @@ pub fn router(app: App) -> Router {
                 }),
             )
             .route(
+                "/reminder-timing.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/reminder-timing.js"),
+                    )
+                }),
+            )
+            .route(
                 "/reminders.js",
                 get(|| async {
                     (
@@ -923,6 +932,15 @@ pub fn router(app: App) -> Router {
                     (
                         [("content-type", "text/javascript; charset=utf-8")],
                         include_str!("../../admin/vendor/fflate-0.8.2.js"),
+                    )
+                }),
+            )
+            .route(
+                "/item-context-data.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/item-context-data.js"),
                     )
                 }),
             )

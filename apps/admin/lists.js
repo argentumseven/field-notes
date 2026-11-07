@@ -464,11 +464,17 @@ function renderChecklist(root, list) {
     store: "",
     sort: "title",
     status: "all",
+    itemCategory: "all",
   });
   const fields = fieldsOf(list),
     all = records("task").filter((t) => t.data.project_id === list.id);
   if (!fields.includes("store")) view.store = "";
-  if (!["title", "added", "updated", ...fields].includes(view.sort))
+  view.itemCategory ??= "all";
+  if (
+    !["title", "added", "updated", "item_category", ...fields].includes(
+      view.sort,
+    )
+  )
     view.sort = "title";
   const stores = [...new Set(all.map((t) => (t.data.store || "").trim()))].sort(
     (a, b) => a.localeCompare(b),
@@ -519,15 +525,23 @@ function renderChecklist(root, list) {
     ["title", "Name A–Z"],
     ["added", "Recently added"],
     ["updated", "Recently changed"],
+    ["item_category", "Item category"],
     ...fields
       .filter((f) => !["notes", "images", "link_url", "store"].includes(f))
       .map((f) => [f, listFieldLabels[f]]),
   ];
   choose("Sort by", sorts, view.sort, (value) => (view.sort = value));
+  choose(
+    "Item category",
+    itemCategoryFilters(all, view.itemCategory),
+    view.itemCategory,
+    (v) => (view.itemCategory = v),
+  );
   const reset = button("Clear filters", () => {
     view.query = "";
     view.store = "";
     view.status = "all";
+    view.itemCategory = "all";
     render();
   });
   filters.append(reset);
@@ -601,11 +615,20 @@ function renderChecklist(root, list) {
   const matching = (item) => {
     const d = item.data;
     return (
+      itemCategoryMatches(d.item_category, view.itemCategory) &&
       (!view.store ||
         (d.store || "").trim() ===
           (view.store === "__none" ? "" : view.store)) &&
       (!view.query ||
-        [d.title, d.notes, d.store, d.quantity, d.link_url, d.price]
+        [
+          d.title,
+          d.notes,
+          d.store,
+          d.quantity,
+          d.link_url,
+          d.price,
+          d.item_category,
+        ]
           .filter(Boolean)
           .join(" ")
           .toLocaleLowerCase()
@@ -642,7 +665,11 @@ function renderChecklist(root, list) {
     return preserveViewport(drawItems);
   }
   function drawItems() {
-    reset.disabled = !view.query && !view.store && view.status === "all";
+    reset.disabled =
+      !view.query &&
+      !view.store &&
+      view.status === "all" &&
+      view.itemCategory === "all";
     results.replaceChildren();
     matched = all.filter(matching);
     visible = matched
@@ -664,7 +691,7 @@ function renderChecklist(root, list) {
     reuse.textContent = `Reuse checked (${checked.length})`;
     reuse.disabled = finished || !checked.length;
     clear.title =
-      "Delete checked items matching this search and store, including hidden checked rows.";
+      "Delete checked items matching this search, store and item category, including hidden checked rows.";
     results.append(
       el(
         "p",
@@ -802,7 +829,7 @@ function renderChecklist(root, list) {
         ` checked item${checked.length === 1 ? "" : "s"}?`,
       (reusing
         ? "Uncheck the completed items matching this view to use the list again. Their notes, quantities, stores, images and history are kept. Changed items stay for review."
-        : "Delete the checked items matching this search and store, including hidden checked rows. Unchecked or changed items stay in place. Saved versions remain available in History while retained.") +
+        : "Delete the checked items matching this search, store and item category, including hidden checked rows. Unchecked or changed items stay in place. Saved versions remain available in History while retained.") +
         " Items: " +
         preview,
       reusing ? "Uncheck and reuse" : "Delete checked",
@@ -868,9 +895,12 @@ async function editListItem(list, record, initialStore = "") {
       category: list.data.category || "general",
     },
     schema = fieldsOf(list),
+    context = itemContext(d, list),
     fields = [
       { key: "title", label: "Item name", value: d.title, max: 240 },
-      { ...categoryField({ data: d }), value: d.category || "general" },
+      ...(!context.scoped
+        ? [{ ...categoryField({ data: d }), value: d.category || "general" }]
+        : []),
     ];
   for (const key of schema) {
     if (key === "images") continue;
@@ -931,12 +961,13 @@ async function editListItem(list, record, initialStore = "") {
     },
     reminderDirty = false;
   let reminderOptions = FieldReminders.optionsFor(record, "task");
+  let classification;
   await formDialog(
     record ? (mayWrite() ? "Edit item" : "View item") : "New item",
     list.data.title,
     fields,
     async (v) => {
-      const data = { ...v };
+      const data = { ...v, item_category: classification.value };
       for (const key of ["priority", "estimate_minutes"])
         if (key in data) data[key] = Number(data[key] || 0);
       if (data.currency) data.currency = data.currency.toUpperCase();
@@ -954,8 +985,16 @@ async function editListItem(list, record, initialStore = "") {
       );
     },
     record ? "Save item" : "Add item",
-    () => {
+    (nodes) => {
       const body = $("#dialog-body");
+      classification = itemCategoryEditor(
+        body,
+        () => context,
+        d.item_category || "",
+        () => {},
+        mayWrite(),
+      );
+      nodes.title.after(classification.root);
       if (record && mayWrite())
         body.append(
           button(

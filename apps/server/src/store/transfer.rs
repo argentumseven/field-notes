@@ -106,6 +106,7 @@ fn allowed(kind: &str) -> &'static [&'static str] {
         ],
         "task" => &[
             "title",
+            "item_category",
             "category",
             "notes",
             "project_id",
@@ -173,7 +174,11 @@ fn content(
             json!(people.get(&id).map(String::as_str).unwrap_or(fallback)),
         );
     }
-    if let Some(rules) = record.data.get("reminder_rules") {
+    if let Some(rules) = record
+        .data
+        .get("reminder_timing_rules")
+        .or_else(|| record.data.get("reminder_rules"))
+    {
         data.insert("reminders".into(), rules.clone());
     }
     // Preserve legacy assigned-task delivery, rather than turning an imported
@@ -232,8 +237,8 @@ fn content_types(record: &Record) -> Result<()> {
     for (key, value) in record.data.as_object().unwrap() {
         let valid = match key.as_str() {
             "title" | "notes" | "body" | "quantity" | "store" | "link_url" | "price"
-            | "currency" | "due" | "planned_for" | "quadrant" | "category" | "template"
-            | "start_date" | "end_date" | "name" => value.is_string(),
+            | "item_category" | "currency" | "due" | "planned_for" | "quadrant" | "category"
+            | "template" | "start_date" | "end_date" | "name" => value.is_string(),
             "pinned" | "blocked" | "all_day" | "perpetual" | "notify_additions"
             | "item_reminders" | "on_radar" | "items_are_tasks" => value.is_boolean(),
             "priority" | "estimate_minutes" => value.as_i64().is_some(),
@@ -242,7 +247,7 @@ fn content_types(record: &Record) -> Result<()> {
             "fields" => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
-            "recurrence" | "reminder_rules" | "reminder_options" => {
+            "recurrence" | "reminder_rules" | "reminder_timing_rules" | "reminder_options" => {
                 value.is_null() || value.is_object()
             }
             "reminders" => value.is_array() || value.is_object() || value.is_null(),
@@ -279,6 +284,11 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
         }
     }
     if record.kind == "task" {
+        // Absent and explicitly empty labels are the same content. Keep the
+        // fingerprint of pre-context archives unchanged.
+        if d.get("item_category") == Some(&json!("")) {
+            d.as_object_mut().unwrap().remove("item_category");
+        }
         if d["project_id"].as_str().is_none_or(str::is_empty) {
             d["project_id"] = json!("");
         }
@@ -310,6 +320,9 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
     }
     if d.get("reminders").is_none() {
         d["reminders"] = Value::Null;
+    }
+    if let Some(rules) = d["reminders"].as_object_mut() {
+        rules.remove("timing_version");
     }
     if d.get("reminder_options").is_none() {
         d["reminder_options"] = json!({"audience":{"mode":"everyone","people":[]},"playback":{}});
@@ -387,6 +400,7 @@ impl Store {
                             | "size"
                             | "original_sha256"
                             | "reminder_rules"
+                            | "reminder_timing_rules"
                             | "imported_from"
                             | "recovery_incarnation"
                     )

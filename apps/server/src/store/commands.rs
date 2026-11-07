@@ -112,6 +112,16 @@ impl Store {
         } else {
             self.recovery_capture(&actor, &recovery_targets, "baseline.before_change")?
         };
+        if !importing {
+            if let Some(incoming) = c.data.get("reminders") {
+                if super::reminder_timing::extended_timing(&record.data["reminders"])
+                    && incoming != &record.data["reminders"]
+                    && incoming["timing_version"].as_i64() != Some(1)
+                {
+                    return fail(409,"This item has calendar/custom reminder timing. Update the app before editing its reminders; the existing reminders and your other content were not overwritten");
+                }
+            }
+        }
         if c.data.get("reminder_options").is_none() {
             if let Some(incoming) = c.data.get("reminders") {
                 let changed = record.data.get("reminders") != Some(incoming);
@@ -164,6 +174,7 @@ impl Store {
                         "quantity",
                         "store",
                         "category",
+                        "item_category",
                         "link_url",
                         "price",
                         "currency",
@@ -213,6 +224,7 @@ impl Store {
                         "quantity",
                         "store",
                         "category",
+                        "item_category",
                         "link_url",
                         "price",
                         "currency",
@@ -478,6 +490,7 @@ impl Store {
                 .unwrap_or(json!("general"));
             self.save(&record, parent.as_deref())?;
         }
+        self.validate_item_context(&c.data, history_before.as_ref(), &record, importing)?;
         if !importing {
             let mut roots = BTreeSet::new();
             for subject in history_before.iter().chain(std::iter::once(&record)) {

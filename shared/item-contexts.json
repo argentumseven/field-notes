@@ -1,0 +1,10 @@
+{
+  "general": { "label": "Item category", "choices": [] },
+  "groceries": { "label": "Grocery category", "choices": ["Produce", "Dairy & eggs", "Meat & seafood", "Bakery", "Pantry", "Frozen", "Drinks", "Snacks", "Cleaning & household", "Personal care", "Pet supplies", "Other"] },
+  "shopping": { "label": "Shopping category", "choices": ["Clothing & shoes", "Electronics", "Home & garden", "Tools & equipment", "Books & media", "Health & care", "Pet supplies", "Gifts", "Other"] },
+  "home": { "label": "Household category", "choices": ["Repairs", "Maintenance", "Cleaning", "Laundry", "Garden & outdoors", "Organization", "Household admin", "Other"] },
+  "food": { "label": "Food & cooking category", "choices": ["Meal planning", "Cooking & prep", "Baking", "Recipes", "Kitchen upkeep", "Other"] },
+  "errands": { "label": "Errand category", "choices": ["Pickup", "Drop-off", "Returns", "Appointments", "Service visits", "Other"] },
+  "work": { "label": "Work category", "choices": ["Planning", "Research", "Writing", "Review", "Meetings & follow-ups", "Administration", "Delivery", "Other"] },
+  "personal": { "label": "Personal category", "choices": ["Health & care", "Fitness", "Learning", "Hobbies", "Finance", "Travel", "Other"] }
+}

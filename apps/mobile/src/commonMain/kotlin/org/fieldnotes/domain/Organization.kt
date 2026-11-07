@@ -10,7 +10,7 @@ fun workspaceTasks(cache: Cache, view: String, container: String?, query: String
     val containerRecord=graph.byId[container]
     val tasks=if(view=="Focus") focusTasks(cache,today,now).map { it.first } else source.sortedWith(compareBy<VisibleRecord> { it.record.data.text("status")=="done" }.thenBy { it.record.data.number("priority",3) }.thenBy { it.record.data.number("created_at") }.thenBy { it.record.id })
     return tasks.filter { row -> val d=row.record.data
-        (container==null||if(containerRecord?.kind=="project")graph.members(container).any {it.id==row.record.id} else d.text("project_id")==container) && (d.text("title")+" "+d.text("notes")).contains(query,true) && when(view) {
+        (container==null||if(containerRecord?.kind=="project")graph.members(container).any {it.id==row.record.id} else d.text("project_id")==container) && (d.text("title")+" "+d.text("notes")+" "+d.text("item_category")).contains(query,true) && when(view) {
             "My tasks" -> d.text("status")!="done" && (d.text("assignee")==actor||d.text("claimant")==actor)
             "Unassigned" -> d.text("status")!="done" && d.text("assignee").isBlank()
             "Inbox" -> d.text("project_id").isBlank() && d.text("status")!="done"

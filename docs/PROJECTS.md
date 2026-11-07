@@ -12,8 +12,11 @@ does not force a particular structure. Choose the smallest grouping that helps:
 | Parts, measurements or a shopping checklist for the repair | A reference list linked to the project |
 
 Categories such as Food & cooking, Errands or Work work the same way. New tasks
-start with their collection's category; you can choose another. Moving existing
-work never changes its category, assignment, dates, notes, comments or images.
+start with their collection's area; standalone and direct project tasks can
+choose another. Item categories follow a specific list's purpose, while General
+and Custom lists remain unrestricted. [Category inheritance](LISTS.md#categories-follow-purpose)
+explains the choices. Moving existing work never changes its saved category,
+assignment, dates, notes, comments or images.
 
 ## Track an outcome
 

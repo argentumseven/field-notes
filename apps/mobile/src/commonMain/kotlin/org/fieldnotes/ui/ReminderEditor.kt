@@ -18,9 +18,12 @@ import kotlinx.datetime.*
 import kotlinx.coroutines.launch
 import org.fieldnotes.domain.*
 
-internal data class ReminderEditorSettings(val options:ReminderOptions=ReminderOptions(),val people:List<HouseholdPerson> = emptyList(),val user:String="",val advanced:Boolean=false,val assigned:Boolean=false,val allowLoud:Boolean=false,val enableLoud:()->Unit={},val changed:(ReminderOptions)->Unit={})
-internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options:ReminderOptions,assigned:Boolean=false,changed:(ReminderOptions)->Unit)=ReminderEditorSettings(options,state.cache.people,state.cache.snapshot!!.actor.user_id,state.cache.supportsRemindersV2(),assigned,state.cache.preferences.allowAlarmVolumeOverride,{model.launch { model.preferences(state.cache.preferences.copy(allowAlarmVolumeOverride=true)) }},changed)
+internal data class ReminderEditorSettings(val options:ReminderOptions=ReminderOptions(),val people:List<HouseholdPerson> = emptyList(),val user:String="",val advanced:Boolean=false,val assigned:Boolean=false,val allowLoud:Boolean=false,val enableLoud:()->Unit={},val changed:(ReminderOptions)->Unit={},val calendarTiming:Boolean=false)
+internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options:ReminderOptions,assigned:Boolean=false,changed:(ReminderOptions)->Unit)=ReminderEditorSettings(options,state.cache.people,state.cache.snapshot!!.actor.user_id,state.cache.supportsRemindersV2(),assigned,state.cache.preferences.allowAlarmVolumeOverride,{model.launch { model.preferences(state.cache.preferences.copy(allowAlarmVolumeOverride=true)) }},changed,calendarTiming=state.cache.supportsReminderTiming())
 @Composable internal fun ReminderEditor(value:ReminderSet,day:LocalDate,newId:()->String,use24Hour:Boolean=false,preview:(AlertProfile)->Unit={},settings:ReminderEditorSettings=ReminderEditorSettings(),changed:(ReminderSet)->Unit) {
+    val emit:(ReminderSet)->Unit={changed(if(settings.calendarTiming)it.copy(timing_version=1)else it)}
+    var editingTime by remember {mutableStateOf<ReminderAlert?>(null)}
+    var newTime by remember {mutableStateOf(false)}
     var expanded by rememberSaveable { mutableStateOf(false) }
     var addMenu by remember { mutableStateOf(false) }
     var soundFor by remember { mutableStateOf<String?>(null) }
@@ -30,35 +33,38 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             if(settings.advanced)ReminderAudienceEditor(settings)
             else Text("Basic reminders remain compatible with this server. Update the paired server to choose people, longer sounds and alarm mode.",style=MaterialTheme.typography.bodySmall)
             Text("Choose a notification or a longer alarm for each reminder.",style=MaterialTheme.typography.bodySmall)
-            value.alerts.forEach { rule -> Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            value.alerts.forEach { rule -> Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                 val p=settings.options.playback[rule.id]?.applyTo(rule.profile) ?: rule.profile
-                Column(Modifier.weight(1f)) { Text(if(rule.minutes_before==0)"At the start" else "${rule.minutes_before} min before");Text("${if(p.alarm)"Alarm" else p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
+                Column { Text(reminderTimeLabel(rule));Text("${if(p.alarm)"Alarm" else p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                SecondaryButton(onClick={editingTime=rule;newTime=false}){Text("Time")}
                 SecondaryButton(onClick={soundFor=rule.id}){Text("Sound")}
-                SecondaryButton(onClick={changed(value.copy(alerts=value.alerts.filterNot { it.id==rule.id }))}){Text("Remove")}
-            } }
+                SecondaryButton(onClick={emit(value.copy(alerts=value.alerts.filterNot { it.id==rule.id }))}){Text("Remove")}
+            } } }
             Box { SecondaryButton(onClick={addMenu=true},enabled=value.alerts.size<8){Text("Add reminder")};DropdownMenu(addMenu,{addMenu=false}) {
-                for(minutes in listOf(0,5,10,15,30,60,120,1440))DropdownMenuItem(text={Text(if(minutes==0)"At the start" else if(minutes==1440)"1 day before" else "$minutes minutes before")},onClick={changed(value.copy(alerts=value.alerts+ReminderAlert(newId(),minutes)));addMenu=false})
+                for(minutes in listOf(0,5,10,15,30,60,120,1440))DropdownMenuItem(text={Text(reminderTimeLabel(ReminderAlert("preview",minutes)))},onClick={emit(value.copy(alerts=value.alerts+ReminderAlert(newId(),minutes)));addMenu=false})
+                DropdownMenuItem(text={Text("Custom time…")},onClick={editingTime=ReminderAlert(newId());newTime=true;addMenu=false})
             } }
-            Row(verticalAlignment=Alignment.CenterVertically) { Switch(value.repeat!=null,{checked -> changed(value.copy(repeat=if(checked) ReminderWindow(newId(),starts_on=day.toString(),zone=TimeZone.currentSystemDefault().id) else null)) },modifier=Modifier.semantics {contentDescription="Repeat during a time window"});Text("Repeat during a time window",Modifier.padding(start=8.dp)) }
+            Row(verticalAlignment=Alignment.CenterVertically) { Switch(value.repeat!=null,{checked -> emit(value.copy(repeat=if(checked) ReminderWindow(newId(),starts_on=day.toString(),zone=TimeZone.currentSystemDefault().id) else null)) },modifier=Modifier.semantics {contentDescription="Repeat during a time window"});Text("Repeat during a time window",Modifier.padding(start=8.dp)) }
             value.repeat?.let { rule ->
                 Text("These are reminders, not blocks of occupied calendar time.",style=MaterialTheme.typography.bodySmall)
-                DateField("First reminder day",rule.starts_on,clearable=false){changed(value.copy(repeat=rule.copy(starts_on=it)))}
+                DateField("First reminder day",rule.starts_on,clearable=false){emit(value.copy(repeat=rule.copy(starts_on=it)))}
                 Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    FilterChip(rule.weekdays.isEmpty(),{changed(value.copy(repeat=rule.copy(weekdays=emptyList())))},{Text("Once")})
-                    FilterChip(rule.weekdays.isNotEmpty(),{changed(value.copy(repeat=rule.copy(weekdays=listOf(LocalDate.parse(rule.starts_on).dayOfWeek.isoDayNumber))))},{Text("Every week")})
+                    FilterChip(rule.weekdays.isEmpty(),{emit(value.copy(repeat=rule.copy(weekdays=emptyList())))},{Text("Once")})
+                    FilterChip(rule.weekdays.isNotEmpty(),{emit(value.copy(repeat=rule.copy(weekdays=listOf(LocalDate.parse(rule.starts_on).dayOfWeek.isoDayNumber))))},{Text("Every week")})
                 }
                 if(rule.weekdays.isNotEmpty()) {
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) { for(d in 1..7)FilterChip(d in rule.weekdays,{ val days=if(d in rule.weekdays)rule.weekdays-d else rule.weekdays+d;changed(value.copy(repeat=rule.copy(weekdays=days.ifEmpty { listOf(d) }.sorted()))) },{Text(DayOfWeek(d).name.take(3).lowercase().replaceFirstChar { it.uppercase() })}) }
-                    SecondaryButton(onClick={changed(value.copy(repeat=rule.copy(weekdays=(1..7).toList())))}){Text("Every day")}
-                    DateField("Last reminder day · optional",rule.ends_on){changed(value.copy(repeat=rule.copy(ends_on=it)))}
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) { for(d in 1..7)FilterChip(d in rule.weekdays,{ val days=if(d in rule.weekdays)rule.weekdays-d else rule.weekdays+d;emit(value.copy(repeat=rule.copy(weekdays=days.ifEmpty { listOf(d) }.sorted()))) },{Text(DayOfWeek(d).name.take(3).lowercase().replaceFirstChar { it.uppercase() })}) }
+                    SecondaryButton(onClick={emit(value.copy(repeat=rule.copy(weekdays=(1..7).toList())))}){Text("Every day")}
+                    DateField("Last reminder day · optional",rule.ends_on){emit(value.copy(repeat=rule.copy(ends_on=it)))}
                 }
-                TimeField("From",rule.from,use24Hour){changed(value.copy(repeat=rule.copy(from=it)))}
-                TimeField("Until",rule.until,use24Hour){changed(value.copy(repeat=rule.copy(until=it)))}
+                TimeField("From",rule.from,use24Hour){emit(value.copy(repeat=rule.copy(from=it)))}
+                TimeField("Until",rule.until,use24Hour){emit(value.copy(repeat=rule.copy(until=it)))}
                 var hours by rememberSaveable(rule.id){mutableStateOf(rule.every_minutes>=60&&rule.every_minutes%60==0)}
                 var interval by rememberSaveable(rule.id){mutableStateOf((if(hours)rule.every_minutes/60 else rule.every_minutes).toString())}
-                OutlinedTextField(interval,{interval=it.take(4);changed(value.copy(repeat=rule.copy(every_minutes=(it.toIntOrNull() ?: 0)*(if(hours)60 else 1))))},label={Text("Repeat every")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),singleLine=true,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(interval,{interval=it.take(4);emit(value.copy(repeat=rule.copy(every_minutes=(it.toIntOrNull() ?: 0)*(if(hours)60 else 1))))},label={Text("Repeat every")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),singleLine=true,modifier=Modifier.fillMaxWidth())
                 Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) { for(h in listOf(false,true))FilterChip(hours==h,{
-                    hours=h;val next=if(h)(rule.every_minutes/60).coerceAtLeast(1) else rule.every_minutes.coerceAtLeast(1);interval=next.toString();changed(value.copy(repeat=rule.copy(every_minutes=next*(if(h)60 else 1))))
+                    hours=h;val next=if(h)(rule.every_minutes/60).coerceAtLeast(1) else rule.every_minutes.coerceAtLeast(1);interval=next.toString();emit(value.copy(repeat=rule.copy(every_minutes=next*(if(h)60 else 1))))
                 },{Text(if(h)"Hours" else "Minutes")}) }
                 Text("${rule.zone.replace('_',' ')} · windows can continue past midnight",style=MaterialTheme.typography.labelSmall)
                 SecondaryButton(onClick={soundFor=rule.id}){Text("Recurring reminder sound & importance")}
@@ -66,11 +72,14 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             if(value.alerts.isEmpty()&&value.repeat==null)Text("No reminders for this item.",style=MaterialTheme.typography.bodySmall)
         }
     } }
+    editingTime?.let{initial->ReminderTimeDialog(initial,settings.calendarTiming,{editingTime=null}){updated->
+        emit(value.copy(alerts=if(newTime)value.alerts+updated else value.alerts.map{if(it.id==updated.id)updated else it}));editingTime=null
+    }}
     soundFor?.let { id ->
         val alert=value.alerts.find { it.id==id };val rule=value.repeat?.takeIf { it.id==id };val base=alert?.profile ?: rule?.profile
         val profile=base?.let { settings.options.playback[id]?.applyTo(it) ?: it }
         if(profile!=null) SoundProfileDialog(profile,preview,settings,{soundFor=null}) { p ->
-            changed(if(alert!=null)value.copy(alerts=value.alerts.map { if(it.id==id)it.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate) else it }) else value.copy(repeat=rule!!.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate)))
+            emit(if(alert!=null)value.copy(alerts=value.alerts.map { if(it.id==id)it.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate) else it }) else value.copy(repeat=rule!!.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate)))
             if(settings.advanced)settings.changed(prunedReminderOptions(settings.options,value).copy(playback=prunedReminderOptions(settings.options,value).playback+(id to playbackOptions(p))))
             soundFor=null
         }

@@ -13,6 +13,7 @@ async function newStandaloneTask() {
   );
   if (FieldProjects.graph().project(initialParent)?.data.status === "archived")
     throw Error("Reopen the project before adding work.");
+  let classification;
   let reminders = { alerts: [], repeat: null },
     reminderDirty = false;
   await formDialog(
@@ -74,7 +75,11 @@ async function newStandaloneTask() {
       },
     ],
     async (v) => {
-      const data = { ...v, priority: Number(v.priority) };
+      const data = {
+        ...v,
+        priority: Number(v.priority),
+        item_category: classification.value,
+      };
       if (reminderDirty) {
         FieldReminders.validate(reminders);
         data.reminders = reminders;
@@ -88,11 +93,26 @@ async function newStandaloneTask() {
     "Create task",
     (nodes) => {
       let ownCategory = false;
-      nodes.category.onchange = () => (ownCategory = true);
+      classification = itemCategoryEditor($("#dialog-body"), () => {
+        const parent = byId(nodes.project_id.value),
+          context = itemContext({ category: nodes.category.value }, parent);
+        const scoped = parent?.kind === "list" && context.scoped;
+        nodes.category.hidden = scoped;
+        document.querySelector(
+          'label[for="' + nodes.category.id + '"]',
+        ).hidden = scoped;
+        return context;
+      });
+      nodes.category.after(classification.root);
+      nodes.category.onchange = () => {
+        ownCategory = true;
+        classification.refresh();
+      };
       nodes.project_id.onchange = () => {
         if (!ownCategory)
           nodes.category.value =
             byId(nodes.project_id.value)?.data.category || "general";
+        classification.refresh();
       };
       FieldReminders.controls(
         $("#dialog-body"),

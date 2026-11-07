@@ -1,0 +1,19 @@
+[
+  {"name":"Groceries override an unrelated legacy item area", "data":{"category":"work"}, "parent":{"kind":"list","data":{"template":"groceries","category":"home"}}, "expected":"groceries"},
+  {"name":"Online shopping uses product categories", "data":{}, "parent":{"kind":"list","data":{"template":"shopping","category":"personal"}}, "expected":"shopping"},
+  {"name":"Honey-do is household work", "data":{}, "parent":{"kind":"list","data":{"template":"general","category":"honey_do","items_are_tasks":true}}, "expected":"home"},
+  {"name":"Cooking lists are not grocery aisles", "data":{}, "parent":{"kind":"list","data":{"category":"food"}}, "expected":"food"},
+  {"name":"Errand task list", "data":{}, "parent":{"kind":"list","data":{"category":"errands","items_are_tasks":true}}, "expected":"errands"},
+  {"name":"Work task list", "data":{}, "parent":{"kind":"list","data":{"category":"work"}}, "expected":"work"},
+  {"name":"Personal list", "data":{}, "parent":{"kind":"list","data":{"category":"personal"}}, "expected":"personal"},
+  {"name":"General lists are unrestricted even with a previously tagged item", "data":{"category":"food"}, "parent":{"kind":"list","data":{"template":"general","category":"general"}}, "expected":"general"},
+  {"name":"Action describes no domain and stays unrestricted", "data":{}, "parent":{"kind":"list","data":{"category":"action"}}, "expected":"general"},
+  {"name":"Custom lists remain unrestricted despite an area", "data":{"category":"food"}, "parent":{"kind":"list","data":{"template":"custom","category":"home"}}, "expected":"general"},
+  {"name":"Missing tags do not imply food from the title", "data":{"category":"home"}, "parent":{"kind":"list","data":{"title":"Groceries or anything else","project_id":"food-project"}}, "expected":"general"},
+  {"name":"Unknown future list types do not invent restrictions", "data":{}, "parent":{"kind":"list","data":{"template":"future","category":"home"}}, "expected":"general"},
+  {"name":"Project defaults apply when an area is absent", "data":{}, "parent":{"kind":"project","data":{"category":"home"}}, "expected":"home"},
+  {"name":"Individual project tasks can choose their own area", "data":{"category":"personal"}, "parent":{"kind":"project","data":{"category":"home"}}, "expected":"personal"},
+  {"name":"An explicitly general project task stays unrestricted", "data":{"category":"general"}, "parent":{"kind":"project","data":{"category":"food"}}, "expected":"general"},
+  {"name":"Standalone household task", "data":{"category":"honey_do"}, "parent":null, "expected":"home"},
+  {"name":"Untagged standalone task", "data":{}, "parent":null, "expected":"general"}
+]

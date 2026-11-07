@@ -41,7 +41,13 @@ impl Store {
         let Some(value) = data.get("reminders") else {
             return Ok(());
         };
-        fields(value, &["alerts", "repeat"])?;
+        fields(value, &["alerts", "repeat", "timing_version"])?;
+        if value
+            .get("timing_version")
+            .is_some_and(|v| v.as_i64() != Some(1))
+        {
+            return fail(400, "Unsupported reminder timing version");
+        }
         let alerts = value["alerts"]
             .as_array()
             .ok_or(Fault(400, "Reminders must contain an alert list".into()))?;
@@ -55,6 +61,7 @@ impl Store {
                 &[
                     "id",
                     "minutes_before",
+                    "lead_time",
                     "importance",
                     "sound",
                     "volume",
@@ -62,6 +69,7 @@ impl Store {
                 ],
             )?;
             profile(alert)?;
+            super::reminder_timing::validate_lead(alert, &value["timing_version"])?;
             if !ids.insert(alert["id"].as_str().unwrap())
                 || !alert["minutes_before"]
                     .as_i64()
@@ -130,7 +138,11 @@ impl Store {
                 return fail(400, "Unknown reminder timezone");
             }
         }
-        record.data["reminders"] = value.clone();
+        let mut canonical = value.clone();
+        if !super::reminder_timing::extended_timing(&canonical) {
+            canonical.as_object_mut().unwrap().remove("timing_version");
+        }
+        record.data["reminders"] = canonical;
         Ok(())
     }
 }

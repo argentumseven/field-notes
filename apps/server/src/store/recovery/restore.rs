@@ -422,6 +422,7 @@ impl Store {
             "status",
             "priority",
             "category",
+            "item_category",
             "project_id",
             "assignee",
             "due",

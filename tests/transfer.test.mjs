@@ -81,6 +81,7 @@ async function seed(c) {
       task,
       {
         title: "Bananas",
+        item_category: "Produce",
         project_id: list,
         store: "Costco",
         quantity: "2 bunches",
@@ -199,6 +200,10 @@ test("portable round-trip preserves planner content and images, skips duplicates
       list = saved.records.find((r) => r.kind === "list"),
       note = saved.records.find((r) => r.kind === "note");
     assert.equal(saved.records.length, 6);
+    assert.equal(
+      saved.records.find((r) => r.kind === "task").data.item_category,
+      "Produce",
+    );
     const trail = await b.request("/api/history", {
       token: target.token,
       body: { epoch: saved.epoch, generation: saved.generation },

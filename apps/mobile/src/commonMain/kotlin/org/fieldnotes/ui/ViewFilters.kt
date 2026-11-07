@@ -2,11 +2,16 @@
 package org.fieldnotes.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.datetime.toLocalDateTime
 import org.fieldnotes.domain.*
@@ -27,8 +32,9 @@ import org.fieldnotes.domain.*
     }
 }
 @Composable internal fun ColumnScope.CollectionLibrary(cache:Cache,kinds:List<String>,writable:Boolean,open:(String)->Unit,edit:(Record)->Unit) {
+    val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
     var query by rememberSaveable(kinds.joinToString()){mutableStateOf("")};var template by rememberSaveable{mutableStateOf("*")};var category by rememberSaveable{mutableStateOf("")};var sort by rememberSaveable{mutableStateOf("title")};var projectState by rememberSaveable{mutableStateOf("current")}
-    OutlinedTextField(query,{query=it},label={Text("Search names and descriptions")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(vertical=10.dp))
+    OutlinedTextField(query,{query=it},label={Text("Search names and descriptions")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus();keyboard?.hide()}),modifier=Modifier.fillMaxWidth().padding(vertical=10.dp))
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
         if("list" in kinds)ViewChoice("Type",template,listOf("*" to "All list types")+listTemplates.filterKeys{it!="tasks"||cache.supportsProjects()}.toList()){template=it}
         if("project" in kinds&&cache.supportsProjects())ViewChoice("Project state",projectState,listOf("current" to "Current projects","active" to "Active","on_hold" to "On hold","archived" to "Finished","all" to "All projects")){projectState=it}

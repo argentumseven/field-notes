@@ -1713,6 +1713,20 @@ button:hover {
 .category-food {
   border-inline-start: 3px solid #39966d;
 }
+.type-badge.item-category {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reminder-time-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 8px 14px;
+}
+.reminder-time-controls > p {
+  grid-column: 1 / -1;
+  margin: 0 0 8px;
+}
 .category-honey_do {
   border-inline-start: 3px solid #b577c5;
 }

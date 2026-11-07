@@ -6,6 +6,33 @@ start. A repeat window works independently of a deadline, including undated
 tasks. Saving an explicit empty reminder set disables that item's reminders.
 Older items without a reminder setting retain the previous default policy.
 
+Choose **Custom time…** on the website, or **Add reminder → Custom time…**
+on Android. Enter an **Amount before** and choose Minutes, Hours, Days, Weeks,
+Months or Years. Android's **Time** button changes an existing reminder; Sound
+and Remove remain separate. Several reminders may use different units.
+
+Minutes/hours/days/weeks count elapsed time: one day is 24 hours. Months and
+years use calendar dates in the saved timezone. March 31 minus one month clamps
+to February 28 (29 in a leap year); February 29 minus one year clamps to February
+28. Calendar leads preserve the local clock through daylight-saving changes;
+a nonexistent clock time moves forward through the gap, and an ambiguous time
+uses its first occurrence. The dialog shows the calendar timezone. Date-only
+month/year reminders use 9 AM in that saved zone. Existing minute-based reminders
+keep their original timing and receipt identities.
+
+The maximum is ten years / 120 months, with corresponding bounds for elapsed
+units. Zero means at the start. Reminders before an event need its start; tasks
+need a due/planned day and notes need a follow-up time. An independent daily or
+weekly reminder window can still be used without a due date. A start-only event
+needs no end time.
+
+Use the current app on every phone that should receive month/year or other
+extended timing. Compatible older phones still receive their understood alerts
+and can amend ordinary content. They do not receive a fake at-start substitute,
+and cannot overwrite the newer reminder rules through an older editor. Newer
+queued timing on an older server stays retained with a visible explanation.
+See [Updates](UPDATES.md).
+
 Choose **Who should receive these reminders?**: Only me, Everyone, an assigned
 task's person, or selected household people. New tasks, events and reminder
 notes start with Everyone. Existing personal selections stay unchanged. This controls

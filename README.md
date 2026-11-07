@@ -10,7 +10,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.9.1.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.10.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -40,10 +40,16 @@ services. iOS/native desktop packages are deferred.
 - Sunday-first calendars open first, with aligned day/week time blocks, a continuous month grid and local clock
   controls. End times are optional; start-only markers do not occupy time.
   Multiple reminders support separate importance, eight sounds and relative volume.
+  Custom reminder times use amounts in minutes, hours, days, weeks, months or
+  years; calendar months/years handle month ends and leap years without rewriting
+  existing reminders.
   Choose recipients per person or everyone, and optionally ring a longer alarm
   with temporary alarm-volume raising and restoration on each consenting phone.
   Repeat events on selected weekdays, alternate days/weeks, custom intervals or individual dates, with skipped dates and yearly intervals. Repeat reminders within a chosen daily/weekly window, even without a due date. New items default to Everyone; existing personal choices are preserved.
-- Lists have grocery, online shopping, general and custom presets. Select fields
+- Lists have grocery, online shopping, general and custom presets, with optional
+  item categories appropriate to groceries, shopping, household,
+  cooking, errands, work or personal content. General/untagged and custom lists
+  allow arbitrary labels; moves and type changes retain saved labels. Choose fields
   such as quantity, store, link, optional price, images and dates. Store groups and filters keep groceries in their own subview. Rolling lists let you
   delete individual items, bulk-delete checked items or reuse their original records while retaining unchecked ones. Image previews use attached
   images only; there are no retailer requests. Rows show creator/activity times.

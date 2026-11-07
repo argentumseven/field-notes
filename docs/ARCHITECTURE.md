@@ -1,5 +1,32 @@
 # Architecture
 
+0.10 item context separates the parent list's purpose/broad area from optional
+`task.item_category`. `shared/item-contexts.json` is the canonical vocabulary;
+`tools/sync-item-contexts.py` generates web/native data, checked by all build
+entry points. Rust includes the same JSON in its binary. `ItemContext.kt` and
+the server/web policies treat custom and untagged lists as explicit boundaries.
+Typed lists constrain newly selected labels; unchanged saved labels, moves,
+imports and restores preserve existing content. Text bounds still apply to
+unrestricted labels. The server checks the current parent inside the write
+transaction. Shared inheritance cases cover every broad area and legacy aliases.
+
+Reminder timing adds optional `lead_time` to an alert and a versioned writer
+signal to its reminder set. Small elapsed leads keep the original minute wire
+shape. Months/years retain amount/unit/zone rather than an approximate duration.
+`ReminderTiming.kt` inverts each lead around the eight-day delivery horizon,
+with bounded margin for calendar clamping, so a ten-year lead does not enumerate
+ten years of recurrence. Extended rules include occurrence anchors in receipt
+and progress identities to distinguish clamped reminders at the same instant;
+legacy receipt keys are unchanged.
+
+Canonical rules remain encrypted in the store and in content exports. Legacy
+notification fields omit extended alerts and format markers; current clients
+read `reminder_timing_rules` and apply the existing recipient policy. A separate
+write guard rejects an older editor's attempt to replace extended rules. The
+writer signal is excluded from content comparison/history, while actual timing
+changes, restore previews and imports retain their full meaning. New commands
+are feature-gated in the phone outbox when connected to an older server.
+
 Foreground freshness and list removal (0.9.1): `ForegroundSync.kt` owns a
 three-second head check inside Android's resumed lifecycle, with an immediate
 check on return. It waits for overlapping connection work and honors durable

@@ -67,6 +67,34 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun newerReminderTimingIsRetainedIntactWhenTheServerIsOlder() = runTest {
+        val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,this);workspace.initialize()
+        val rules=ReminderSet(listOf(ReminderAlert("annual",0,lead_time=ReminderLead(1,"years","UTC"))),timing_version=1)
+        workspace.enqueue("task.update",task.id,obj("title" to "Preserve this too".j(),"reminders" to reminderData(rules)),task.revision)
+        workspace.sync()
+        assertTrue(transport.sent.isEmpty());val retained=vault.value.conflicts.single()
+        assertTrue(retained.reason.contains("custom reminder timing"))
+        assertEquals(reminderData(rules),retained.command.data["reminders"])
+        assertEquals("Preserve this too",retained.command.data.text("title"))
+        assertEquals(initial().keys,vault.value.keys)
+    }
+    @Test fun unsupportedItemCategoriesStayInRetainedChangesWithTheirCompletePayload() = runTest {
+        val vault=MemoryVault();val transport=FakeTransport()
+        val workspace=model(vault,transport,this)
+        workspace.initialize()
+        workspace.enqueue("task.update",task.id,obj("title" to "Keep this full edit".j(),"item_category" to "Anything custom".j()),task.revision)
+        workspace.sync()
+        assertTrue(transport.sent.isEmpty())
+        val retained=vault.value.conflicts.single()
+        assertTrue(retained.reason.contains("item category"))
+        assertEquals("Keep this full edit",retained.command.data.text("title"))
+        assertEquals("Anything custom",retained.command.data.text("item_category"))
+        assertEquals(initial().keys,vault.value.keys)
+        assertEquals(initial().config,vault.value.config)
+        val restarted=model(vault,FakeTransport(),this);restarted.initialize()
+        assertEquals(retained,restarted.state.value.cache.conflicts.single())
+        assertTrue(portableManifest(restarted.state.value.cache).getValue("retained").jsonArray.toString().contains("Anything custom"))
+    }
     @Test fun visibleAppChecksContinuouslyEvenWithLegacyAutoRefreshDisabled()=runTest {
         val vault=MemoryVault(initial().copy(preferences=Preferences(autoRefresh=false,liveUpdates=false)))
         val transport=FakeTransport();val workspace=model(vault,transport,backgroundScope);workspace.initialize()

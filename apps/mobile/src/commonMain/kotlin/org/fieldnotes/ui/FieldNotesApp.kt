@@ -386,6 +386,7 @@ import org.fieldnotes.domain.*
     var notes by remember(task.id) { mutableStateOf(draft?.data?.text("notes") ?: task.data.text("notes")) }
     var due by remember(task.id) { mutableStateOf(draft?.data?.text("due") ?: task.data.text("due")) }
     var category by remember(task.id){mutableStateOf((draft?.data?:task.data).text("category","general"))}
+    var itemCategory by remember(task.id){mutableStateOf((draft?.data?:task.data).text("item_category"))}
     var container by remember(task.id) { mutableStateOf((draft?.data?:task.data).text("project_id")) };var containerMenu by remember { mutableStateOf(false) }
     var priority by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("priority", 3).toInt()) }
     var planned by remember(task.id) { mutableStateOf((draft?.data ?: task.data).text("planned_for")) }
@@ -407,15 +408,16 @@ import org.fieldnotes.domain.*
     fun fields():JsonObject {
         val data=obj("title" to title.j(),"notes" to notes.j(),"due" to due.j(),"project_id" to container.j(),"priority" to priority.j(),"planned_for" to planned.j(),"estimate_minutes" to (effort.toIntOrNull()?:0).j(),"pinned" to JsonPrimitive(pinned),"blocked" to JsonPrimitive(blocked))
         val assigned=if(state.cache.people.isEmpty())data else JsonObject(data+("assignee" to if(assignee.isBlank())JsonNull else assignee.j()))
-        return if(state.cache.supportsPlannerV3())JsonObject(assigned+("category" to category.j())) else assigned
+        val classified=if(state.cache.supportsItemContexts()||task.data.containsKey("item_category")||draft?.data?.containsKey("item_category")==true)JsonObject(assigned+("item_category" to itemCategory.j()))else assigned
+        return if(state.cache.supportsPlannerV3())JsonObject(classified+("category" to category.j())) else classified
     }
     fun retain() { dirty = true; val captured = fields(); val base = revision; model.launch { model.saveDraft(task.id, base, captured, basis) } }
     LaunchedEffect(draft?.revision) { if (dirty && draft != null && draft.dependsOn == null) revision = draft.revision }
     LaunchedEffect(task.revision, visible.pending) {
-        if (!dirty && !visible.pending && !staleWorkspace) { category=task.data.text("category","general");container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision }
+        if (!dirty && !visible.pending && !staleWorkspace) { category=task.data.text("category","general");itemCategory=task.data.text("item_category");container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision }
     }
     Scaffold(topBar = { TopAppBar(title = { Text(if (visible.pending) "Pending confirmation" else "Task details") }, navigationIcon = { OutlinedIconButton(shape=ControlShape,onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } }) }) { padding ->
-        VisibleLazyColumn(Modifier.fillMaxSize().padding(padding).imePadding(), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        VisibleLazyColumn(Modifier.fillMaxSize().padding(padding).imePadding().testTag("task-details-content"), contentPadding = PaddingValues(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.error?.let { message->item { ErrorText(message) } }
             item {SyncStatusLine(state)}
             if (staleWorkspace) item { ErrorText("The server was reset or restored. Reopen this task before making new changes; your old drafts are retained.") }
@@ -432,7 +434,10 @@ import org.fieldnotes.domain.*
             item { OutlinedTextField(notes, { if (it.length <= 16384) { notes = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Notes") }, minLines = 5, enabled = writable && !saving && !staleWorkspace) }
             if(openContainer!=null)state.cache.projectGraph().project(task)?.let {root->item {SecondaryButton(onClick={openContainer(root.id)}){Text("Open project · "+root.data.text("title"))}}}
             item { Box { SecondaryButton(onClick={containerMenu=true},enabled=writable&&!staleWorkspace){Text("Keep in: "+state.cache.projectGraph().path(container))};DropdownMenu(containerMenu,{containerMenu=false}){DropdownMenuItem(text={Text("Inbox")},onClick={container="";containerMenu=false;retain()});workspaceContainers(state.cache).forEach { c->DropdownMenuItem(text={Text(c.record.data.text("title")+" · "+c.record.kind)},onClick={container=c.record.id;containerMenu=false;retain()})}} } }
-            if(state.cache.supportsPlannerV3())item{CategoryPicker(category,writable&&!saving&&!staleWorkspace){category=it;retain()}}
+            val categoryParent=state.cache.projectGraph().byId[container]
+            val categoryContext=itemContext(obj("category" to category.j()),categoryParent)
+            if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))item{CategoryPicker(category,writable&&!saving&&!staleWorkspace){category=it;retain()}}
+            if(state.cache.supportsItemContexts()||task.data.containsKey("item_category"))item{ItemCategoryPicker(categoryContext,itemCategory,writable&&!saving&&!staleWorkspace&&state.cache.supportsItemContexts()){itemCategory=it;retain()}}
             item { DateField("Due date", due, writable && !saving && !staleWorkspace) { due = it; retain() } }
             item { DateField("Planned day", planned, writable && !saving && !staleWorkspace) { planned = it; retain() } }
             item { Text("Priority", style = MaterialTheme.typography.labelLarge); FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { (1..4).forEach { p -> FilterChip(selected = priority == p, onClick = { priority = p; retain() }, label = { Text(priorityName(p)) }, enabled = writable && !saving && !staleWorkspace) } } }
@@ -443,7 +448,7 @@ import org.fieldnotes.domain.*
                 OutlinedCard { Column(Modifier.padding(16.dp)) {
                     Text("This task changed on another device. Your draft is kept.", fontWeight = FontWeight.Medium)
                     Text("Server title: ${task.data.text("title")}\nAssigned to: ${task.data.text("assignee").let { if(it.isBlank())"Unassigned" else personName(state.cache,it) }}\nServer notes: ${task.data.text("notes")}", Modifier.padding(vertical = 12.dp))
-                    SecondaryButton(onClick = { category=task.data.text("category","general");container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision; dirty = false; model.launch { model.discardDraft(task.id) } }) { Text("Use server version") }
+                    SecondaryButton(onClick = { category=task.data.text("category","general");itemCategory=task.data.text("item_category");container=task.data.text("project_id"); title = task.data.text("title"); notes = task.data.text("notes"); due = task.data.text("due"); assignee = task.data.text("assignee"); priority = task.data.number("priority", 3).toInt(); planned = task.data.text("planned_for"); effort = task.data.number("estimate_minutes").toString(); pinned = task.flag("pinned"); blocked = task.flag("blocked"); revision = task.revision; dirty = false; model.launch { model.discardDraft(task.id) } }) { Text("Use server version") }
                     SecondaryButton(onClick = { revision = task.revision; retain() }) { Text("Keep draft for a new save") }
                 } }
             }

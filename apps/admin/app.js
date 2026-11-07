@@ -376,7 +376,7 @@ function visibleTasks() {
                     ? state.project
                     : state.projectGroup))
             : t.data.project_id === state.project)) &&
-        (t.data.title + " " + t.data.notes)
+        (t.data.title + " " + t.data.notes + " " + (t.data.item_category || ""))
           .toLowerCase()
           .includes(state.query.toLowerCase()),
     );
@@ -1355,6 +1355,7 @@ function renderDetail() {
       ...draft,
       title: title.value,
       category: category.value,
+      item_category: classification.value,
       notes: notes.value,
       assignee: assignee.value || null,
       due: due.value,
@@ -1365,6 +1366,23 @@ function renderDetail() {
       pinned: pinned.value === "true",
       blocked: blocked.value === "true",
     });
+  const classification = itemCategoryEditor(
+    detail,
+    () => {
+      const parent = byId(container.value),
+        context = itemContext({ category: category.value }, parent);
+      const scoped = parent?.kind === "list" && context.scoped;
+      category.hidden = scoped;
+      detail.querySelector('label[for="' + category.id + '"]').hidden = scoped;
+      return context;
+    },
+    draft.item_category || "",
+    dirty,
+    mayWrite(),
+  );
+  category.after(classification.root);
+  category.addEventListener("change", () => classification.refresh());
+  container.addEventListener("change", () => classification.refresh());
   for (const n of [
     title,
     category,
@@ -1443,6 +1461,8 @@ function renderDetail() {
                 title: d.title,
                 project_id: d.project_id,
                 notes: d.notes,
+                category: d.category,
+                item_category: d.item_category,
                 assignee: d.assignee,
                 due: d.due,
                 priority: d.priority,

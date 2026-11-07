@@ -42,7 +42,8 @@ clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2**,
 **0.3.2 → 0.3.3**, **0.3.2/code 5 → 0.4.0/code 10**, and
 **0.3.2/code 5 → 0.6.0/code 12**, and
 **0.3.2/code 5 → 0.7.0/code 13**, **0.8.1/code 15 → 0.9.0/code 16**, and
-**0.9.0/code 16 → 0.9.1/code 17** APK upgrades
+**0.9.0/code 16 → 0.9.1/code 17**, and
+**0.9.1/code 17 → 0.10.0/code 18** APK upgrades
 were exercised on the disposable AVD with the actual Keystore-backed vault and
 queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults
@@ -56,11 +57,30 @@ features. A newer app can keep syncing with an older server; unsupported editor
 controls stay disabled. A retained edit requiring a newer feature is explained
 in Retained changes. Incompatible protocol/minimum requirements stop uploads
 with a persistent warning and preserve the cache, outbox and keys. The current
-server recommends code 17 and supports the code-10 core during rollout. Update
+server recommends code 18 and supports the code-10 core during rollout. Update
 older clients before relying on repeat-event expansion and its reminders.
 Upgrade older phones to 0.9.1 for immediate/three-second foreground refresh,
 automatic default-network reconnection and visible stale/queued status. Updating
 only the server cannot update an older phone's refresh behavior.
+
+0.10 adds optional item categories under the advertised `item-context-v1`
+feature. Older phones can still add and amend core content without overwriting
+those labels. A new phone connected to an older server disables new category
+controls; a previously queued edit using that field stays in Retained changes
+with its full payload. Update the server and explicitly retry it. No pairing
+or signing identity changes are needed. Content files containing these new
+labels need the newer server to import them; unsupported fields are rejected
+instead of silently removed. Files without the field keep their prior import
+identity, including an explicitly empty optional label.
+
+`reminder-timing-v1` adds amount/unit timing up to ten years. Current phones
+read the complete `reminder_timing_rules`; older clients receive only the
+compatible legacy alert subset in their existing fields. Unsupported leads are
+never passed off as at-start alerts. An older reminder editor receives a
+revision-safe rejection if it would erase those newer rules, even when it sends
+recipient settings. Ordinary task/list/event edits still work. Update the phones
+before relying on month/year reminders; a server update cannot add that scheduler
+to an older APK. New timing queued against an older server is retained intact.
 
 A missing/corrupt/mismatched APK bundle or failed transfer produces a visible
 status; it does not take the notes server offline. A phone newer than the offered

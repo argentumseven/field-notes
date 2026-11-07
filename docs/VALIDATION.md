@@ -1,5 +1,55 @@
 # Implementation and validation record
 
+## 0.10.0 contextual categories and reminder time units — 2026-11-07
+
+Optional item categories follow the containing list's template and subject.
+Groceries and shopping have their own choices; household, food, errands, work
+and personal lists each have relevant choices. General, untagged and custom
+lists accept free-form categories. A shared generated vocabulary keeps Rust,
+web and Kotlin consistent. Changing a list or moving an item preserves its
+saved category until someone deliberately changes it. Category filters also
+scope checked-item cleanup. Search, whole-item history, version restore and
+content export/import preserve these labels.
+
+Custom reminder timing uses an amount and minutes, hours, days, weeks, months
+or years. Months/years use the saved calendar timezone, clamp month ends and
+leap days, move DST gaps forward and choose the first overlapping time. Other
+units count elapsed time. The native scheduler inverts each offset into a
+bounded occurrence window; ten-year leads do not enumerate ten years of events.
+Clamped occurrences retain distinct delivery/progress identities. Existing
+minute-based reminders keep their wire representation and receipt identities.
+
+Extended timing has an additive capability and full-rule projection. Older
+clients receive their compatible alert subset, with no newer rule misread as
+an at-start alert. Older reminder editors cannot erase newer timing; ordinary
+content edits continue to work. New-feature edits queued against an older
+server remain intact with a visible explanation. No protocol/schema minimum,
+pairing identity or public APK signing-key change is required.
+
+Executed here: **102 API/codec/planning cases**, **35 browser workflows**,
+**116 Kotlin host tests**, **126 Python helper tests**, **17 Rust tests** and
+clean clippy. Coverage includes transactional stale-parent/revision checks,
+Unicode/bounds, unrestricted custom categories, retained labels after moves,
+filtered deletion, import deduplication, legacy reminder projection/editor
+fencing, month-end/leap/DST arithmetic, bounded long-lead recurring lookup,
+and separate receipt identities for clamped occurrences.
+
+The actual JNI → WireGuard → TLS → Rust integration check passed. On the
+guarded disposable AOSP AVD, ItemContextDeviceTest exercised real grocery and
+household category controls and unrestricted custom labels;
+ReminderTimingDeviceTest exercised month/year controls, IME dismissal and
+distinct saved rules. Both verified the durable queue and encrypted vault.
+The same-signer **0.9.1/code 17 → 0.10.0/code 18** in-place APK update passed
+with actual Keystore-backed keys, saved server/CA/PSK binding and an
+unacknowledged task command retained; no uninstall, data clear or re-enrollment
+occurred between versions.
+
+Nine fresh synthetic web/native captures are indexed in
+[WALKTHROUGH.md](WALKTHROUGH.md). These automated/emulator checks do not imply
+access or deployment to the home Debian server, or physical GrapheneOS profile,
+alarm-volume, background delivery or camera testing. Older phones need the
+current APK before delivering the new calendar-based reminder timings.
+
 ## 0.9.1 live shopping, removal and scroll continuity — 2026-11-06
 
 Open Android screens check immediately on resume and every three seconds,
