@@ -50,6 +50,27 @@ access or deployment to the home Debian server, or physical GrapheneOS profile,
 alarm-volume, background delivery or camera testing. Older phones need the
 current APK before delivering the new calendar-based reminder timings.
 
+Delivery verified: [v0.10.0](https://github.com/argentumseven/field-notes/releases/tag/v0.10.0)
+publishes clean tagged source `d8163cf939c550ae808106cb5010327978fa30f4`,
+Android code 18, using the unchanged public signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+All four public assets match the built release byte-for-byte; actual APK
+signature/package/ARM64 verification passed. The latest-download metadata
+matches this release. Public APK SHA-256:
+`1d5002f8e1c403bfc24d262304088c1646275063595ededc53fdd0461977509e`.
+
+The ordinary Linux x86_64 build fetched those same public bytes without APK or
+download-directory overrides. Its packaged executable reports 0.10.0, advertises
+both new capabilities through the authenticated head endpoint, serves the new
+UI assets, and successfully persists a grocery category and year reminder in an
+isolated synthetic runtime check. Its matching APK offer is available. All 14
+packaged host helpers match source; both pinned image IDs exist; full bundle,
+binary and image checksums pass. No private-key files enter the archive.
+Local complete bundle SHA-256:
+`81860ce70848da4f4c7839d28b8bc73b6975c9899ca46345d07f29ad4fb558d6`.
+The GitHub release publishes the four Android assets; the Linux bundle was
+built and verified locally, not uploaded as a public release asset.
+
 ## 0.9.1 live shopping, removal and scroll continuity — 2026-11-06
 
 Open Android screens check immediately on resume and every three seconds,
