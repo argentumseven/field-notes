@@ -13,8 +13,12 @@ determined by Android's current state. Focus/Upcoming receiver work runs on IO.
 Encrypted background sync and stored privacy choices remain independent.
 
 Patch checks passed: **128 Kotlin host tests**, **133 Python helper tests** and
-**17 Rust tests**. Android compilation/lint, real launcher transitions, same-signer
-19 → 20 upgrade and clean-tag/public bundle checks are being completed below.
+**17 Rust tests**. Android debug/release builds, lint and packaging checks pass. The actual month
+launcher test passes pinning, automatic offline repaint, screen-off privacy
+state, reveal after wake without a new sync, and opening the exact selected
+date. Fresh month/day-link captures are published in the walkthrough. Week
+lifecycle, same-signer 19 → 20 upgrade and clean-tag/public bundle checks are
+being completed below.
 The 0.11 planner API/browser/container evidence remains applicable; this patch
 changes Android widget handling and release/version packaging.
 

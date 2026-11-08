@@ -26,6 +26,9 @@ await call(['uninstall','org.fieldnotes.app']).catch(()=>{});
 await call(['install',old]);
 await call(['install','-r','dist/android-emulator/FieldNotes-debug-androidTest.apk']);
 async function compileFixture(){
+ // These phases exercise storage and Keystore without opening a UI. Full
+ // Compose AOT compilation is optional; it does not strengthen the assertions.
+ if(!process.argv.includes('--aot'))return;
  for(const pkg of ['org.fieldnotes.app','org.fieldnotes.app.test']){
   const result=await call(['shell','cmd','package','compile','-m','speed',pkg],360000);
   if(!result.includes('Success'))throw Error('Emulator AOT preparation failed');

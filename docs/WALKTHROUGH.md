@@ -17,6 +17,18 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Home-screen calendar continuity — 0.11.1
+
+These are actual Android launcher widgets. The fixture has the app lock enabled
+and connection paused. Local edits repaint the widget; tapping a date opens that
+same date in the app's Day view. The check also sleeps/wakes the emulator and
+verifies disclosure refresh without a new server snapshot.
+
+| Android | What it shows |
+| --- | --- |
+| [Month widget](screenshots/android/32-home-calendar.png) | An amended title, tomorrow's marker and today's occupied-time bar after offline edits |
+| [Tap a date](screenshots/android/73-calendar-widget-day-link.png) | The chosen next day, its start-only reminder and two retained queued changes |
+
 ## Focused planner controls — 0.11
 
 The current captures below show the event sections, optional detail, recipes,
