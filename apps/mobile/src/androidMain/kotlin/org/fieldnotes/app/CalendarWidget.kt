@@ -50,6 +50,7 @@ open class CalendarWidget : AppWidgetProvider() {
             try {
                 withTimeout(8_000) {
                     app.initialized.await()
+                    WidgetVisibility.transition(context)
                     if(automaticSync&&widgetNeedsBackgroundSync(app.model.state.value,Clock.System.now().epochSeconds))WidgetRefreshWorker.enqueue(context,true)
                     scheduled=schedule(context);scheduled!!.join()
                 }
@@ -107,7 +108,16 @@ open class CalendarWidget : AppWidgetProvider() {
             val unlocked=WidgetVisibility.unlocked(context)
             val zone=TimeZone.currentSystemDefault();val today=Clock.System.now().toLocalDateTime(zone).date
             val weekly=manager.getAppWidgetIds(ComponentName(context,WeekCalendarWidget::class.java)).toSet()
-            for(id in ids)manager.updateAppWidget(id,if(id in weekly)WeekCalendarWidget.views(context,state.cache,unlocked,!state.needsLogin,id,displayWeek(context,id,today),today,zone) else views(context,state.cache,unlocked,!state.needsLogin,id,displayMonth(context,id,today),today,zone))
+            for(id in ids) {
+                val view=if(id in weekly)WeekCalendarWidget.views(context,state.cache,unlocked,!state.needsLogin,id,displayWeek(context,id,today),today,zone) else views(context,state.cache,unlocked,!state.needsLogin,id,displayMonth(context,id,today),today,zone)
+                // Never publish a disclosure decision made before a lock change.
+                // Rebuild both hidden and revealed views from the current state.
+                if(unlocked!=WidgetVisibility.unlocked(context)) {
+                    synchronized(renderLock){requested=true}
+                    continue
+                }
+                manager.updateAppWidget(id,view)
+            }
             val midnight=today.plus(1,DateTimeUnit.DAY).atStartOfDayIn(zone).toEpochMilliseconds()
             context.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,midnight,tick(context))
         }

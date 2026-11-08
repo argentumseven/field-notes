@@ -98,3 +98,11 @@ Events use Schedule / Reminders / Details sections. Appointments have an optiona
 location with **Copy location**, so you can paste it into your chosen navigation
 app. Field Notes performs no geocoding or map lookup. Start-only events still
 require no end time and remain distinct from blocks of occupied time.
+
+### Widget unlock continuity — 0.11.1
+
+Widgets read Android's current user, interactive display and keyguard state.
+Pinning/resizing triggers fresh checks, and an obsolete lock-state view is
+rebuilt before publication. Unlock retries continue briefly while keyguard
+settles. App credential locking and hidden-widget preferences do not stop
+encrypted synchronization; saved off preferences remain off.

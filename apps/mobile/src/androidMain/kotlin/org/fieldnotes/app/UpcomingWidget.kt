@@ -16,8 +16,12 @@ import org.fieldnotes.domain.*
 
 /** A real launcher provider. The agenda and the ranked Focus widget are separate. */
 class UpcomingWidget : AppWidgetProvider() {
-    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) { refresh(context) }
-    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) { refresh(context) }
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) { updateAsync(context) }
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) { updateAsync(context) }
+    private fun updateAsync(context:Context) {
+        val pending=goAsync();val app=context.applicationContext as FieldNotesApplication
+        app.scope.launch(Dispatchers.IO){try{withTimeout(8_000){app.initialized.await()};WidgetVisibility.transition(context);refresh(context)}finally{pending.finish()}}
+    }
     companion object {
         fun refresh(context: Context) {
             val manager=context.getSystemService(AppWidgetManager::class.java)
@@ -34,7 +38,9 @@ class UpcomingWidget : AppWidgetProvider() {
                     options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT,240)
                     else options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,240)
                 val rows=if(height<220)2 else 4
-                manager.updateAppWidget(id,views(context,state.cache,unlocked,!state.needsLogin,rows))
+                val view=views(context,state.cache,unlocked,!state.needsLogin,rows)
+                if(unlocked!=WidgetVisibility.unlocked(context)){WidgetVisibility.transition(context);return}
+                manager.updateAppWidget(id,view)
             }
         }
         fun views(context:Context,cache:Cache,unlocked:Boolean,authenticated:Boolean=true,rows:Int=4):RemoteViews {

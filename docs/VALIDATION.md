@@ -1,5 +1,23 @@
 # Implementation and validation record
 
+## 0.11.1 widget unlock follow-up — 2026-11-08
+
+The actual launcher check found a stale hidden calendar view even though Android
+reported the user unlocked. Visibility now queries UserManager, PowerManager and
+KeyguardManager directly, without a cached screen-off flag. Provider binding and
+resize start fresh visibility checks; repeated checks rebuild even when the last
+observation agrees. Late keyguard changes have bounded retries. A renderer skips
+publication when its disclosure decision became obsolete while building the view.
+Protected system broadcasts admit privileged system senders, with disclosure still
+determined by Android's current state. Focus/Upcoming receiver work runs on IO.
+Encrypted background sync and stored privacy choices remain independent.
+
+Patch checks passed: **128 Kotlin host tests**, **133 Python helper tests** and
+**17 Rust tests**. Android compilation/lint, real launcher transitions, same-signer
+19 → 20 upgrade and clean-tag/public bundle checks are being completed below.
+The 0.11 planner API/browser/container evidence remains applicable; this patch
+changes Android widget handling and release/version packaging.
+
 ## 0.11.0 planner and widget continuity — 2026-11-08
 
 Implemented explicit day/time reminders, week/day presets, optional federal

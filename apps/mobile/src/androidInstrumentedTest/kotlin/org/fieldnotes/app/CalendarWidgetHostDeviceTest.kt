@@ -71,7 +71,7 @@ class CalendarWidgetHostDeviceTest {
         }
         fun waitFor(stage:String,condition:()->Boolean) {
             android.util.Log.i("FieldNotesWidgetTest",stage)
-            val end=System.currentTimeMillis()+90_000
+            val end=System.currentTimeMillis()+180_000
             while(System.currentTimeMillis()<end) { if(condition())return;Thread.sleep(500) }
             instrumentation.runOnMainSync {ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().forEach {it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)}}
             picture("host-failure")

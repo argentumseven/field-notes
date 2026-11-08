@@ -19,7 +19,7 @@ class PlannerWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         val pending = goAsync()
         val app = context.applicationContext as FieldNotesApplication
-        app.scope.launch { try { withTimeout(8_000) { app.initialized.await() }; refresh(context) } finally { pending.finish() } }
+        app.scope.launch(Dispatchers.IO) { try { withTimeout(8_000) { app.initialized.await() }; WidgetVisibility.transition(context);refresh(context) } finally { pending.finish() } }
     }
     companion object {
         fun refresh(context: Context) {
@@ -30,7 +30,9 @@ class PlannerWidget : AppWidgetProvider() {
             val state = app.model.state.value
             val cache = state.cache
             val unlocked = WidgetVisibility.unlocked(context)
-            manager.updateAppWidget(ids, views(context, cache, unlocked, !state.needsLogin))
+            val view=views(context, cache, unlocked, !state.needsLogin)
+            if(unlocked!=WidgetVisibility.unlocked(context)){WidgetVisibility.transition(context);return}
+            manager.updateAppWidget(ids,view)
         }
         fun views(context: Context, cache: Cache, unlocked: Boolean, authenticated: Boolean = true): RemoteViews {
             val show = widgetMayShowTitles(cache, unlocked, authenticated)

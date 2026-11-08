@@ -301,6 +301,16 @@ node scripts/capture-web.mjs
 node scripts/capture-android.mjs
 ```
 
+Software-only AOSP emulation can hit Android job-stop ANRs during cold UI
+startup. The current dedicated `field-notes-test` run uses
+`ro.hw_timeout_multiplier=10` set before restarting its framework, together with
+a 540×1200 / 210-dpi viewport. The emulator's `-prop` option ignores this
+non-`qemu.*` property; its startup warning must not be treated as success. This
+is disposable AVD setup, never a production-app or physical-phone setting.
+Wait for the framework and user to unlock before running captures. The fixture
+restores the previous viewport, keeps all assertions, and checks actual launcher
+binding, repaint, sleep/unlock and date navigation separately from worker sync.
+
 The capture scripts use synthetic data. Web captures run against a real Rust
 server with the matching APK from a built server bundle; `FIELD_NOTES_DOWNLOADS`
 can select another verified bundle's downloads directory. Android captures use actual Compose/RemoteViews with a test-only
