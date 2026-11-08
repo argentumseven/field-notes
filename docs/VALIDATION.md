@@ -20,8 +20,10 @@ date. All four fresh launcher/day-link captures are published in the walkthrough
 The same-signer **0.11/code 19 → 0.11.1/code 20** update passes both phases,
 preserving actual Keystore-backed keys, CA/PSK/server binding, original privacy
 preferences and an unacknowledged task command. No clear, uninstall or re-pair
-occurs between versions. The final worker rerun and clean-tag/public bundle
-checks are being completed below.
+occurs between versions. The actual WorkManager rerun also passes with widget details hidden and the
+app lock enabled, retaining the incoming appointment in the encrypted vault.
+Clean-tag publication and the ordinary matching server bundle are verified
+separately below.
 The 0.11 planner API/browser/container evidence remains applicable; this patch
 changes Android widget handling and release/version packaging.
 
