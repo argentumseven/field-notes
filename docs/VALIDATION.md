@@ -26,7 +26,29 @@ Its four screenshots are refreshed. The same-signer **0.11.1/code 20 →
 0.11.2/code 21** update passes both seed/verify phases, retaining the actual
 Keystore-backed keys, CA/PSK/server binding, privacy choices and an unacknowledged
 task command without clearing, uninstalling or re-pairing between versions.
-Public APK and matching Linux bundle delivery are being completed separately.
+Delivery verified: [v0.11.2](https://github.com/argentumseven/field-notes/releases/tag/v0.11.2)
+publishes clean tagged source `8a4fc8921ba866c3ccf39b442301eaaeb4928b91`, Android
+code 21 and the unchanged public signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+All four public assets match the locally verified release byte-for-byte; actual
+APK signature/package/ARM64 checks pass and latest-download metadata resolves to
+this release. Public APK SHA-256:
+`0cf594cb46bb4e2ac126c8782650fe69d2d9c8d2449be2e85a09a232ed33eba9`.
+
+The ordinary Linux x86_64 build fetched the same public assets without APK or
+download-directory overrides. All **15** host helpers match source, both pinned
+images exist, archive/image/binary checksums pass, and the outer archive contains
+no private-key entries. Its executable reports 0.11.2. The isolated packaged-server
+check passes capabilities, clock diagnostics, compatible partial recipe editing,
+reminder/location persistence across restart and the exact paired APK offer/chunk.
+Complete local Linux bundle SHA-256:
+`c627cc44b3e8faa3ecc248faa7deeb487a9979188efb0184c5448b2b250a2ee9`.
+
+The GitHub release contains the four Android assets; the Linux bundle is locally
+built and verified. The prior API/browser/container evidence applies to the
+unchanged server/transport behavior. Android checks use the dedicated disposable
+AOSP emulator and synthetic data. Home deployment and physical GrapheneOS
+behavior were not tested in this cloud environment.
 
 ## 0.11.1 widget unlock follow-up — 2026-11-08
 
