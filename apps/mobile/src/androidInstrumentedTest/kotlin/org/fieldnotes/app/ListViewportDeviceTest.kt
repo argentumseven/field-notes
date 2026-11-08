@@ -63,7 +63,7 @@ class ListViewportDeviceTest {
                 compose.onNodeWithText("Pantry item 16").performClick();waitText("Item name")
                 // Opening a modal must retain the underlying list and its state.
                 compose.onNodeWithTag("checklist-items").assertExists()
-                compose.onNodeWithText("Cancel",substring=false).performClick()
+                compose.onNodeWithText("Close",substring=false).performClick()
                 compose.onNodeWithText("Pantry item 16").assertIsDisplayed();shot("121-native-list-return")
                 compose.onNodeWithTag("nav-lists").performClick()
                 compose.onNodeWithTag("collection-library").performScrollToNode(hasText("Reference list 10"))

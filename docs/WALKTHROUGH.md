@@ -17,6 +17,26 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Phone lists: the whole page scrolls — 0.11.2
+
+These fresh native captures use a small **360×640 dp** Android viewport, a
+synthetic 18-item grocery list and 18 reference lists. Headings, notices, search
+and list controls scroll away with the items. Navigation and compact connection
+status remain visible. [List controls and navigation](MOBILE-LISTS.md).
+
+| Android | What it shows |
+| --- | --- |
+| [Dark list](screenshots/android/120-native-list-viewport.png) | Several compact grocery rows visible together, independent check/delete controls and a scrollbar |
+| [Return from an item](screenshots/android/121-native-list-return.png) | Item 16 remains in view after opening and closing its details |
+| [Search keyboard](screenshots/android/122-native-list-keyboard.png) | The actual Android keyboard with the retained search query; dragging the page dismisses it |
+| [Light list](screenshots/android/123-native-list-light.png) | The same compact list after keyboard dismissal in light mode |
+| [Return to the list index](screenshots/android/124-native-library-viewport.png) | Reference list 10 stays visible after opening a list and pressing Back |
+
+The runtime check drags the heading itself, verifies at least three visible item
+rows after scrolling, checks navigation and keyboard behavior, and confirms the
+encrypted cache still contains all 18 items with unchanged identity keys and no
+unintended queued edits. These are emulator checks, not access to a home server.
+
 ## Home-screen calendar continuity — 0.11.1
 
 These are actual Android launcher widgets. The fixture has the app lock enabled

@@ -1,9 +1,10 @@
 // Guarded native live-update and list-removal exercise on the dedicated AVD.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { projectsFixture } from "../tests/projects-fixture.mjs";
 
 const run = promisify(execFile),
@@ -94,11 +95,14 @@ try {
   await call(["shell", "wm", "dismiss-keyguard"]);
   await call(["shell", "cmd", "statusbar", "collapse"]);
   await call(["shell", "cmd", "alarm", "set-timezone", "America/New_York"]);
-  for (const name of [
-    "FieldNotes-debug.apk",
-    "FieldNotes-debug-androidTest.apk",
-  ])
-    await call(["install", "-r", "dist/android-emulator/" + name]);
+  const changedPackages=[];
+  for(const [pkg,name] of [["org.fieldnotes.app","FieldNotes-debug.apk"],["org.fieldnotes.app.test","FieldNotes-debug-androidTest.apk"]]) {
+    const file="dist/android-emulator/"+name;
+    const expected=createHash("sha256").update(await readFile(file)).digest("hex");
+    const installed=(await call(["shell","pm","path",pkg]).catch(()=>"")).trim().split("\n").find(v=>v.startsWith("package:"))?.slice(8);
+    const digest=installed?(await call(["shell","sha256sum",installed]).catch(()=>"")).split(/\s+/)[0]:null;
+    if(digest!==expected){await call(["install","-r",file]);changedPackages.push(pkg)}
+  }
   // Intentional reset only on the named disposable AVD, before seeding.
   await call(["shell", "pm", "clear", "org.fieldnotes.app"]);
   await call([
@@ -122,7 +126,7 @@ try {
     "/data/local/tmp/field-notes-list-experience-fixture.json",
     "files/list-experience-fixture.json",
   ]);
-  for (const pkg of ["org.fieldnotes.app", "org.fieldnotes.app.test"])
+  for (const pkg of changedPackages)
     await call(
       ["shell", "cmd", "package", "compile", "-m", "speed", pkg],
       360000,

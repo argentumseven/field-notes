@@ -1,5 +1,6 @@
 package org.fieldnotes.app
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.ParcelFileDescriptor
 import android.view.WindowManager
@@ -40,12 +41,14 @@ class ListExperienceDeviceTest {
         runBlocking{app.vault.save(cache);model.initialize()};app.model=model
         fun waitText(text:String)=compose.waitUntil(90_000){compose.onAllNodesWithText(text,substring=true).fetchSemanticsNodes().isNotEmpty()}
         fun shot(name:String){compose.waitForIdle();instrumentation.waitForIdleSync();Thread.sleep(1000);val bitmap=instrumentation.uiAutomation.takeScreenshot();val dir=File(app.filesDir,"list-gallery");dir.mkdirs();File(dir,"$name.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}
-        try{ActivityScenario.launch(MainActivity::class.java).use{activity->
+        try{ActivityScenario.launch<MainActivity>(Intent(app,MainActivity::class.java).putExtra("open_page","Tasks").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use{activity->
             activity.onActivity{it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)}
             try{
                 compose.waitUntil(90_000){compose.onAllNodesWithTag("nav-lists").fetchSemanticsNodes().isNotEmpty()}
                 compose.onNodeWithTag("nav-lists").performClick();waitText("Costco Shopping List")
-                compose.onNodeWithText("Costco Shopping List",useUnmergedTree=true).performClick();waitText("Bananas")
+                compose.onNodeWithText("Costco Shopping List",useUnmergedTree=true).performClick()
+                compose.waitUntil(90_000){compose.onAllNodesWithTag("checklist-items").fetchSemanticsNodes().isNotEmpty()}
+                compose.onNodeWithTag("checklist-items").performScrollToNode(hasText("Bananas"));waitText("Bananas")
                 val before=transport.heads
                 transport.publishAmendments()
                 // Do not press refresh: the legacy Auto refresh=false and

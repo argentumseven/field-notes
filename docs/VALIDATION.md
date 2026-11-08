@@ -12,9 +12,14 @@ to its index or parent project. User drags dismiss the search keyboard without
 discarding the query. No protocol/schema or stored-content format is changed.
 
 Current checks: **128 Kotlin host tests**, **133 Python helper tests**, debug
-compilation and Android lint pass. The actual 360×640 viewport/navigation/IME
-check, live shopping/removal regression, in-place upgrade and release delivery
-are being completed. Screenshots and final evidence are recorded after success.
+and ARM64 release compilation, Android lint and packaging checks pass. The native
+**360×640 viewport/navigation/IME check passes**: dragging the page heading moves
+it, at least three item rows remain visible, item/index return preserves position,
+and a user drag dismisses the real keyboard without dropping the search text.
+The actual encrypted cache retains all 18 items, unchanged keys and no unintended
+queued edits. Five fresh captures are linked in [WALKTHROUGH.md](WALKTHROUGH.md).
+The live shopping/removal regression, in-place upgrade and release delivery are
+being completed separately.
 
 ## 0.11.1 widget unlock follow-up — 2026-11-08
 
