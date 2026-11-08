@@ -41,16 +41,19 @@ class CalendarWidgetHostDeviceTest {
             for(window in windows){val r=root(window)?:continue
                 if(r.packageName?.toString()!=targetPackage)continue
                 if(r.packageName?.toString()=="com.android.launcher3"){
-                    if(!description){
-                        val matches=r.findAccessibilityNodeInfosByText(text).filter{it.isVisibleToUser}
-                        if(matches.isNotEmpty())return matches
-                        continue
+                    val matches=r.findAccessibilityNodeInfosByText(text).filter{it.isVisibleToUser&&(!description||it.contentDescription?.contains(text,true)==true)}
+                    if(matches.isNotEmpty())return matches
+                    // The launcher's resources cannot resolve IDs owned by the
+                    // RemoteViews package. Walk its native views, with native
+                    // prefetch; Compose windows keep the no-prefetch path below.
+                    val nativeRoot=if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(AccessibilityNodeInfo.FLAG_PREFETCH_DESCENDANTS_HYBRID)else r
+                    fun visitNative(node:AccessibilityNodeInfo):AccessibilityNodeInfo? {
+                        if(!node.isVisibleToUser)return null
+                        if((if(description)node.contentDescription else node.text)?.contains(text,true)==true)return node
+                        for(i in 0 until node.childCount)node.getChild(i)?.let{visitNative(it)}?.let{return it}
+                        return null
                     }
-                    val ids=listOf("calendar_next","calendar_previous","calendar_today","calendar_refresh","calendar_cell","week_day")+(1..7).map{"calendar_weekday_$it"}
-                    for(id in ids){
-                        val matches=r.findAccessibilityNodeInfosByViewId("org.fieldnotes.app:id/$id").filter{it.isVisibleToUser&&it.contentDescription?.contains(text,true)==true}
-                        if(matches.isNotEmpty())return matches
-                    }
+                    nativeRoot?.let{visitNative(it)}?.let{return listOf(it)}
                     continue
                 }
                 fun visit(node:AccessibilityNodeInfo):AccessibilityNodeInfo?{
