@@ -300,3 +300,14 @@ any of those. Both phone and website offer [encrypted content files](CONTENT-FIL
 with duplicate suppression, retained alternatives, preview fences and transactional
 commits. Export before deliberately clearing retained work. Keep regular encrypted
 server backups as well.
+
+## 0.11 planner extensions
+
+Core sync remains protocol 1 / schema 2. Recipes and locations are additive
+fields; older clients' partial edits preserve them. Explicit day/time reminders
+and notification-volume control use new feature markers. Older schedulers get
+compatible projections rather than misfiring an unfamiliar rule. An old editor
+cannot replace a newer schedule or audio configuration; the server returns an
+explanation and the phone retains the edit for review. Update both phones to
+use and deliver the new controls. Existing reminder times, alert identities,
+phone keys and queued work are not reset.

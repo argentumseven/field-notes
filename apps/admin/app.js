@@ -705,7 +705,7 @@ function renderWorkspace(viewKey) {
     }),
   );
   main.append(top);
-  const clockNotice = el("p", "error", state.clockWarning || "");
+  const clockNotice = el("p", "clock-warning", state.clockWarning || "");
   clockNotice.id = "clock-warning";
   clockNotice.hidden = !state.clockWarning;
   main.append(clockNotice);

@@ -28,7 +28,7 @@ class AlarmPlaybackService:Service() {
         val app=application as FieldNotesApplication
         val manager=getSystemService(NotificationManager::class.java)
         if(manager.getNotificationChannel(CHANNEL)==null)manager.createNotificationChannel(NotificationChannel(CHANNEL,"Alarm playback controls",NotificationManager.IMPORTANCE_LOW).apply {setSound(null,null);lockscreenVisibility=Notification.VISIBILITY_SECRET})
-        startForeground(ID,controls("Field Notes alarm","Preparing local alarm audio…"))
+        startForeground(ID,controls("Field Notes reminder","Preparing local sound…"))
         if(requests>=8){app.deliveryError.value="Too many simultaneous alarms. Reminder cards are retained; review their schedules.";return START_NOT_STICKY}
         requests++
         scope.launch {
@@ -43,7 +43,7 @@ class AlarmPlaybackService:Service() {
                     if(profile.importance=="quiet")return@withLock
                     val notice=if(intent?.action in setOf(TEST,TEST_SOUND))ReminderNotice("Reminder sound test","Selected sound and volume policy; Stop restores any temporary volume.","",null,Clock.System.now().epochSeconds) else reminderNotice(cache,alerts,TimeZone.currentSystemDefault())
                     manager.notify(ID,controls(notice.title,notice.summary))
-                    val started={ manager.notify(ID,controls(notice.title,notice.summary,"Alarm playing")) }
+                    val started={ manager.notify(ID,controls(notice.title,notice.summary,if(profile.alarm)"Alarm playing"else"Notification sound playing")) }
                     if(intent?.action in setOf(TEST,TEST_SOUND))play(profile,if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride,started) else coroutineScope {
                         val playing=launch { play(profile,if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride,started) }
                         val guard=launch {
@@ -70,7 +70,7 @@ class AlarmPlaybackService:Service() {
         val open=PendingIntent.getActivity(this,761,Intent(this,MainActivity::class.java).putExtra("open_page","Settings"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_field_notes).setContentTitle(title).setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body)).setSubText(status).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET).setCategory(NotificationCompat.CATEGORY_ALARM).addAction(0,"Stop alarm",stop).build()
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET).setCategory(NotificationCompat.CATEGORY_ALARM).addAction(0,"Stop sound",stop).build()
     }
     private suspend fun play(profile:AlertProfile,allowVolume:Boolean,onStarted:()->Unit) {
         val audio=getSystemService(AudioManager::class.java)
@@ -82,7 +82,7 @@ class AlarmPlaybackService:Service() {
         val media=MediaPlayer();player=media
         try {
             lease=if(profile.alarm)AlarmAudio.raise(this,profile,allowVolume) else NotificationAudio.raise(this,profile,allowVolume)
-            if(audio.isStreamMute(stream)||audio.getStreamVolume(stream)==0)(application as FieldNotesApplication).deliveryError.value="Alarm volume is muted. Enable temporary alarm-volume control or unmute alarms in Android Settings."
+            if(audio.isStreamMute(stream)||audio.getStreamVolume(stream)==0)(application as FieldNotesApplication).deliveryError.value="Reminder sound is muted. Review the notification or alarm volume controls in Settings."
             wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"fieldnotes:alarm-audio").also {it.setReferenceCounted(false);it.acquire((profile.duration.takeIf {it>0} ?: 20)*1000L+20_000)}
             media.setAudioAttributes(attributes);media.setDataSource(this,ReminderSounds.sound(this,profile))
             media.isLooping=profile.alarm&&profile.duration>0
@@ -113,7 +113,7 @@ class AlarmPlaybackService:Service() {
         fun test(context:Context):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST))
         fun testSound(context:Context,profile:AlertProfile):Boolean {
             val channel=ReminderSounds.channel(context,profile)
-            if(!Alerts.post(context,channel,"sound-test:"+System.nanoTime(),"Reminder sound test","Selected sound, importance and delivery mode.",alarm=profile.alarm||profile.notificationUnmute))return false
+            if(!Alerts.post(context,channel,"sound-test:"+System.nanoTime(),"Reminder sound test","Selected sound, importance and delivery mode.",alarm=profile.alarm,manualSound=profile.alarm||profile.notificationUnmute)){(context.applicationContext as FieldNotesApplication).deliveryError.value="This reminder channel is blocked. Review Android notification settings before testing its sound.";return false}
             return if(profile.alarm||profile.notificationUnmute)startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST_SOUND).putExtra("sound_profile",WireJson.encodeToString(AlertProfile.serializer(),profile))) else true
         }
         private fun startIntent(context:Context,intent:Intent):Boolean=try {

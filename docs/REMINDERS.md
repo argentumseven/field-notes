@@ -54,10 +54,10 @@ relative sound levels. Eight original tones are available: Chime, Bell, Pulse,
 Beacon, Marimba, Orbit, Sunrise and Siren. Preview uses the current volume and
 does not raise it. Regular notifications use the notification stream/channel.
 
-Enable **Play as an alarm** for 5, 10, 15, 30 or 60 seconds of local playback.
+Enable **Alarm** in Delivery mode for 5, 10, 15, 30 or 60 seconds of local playback.
 Enable **Temporarily raise alarm volume** and choose the level. On each phone,
 also enable **Allow temporary alarm-volume control** in Settings, then try
-**Test a loud alarm (10 s)**. This explicitly permits raising a zero/muted alarm
+**Test a loud alarm (5 s)**. This explicitly permits raising a zero/muted alarm
 stream; the notification stream and DND policy are unchanged. A visible Stop
 action ends playback. The previous alarm volume/mute state is restored afterward,
 unless you changed it manually. The recovery record is encrypted and survives

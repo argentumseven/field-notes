@@ -270,7 +270,7 @@ import org.fieldnotes.domain.*
             }
             else {
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page in setOf("Notes","Later & reminders","Recipes"))"Search notes" else "Search tasks") }, singleLine = true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
+                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page=="Recipes")"Search recipes" else if(page in setOf("Notes","Later & reminders"))"Search notes" else "Search tasks") }, singleLine = true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
                     if(page !in setOf("Notes","Later & reminders","Recipes")) Box { OutlinedIconButton(shape=ControlShape,onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
                         DropdownMenuItem(text = { Text("All tasks") }, onClick = { project = null; projectsMenu = false })
                         projects.forEach { p -> DropdownMenuItem(text = { Text(p.record.data.text("title")) }, onClick = { project = p.record.id; projectsMenu = false }) }

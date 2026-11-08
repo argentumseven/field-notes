@@ -96,7 +96,7 @@ class AlarmExperienceDeviceTest {
             assertTrue(audio.getStreamVolume(AudioManager.STREAM_ALARM)>0)
             val playing=manager.activeNotifications.single {it.id==93}.notification
             assertEquals("Alarm playing",playing.extras.getString("android.subText"))
-            assertTrue(playing.actions.any{it.title.toString()=="Stop alarm"})
+            assertTrue(playing.actions.any{it.title.toString()=="Stop sound"})
             AlarmPlaybackService.stop(app)
             val stopUntil=System.currentTimeMillis()+10_000
             while(System.currentTimeMillis()<stopUntil&&(audio.getStreamVolume(AudioManager.STREAM_ALARM)!=before||audio.isStreamMute(AudioManager.STREAM_ALARM)!=beforeMuted))delay(100)

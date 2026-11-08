@@ -14,7 +14,7 @@ internal fun widgetProblem(context:Context):Boolean {
     val recoveryCache=(context.applicationContext as FieldNotesApplication).model.state.value.cache
     if(recoveryCache.recoveryPending!=null||recoveryCache.recoveryNotice.isNotBlank())return true
     val app=context.applicationContext as FieldNotesApplication
-    return app.model.state.value.problem!=null || app.deliveryError.value!=null || app.deliveryPersistenceError.value!=null || app.updates.state.value.problem
+    return app.model.state.value.clockWarning!=null || app.model.state.value.problem!=null || app.deliveryError.value!=null || app.deliveryPersistenceError.value!=null || app.updates.state.value.problem
 }
 internal fun widgetHiddenLabel(cache:Cache,unlocked:Boolean,authenticated:Boolean)=when {
     !authenticated||cache.token==null||cache.snapshot==null->"Open Field Notes to sign in"

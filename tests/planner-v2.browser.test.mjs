@@ -97,6 +97,8 @@ test("calendar uses the highlighted day, local ten AM, optional ends and per-rem
       .getByLabel("Reminder 2 delivery mode", { exact: true })
       .selectOption("alarm");
     await page
+      .locator(".reminder-row")
+      .nth(1)
       .getByLabel("Temporarily raise alarm volume", { exact: true })
       .check();
     await page

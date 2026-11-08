@@ -1,6 +1,6 @@
 # Planner editor layout
 
-The event title stays visible above **Schedule**, **Reminders** and **Details**.
+The event title sits above **Schedule**, **Reminders** and **Details**.
 Schedule holds dates, clocks, optional end time and recurrence. Reminders holds
 recipients, relative or explicit day/time rules and the sound controls. Details
 holds location, Copy location, notes and classification. Switching sections

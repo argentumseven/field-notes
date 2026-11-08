@@ -403,3 +403,118 @@ test("offline holiday calendar covers observed dates and clock comparison accoun
     /differ/,
   );
 });
+
+test("whole-content rollback and roll forward retain new recipe, location and reminder fields", async () => {
+  const s = await scene();
+  try {
+    const note = randomUUID(),
+      event = randomUUID(),
+      a = alert();
+    const n = await s.send("note.create", note, {
+      title: "Soup",
+      note_type: "recipe",
+      ingredients: "Lentils",
+      instructions: "Simmer gently",
+    });
+    assert.equal(n.status, 200);
+    const e = await s.send("event.create", event, {
+      title: "Appointment",
+      all_day: false,
+      starts_at: 1920272400,
+      location: "Original location",
+      reminders: rules([a]),
+    });
+    assert.equal(e.status, 200);
+    await s.f.request("/api/reauth", {
+      token: s.token,
+      body: { password: "household-test-password-only" },
+    });
+    const recover = async (action, data = {}) => {
+      const b = await s.snapshot();
+      return s.f.request("/api/recovery", {
+        token: s.token,
+        body: { action, epoch: b.epoch, generation: b.generation, ...data },
+      });
+    };
+    const status = (await recover("status")).data,
+      checkpoint = await recover("checkpoint.create", {
+        name: "Before planner edits",
+        operation_id: randomUUID(),
+        history_revision: status.history_revision,
+      });
+    assert.equal(checkpoint.status, 200, JSON.stringify(checkpoint.data));
+    assert.equal(
+      (
+        await s.send(
+          "note.update",
+          note,
+          { ingredients: "Chickpeas", instructions: "Bake slowly" },
+          n.data.record.revision,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await s.send(
+          "event.update",
+          event,
+          {
+            location: "New location",
+            reminders: rules([
+              {
+                ...a,
+                day_time: { ...a.day_time, days_before: 7, time: "10:30" },
+              },
+            ]),
+          },
+          e.data.record.revision,
+        )
+      ).status,
+      200,
+    );
+    async function apply(source) {
+      const p = await recover("preview", { source });
+      assert.equal(p.status, 200, JSON.stringify(p.data));
+      const out = await recover("apply", {
+        preview_id: p.data.preview_id,
+        operation_id: randomUUID(),
+        confirmation: "RESTORE CONTENT",
+      });
+      assert.equal(out.status, 200, JSON.stringify(out.data));
+      return out.data;
+    }
+    const back = await apply(checkpoint.data.checkpoint_id);
+    let records = (await s.snapshot()).records;
+    assert.equal(
+      records.find((r) => r.id === note).data.instructions,
+      "Simmer gently",
+    );
+    assert.equal(
+      records.find((r) => r.id === event).data.location,
+      "Original location",
+    );
+    assert.equal(
+      records.find((r) => r.id === event).data.reminder_schedule_rules.alerts[0]
+        .day_time.days_before,
+      0,
+    );
+    await apply(back.before_checkpoint);
+    records = (await s.snapshot()).records;
+    assert.equal(
+      records.find((r) => r.id === note).data.instructions,
+      "Bake slowly",
+    );
+    assert.equal(
+      records.find((r) => r.id === event).data.location,
+      "New location",
+    );
+    assert.equal(
+      records.find((r) => r.id === event).data.reminder_schedule_rules.alerts[0]
+        .day_time.days_before,
+      7,
+    );
+  } finally {
+    await s.f.close();
+  }
+});

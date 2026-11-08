@@ -61,6 +61,10 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
       "5",
     );
     await shot(page, "110-all-day-reminder");
+    await page
+      .getByLabel("Reminder 1 alarm duration", { exact: true })
+      .scrollIntoViewIfNeeded();
+    await shot(page, "116-alarm-volume-controls");
     await page.getByRole("tab", { name: "Details", exact: true }).click();
     await page
       .getByLabel("Location · optional", { exact: true })
@@ -107,6 +111,16 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
       ].duration_seconds,
       5,
     );
+    if(process.env.FIELD_NOTES_CAPTURE_PLANNER==="synthetic-only"){
+      await page.evaluate(async()=>{
+        const start=FieldPlanning.scheduledInstant(state.day,"10:00");
+        await mutate("event.create",uuid(),{title:"Household check-in",all_day:false,starts_at:start,ends_at:start+3600,location:"Kitchen table"},null);
+        await mutate("event.create",uuid(),{title:"Pickup",all_day:false,starts_at:start+5*3600,ends_at:null,location:"Library entrance",category:"errands"},null);
+        await mutate("task.create",uuid(),{title:"Plan weekend meals",planned_for:state.day,category:"food",priority:3},null);
+        await refresh();render();
+      });
+      await shot(page,"119-calendar-at-glance");
+    }
     await page.getByRole("button", { name: "Month", exact: true }).click();
     await page.locator(".calendar-options>summary").click();
     await page.getByText("Show US federal holidays", { exact: true }).check();
@@ -117,6 +131,11 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
     assert.equal(dates[0], "1");
     assert(dates.every((n) => Number(n) >= 1 && Number(n) <= 31));
     await shot(page, "112-calendar-holidays");
+    await page.evaluate(
+      () => (document.documentElement.dataset.theme = "light"),
+    );
+    await page.waitForTimeout(200); // Let the real theme color transition finish before the gallery capture.
+    await shot(page, "117-calendar-light");
     assert.deepEqual(s.errors, []);
   } finally {
     await s.browser.close();

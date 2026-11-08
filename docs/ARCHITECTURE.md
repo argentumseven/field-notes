@@ -288,3 +288,23 @@ random stream identifier, total length and frame index in each frame's AAD.
 SQLite snapshots and encrypted downloads use private temporary files, not a full
 in-memory database serialization. Old single-record archives remain readable.
 The server's schema/protocol versions are independent of this file format.
+
+## Additive planner controls (0.11)
+
+Day/time reminder rules carry timing version 2. The server stores the complete
+canonical rule and emits `reminder_schedule_rules` for new schedulers, a timing-v1
+projection for 0.10, and the original legacy projection for earlier clients.
+Legacy edits are fenced against replacing unfamiliar rules. Audio extensions
+carry `playback_version: 2`; unchanged legacy echoes preserve the complete
+configuration, while destructive replacements fail atomically. Offline edits
+remove obsolete derived projections before display and export.
+
+Recipes remain notes with `note_type`, `ingredients` and `instructions`. Event
+`location` is optional. Partial updates, history, checkpoints and transfer retain
+these fields. Default-only additions do not change portable content identity.
+
+Clock diagnostics are additive authenticated head metadata. A constrained host
+helper reads the existing clock service after peer acknowledgement. The app
+container only reads its bounded report; it gains no egress or host commands.
+Freshness checks compare boot/uptime and wall time, then clients compare the
+authenticated server time against their request interval.

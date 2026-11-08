@@ -36,6 +36,14 @@ class NativePlannerPolishDeviceTest {
             compatibility=ServerCompatibility.read(seed.getValue("head").jsonObject,Clock.System.now().epochSeconds))
         val model=Workspace(transport,app.vault,{UUID.randomUUID().toString()},scope)
         runBlocking{app.vault.save(cache);model.initialize()};app.model=model
+        fun flushQueued(){
+            runBlocking{model.resumeConnection()};model.requestSync()
+            // sync() deliberately returns when another sync owns the mutex.
+            // Wait for the UI's queued sync before intentionally pausing again.
+            compose.waitUntil(90_000){model.state.value.cache.outbox.isEmpty()&&!model.state.value.syncing}
+            check(model.state.value.cache.conflicts.isEmpty()){model.state.value.cache.conflicts.joinToString{it.reason}}
+            runBlocking{model.pauseConnection()}
+        }
         fun waitText(text:String)=compose.waitUntil(90_000){compose.onAllNodesWithText(text,substring=true).fetchSemanticsNodes().isNotEmpty()}
         fun shot(name:String){compose.waitForIdle();instrumentation.waitForIdleSync();Thread.sleep(1000);val bitmap=instrumentation.uiAutomation.takeScreenshot();val dir=File(app.filesDir,"context-gallery");dir.mkdirs();File(dir,"$name.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()}
         try{ActivityScenario.launch<MainActivity>(Intent(app,MainActivity::class.java).putExtra("open_record",seed.text("planner_event")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use{activity->
@@ -59,7 +67,7 @@ class NativePlannerPolishDeviceTest {
                 compose.waitUntil(90_000){model.state.value.cache.outbox.any{it.command.action=="event.update"}}
                 val queued=projectRecords(model.state.value.cache).first{it.record.id==seed.text("planner_event")}.record
                 assertEquals(7,reminderSet(queued)!!.alerts.single().day_time!!.days_before)
-                runBlocking{model.resumeConnection();model.sync();model.pauseConnection()}
+                flushQueued()
                 assertEquals(7,reminderSet(runBlocking{app.vault.load()}.snapshot!!.records.first{it.id==seed.text("planner_event")})!!.alerts.single().day_time!!.days_before)
                 compose.onNodeWithContentDescription("Browse workspace").performClick()
                 compose.onNodeWithText("Recipes",useUnmergedTree=true).performClick()
@@ -67,16 +75,17 @@ class NativePlannerPolishDeviceTest {
                 waitText("Recipe name")
                 compose.onNodeWithText("Recipe name").performTextInput("Lentil soup")
                 compose.onNodeWithText("Ingredients").performScrollTo().performTextInput("Lentils, carrots, cumin")
-                compose.onNodeWithText("Cooking instructions").performScrollTo().performTextInput("Simmer gently for 25 minutes.")
+                compose.onNodeWithText("Cooking instructions").performScrollTo().performClick().performTextInput("Simmer gently for 25 minutes.")
+                compose.waitUntil(60_000){compose.onAllNodesWithText("Done typing",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}
                 shot("113-native-recipe-keyboard")
                 compose.onNodeWithText("Done typing",useUnmergedTree=true).performClick()
                 compose.waitUntil(30_000){compose.onAllNodesWithText("Done typing",useUnmergedTree=true).fetchSemanticsNodes().isEmpty()}
                 shot("115-native-recipe-editor")
                 compose.onNodeWithText("Create recipe").performClick()
                 compose.waitUntil(90_000){model.state.value.cache.outbox.any{it.command.action=="note.create"}}
-                assertEquals("Simmer gently for 25 minutes.",projectRecords(model.state.value.cache).first{it.record.isRecipe()}.record.data.text("instructions"))
-                runBlocking{model.resumeConnection();model.sync();model.pauseConnection()}
-                val saved=runBlocking{app.vault.load()};assertEquals("Lentil soup",saved.snapshot!!.records.first{it.isRecipe()}.data.text("title"))
+                assertEquals("Simmer gently for 25 minutes.",checkNotNull(projectRecords(model.state.value.cache).firstOrNull{it.record.isRecipe()}){"Recipe missing from queued projection"}.record.data.text("instructions"))
+                flushQueued()
+                val saved=runBlocking{app.vault.load()};assertEquals("Lentil soup",checkNotNull(saved.snapshot!!.records.firstOrNull{it.isRecipe()}){"Recipe missing after acknowledged sync"}.data.text("title"))
                 assertEquals(cache.keys,saved.keys);assertEquals(cache.config,saved.config)
             }catch(failure:Throwable){runCatching{shot("failure")};throw failure}
         }}finally{app.model=original;scope.cancel()}

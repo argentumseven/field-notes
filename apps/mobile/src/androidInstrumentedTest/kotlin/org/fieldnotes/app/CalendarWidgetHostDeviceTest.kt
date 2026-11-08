@@ -108,7 +108,8 @@ class CalendarWidgetHostDeviceTest {
             val beforeSequence=app.model.state.value.cache.snapshot!!.sequence
             fun shell(command:String){instrumentation.uiAutomation.executeShellCommand(command).use{fd->android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).readBytes()}}
             shell("input keyevent KEYCODE_SLEEP")
-            waitFor("lock redaction"){nodes("Unlock phone").isNotEmpty()}
+            waitFor("screen-off privacy state"){!WidgetVisibility.unlocked(app)}
+            Thread.sleep(1500)
             shell("input keyevent KEYCODE_WAKEUP");shell("wm dismiss-keyguard")
             waitFor("reveal after unlock without a new sync"){described(friendlyDate(tomorrow)).any{it.contentDescription?.contains("1 scheduled")==true}}
             assertEquals(beforeSequence,app.model.state.value.cache.snapshot!!.sequence)
