@@ -18,8 +18,15 @@ it, at least three item rows remain visible, item/index return preserves positio
 and a user drag dismisses the real keyboard without dropping the search text.
 The actual encrypted cache retains all 18 items, unchanged keys and no unintended
 queued edits. Five fresh captures are linked in [WALKTHROUGH.md](WALKTHROUGH.md).
-The live shopping/removal regression, in-place upgrade and release delivery are
-being completed separately.
+The native live shopping/removal regression also passes: Sophia's incoming Bread
+and amended Bananas arrive without pressing refresh despite legacy auto-refresh
+being off; an individual offline deletion remains queued and is acknowledged on
+reconnection; store-scoped checked cleanup retains the other store's checked item.
+Its four screenshots are refreshed. The same-signer **0.11.1/code 20 →
+0.11.2/code 21** update passes both seed/verify phases, retaining the actual
+Keystore-backed keys, CA/PSK/server binding, privacy choices and an unacknowledged
+task command without clearing, uninstalling or re-pairing between versions.
+Public APK and matching Linux bundle delivery are being completed separately.
 
 ## 0.11.1 widget unlock follow-up — 2026-11-08
 

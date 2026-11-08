@@ -110,6 +110,9 @@ these images.
 
 ## Live shopping and deletion — 0.9.1
 
+The four Android captures below were refreshed and their full live/offline
+regression rerun on **0.11.2**, including the new scrolling list controls.
+
 [Live updates](LIVE-UPDATES.md) explains the three-second visible-app checks,
 connection status and reconnection behavior. [List workflow review](LIST-UX-REVIEW.md)
 records the remaining improvements separately from delivered controls.
