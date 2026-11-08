@@ -193,10 +193,14 @@ open class CalendarWidget : AppWidgetProvider() {
         fun pin(context:Context):Boolean {
             val manager=context.getSystemService(AppWidgetManager::class.java)
             val component=ComponentName(context,CalendarWidget::class.java)
-            if(Build.VERSION.SDK_INT>=35)runCatching {
-                // Generated previews show the actual month, never household data.
-                val state=(context.applicationContext as FieldNotesApplication).model.state.value
-                manager.setWidgetPreview(component,AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN,views(context,state.cache,false,interactive=false))
+            if(Build.VERSION.SDK_INT>=35) {
+                val app=context.applicationContext as FieldNotesApplication
+                // Rendering and publishing the generated preview can involve many
+                // Binder calls. Keep the pin button and activity input responsive.
+                app.scope.launch(Dispatchers.IO) { runCatching {
+                    // Generated previews never contain household details.
+                    manager.setWidgetPreview(component,AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN,views(app,app.model.state.value.cache,false,interactive=false))
+                } }
             }
             return manager.isRequestPinAppWidgetSupported&&manager.requestPinAppWidget(component,null,null)
         }

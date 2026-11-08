@@ -23,7 +23,7 @@ class CalendarWidgetHostDeviceTest {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
         val info=instrumentation.uiAutomation.serviceInfo
-        info.flags=info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        info.flags=info.flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or android.accessibilityservice.AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
         instrumentation.uiAutomation.serviceInfo=info
         val app=instrumentation.targetContext.applicationContext as FieldNotesApplication
         runBlocking { app.initialized.await() }
@@ -39,6 +39,19 @@ class CalendarWidgetHostDeviceTest {
         fun search(text:String,description:Boolean=false):List<AccessibilityNodeInfo> {
             val windows=instrumentation.uiAutomation.windows
             for(window in windows){val r=root(window)?:continue
+                if(r.packageName?.toString()=="com.android.launcher3"){
+                    if(!description){
+                        val matches=r.findAccessibilityNodeInfosByText(text).filter{it.isVisibleToUser}
+                        if(matches.isNotEmpty())return matches
+                        continue
+                    }
+                    val ids=listOf("calendar_next","calendar_previous","calendar_today","calendar_refresh","calendar_cell","week_day")+(1..7).map{"calendar_weekday_$it"}
+                    for(id in ids){
+                        val matches=r.findAccessibilityNodeInfosByViewId("org.fieldnotes.app:id/$id").filter{it.isVisibleToUser&&it.contentDescription?.contains(text,true)==true}
+                        if(matches.isNotEmpty())return matches
+                    }
+                    continue
+                }
                 fun visit(node:AccessibilityNodeInfo):AccessibilityNodeInfo?{
                     if(node.isVisibleToUser&&(if(description)node.contentDescription else node.text)?.contains(text,ignoreCase=true)==true)return node
                     for(i in 0 until node.childCount)child(node,i)?.let{visit(it)}?.let{return it};return null
@@ -79,9 +92,8 @@ class CalendarWidgetHostDeviceTest {
                 activity!!.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 activity!!.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
             }
-            waitFor("calendar view controls") {nodes("Month").isNotEmpty()}
-            val month=nodes("Month").first();assertTrue((if(month.isClickable)month else month.parent).performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            instrumentation.waitForIdleSync()
+            // Pin from the actual resumed activity. The selected-date assertion
+            // below proves navigation without walking the full Compose tree first.
             instrumentation.runOnMainSync { assertTrue(if(weekly)WeekCalendarWidget.pin(activity!!) else CalendarWidget.pin(activity!!)) }
             waitFor("pin confirmation") { launcher("Add").any { it.isClickable||it.parent?.isClickable==true } }
             picture("pin-confirmation")

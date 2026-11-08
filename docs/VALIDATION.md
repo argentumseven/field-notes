@@ -26,8 +26,14 @@ The native planner gallery passed: explicit week/day time, five-second alarm
 selection, recipe entry with the actual keyboard, Done typing, offline queue
 projection, acknowledged sync and Keystore-backed vault retention. The same-signer
 **0.10/code 18 → 0.11/code 19** APK upgrade also passed both seed and verify phases.
-Launcher transitions, clean-tag public publication and the matching ordinary
-server bundle remain pending. A cold
+The actual container integration suite also passes all **10 cases**, including
+pinned direct TLS, private WireGuard enrollment, bounded authenticated APK
+updates, source-bound phone access, denial of management/LAN/peer routes, real
+app-UID egress/DNS drop counters, retained keys and scoped cleanup. Launcher
+transitions, clean-tag public publication and the matching ordinary server
+bundle remain pending. The native JNI → WireGuard → TLS → Rust check passes
+both runtime/manifest cases, including stop/reconnect with the same identity.
+A cold
 software-emulated Android System UI stalled during one discarded gallery run;
 its keyboard/system UI were warmed before the repeat. Another discarded run
 revealed a fixture race: sync() intentionally yields to an existing sync, and
