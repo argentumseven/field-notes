@@ -1,19 +1,41 @@
 # Implementation and validation record
 
-## Pending 0.11: widget and queue continuity
+## 0.11 preparation — 2026-11-08
 
-Widget visibility no longer redirects an authenticated Refresh action to privacy
-settings. Screen-on/unlock/resume reconcile OS lock state through background
-probes; app credential locking does not gate synchronization. Manual widget
-refresh replaces its own retry and reports bounded storage/network failures.
-Editor dialogs use their own focus/keyboard controller for Done typing.
+Implemented explicit day/time reminders, week/day presets, optional federal
+holidays, recipes and appointment locations, focused event sections, separate
+notification/alarm volume consent, five-second new alarms, host clock diagnostics
+and widget/unlock continuity. Existing reminders and keys are retained.
+
+Current automated evidence: **128 Kotlin host tests**, **133 Python helper tests**,
+**17 Rust tests** and warning-free Clippy. The API suite passes **109 cases** plus
+a new whole-content rollback/roll-forward regression (**110 total**). Browser
+coverage passes **37 cases across the full run and focused corrections**: the
+full run passed 35; the two failing scroll/sound cases and five related list
+cases passed after correction. The two new editor/recipe cases also pass with
+the refreshed dark/light gallery. Both ARM64 release and x86_64 test APKs build;
+release/debug lint and packaging checks pass.
+
+Android runtime checks already passed: **one real WorkManager widget-sync case**
+with schedule details hidden and app locking enabled; **four audio cases** for
+volume restoration/refusal, later manual changes, replacement leases, separate
+notification control and service Stop. These use the named disposable AVD and
+actual Keystore-backed storage, not a household server or physical phone.
+
+Final native galleries, launcher transitions, in-place upgrade, clean-tag public
+publication and the matching ordinary server bundle remain pending. A cold
+software-emulated Android System UI stalled during one discarded gallery run;
+its keyboard/system UI were warmed before the repeat. Another discarded run
+revealed a fixture race: sync() intentionally yields to an existing sync, and
+the test paused before it finished. The recipe remained queued; the corrected
+fixture waits for acknowledgement before pausing. No failed gallery is published.
 
 The local queue persists and publishes a write as one cancellation-safe unit.
 A pending reminder replacement removes obsolete server projections immediately;
-unrelated edits preserve them. Both regressions failed on the prior code and
-pass with the fix. The complete Kotlin host suite passes **118 tests** and the
-x86_64 app/instrumentation APKs compile and verify. Launcher/keyboard runtime
-checks and final signed release delivery remain pending.
+unrelated edits preserve them. Both regressions failed before the foundation
+fix and pass afterward. New-format validation and older-client edit fences,
+restart persistence, duplicate-safe transfer and checkpoint rollback/forward
+are covered against the actual Rust server.
 
 ## 0.10.0 contextual categories and reminder time units — 2026-11-07
 

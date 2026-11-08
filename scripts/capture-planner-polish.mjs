@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {createHash} from "node:crypto";
+import { createHash } from "node:crypto";
 import { projectsFixture } from "../tests/projects-fixture.mjs";
 
 const run = promisify(execFile),
@@ -121,12 +121,29 @@ try {
   ]);
   await call(["shell", "cmd", "statusbar", "collapse"]);
   await call(["shell", "cmd", "alarm", "set-timezone", "America/New_York"]);
-  const changedPackages=[];
-  for(const [pkg,name] of [["org.fieldnotes.app","FieldNotes-debug.apk"],["org.fieldnotes.app.test","FieldNotes-debug-androidTest.apk"]]){
-    const file="dist/android-emulator/"+name,expected=createHash("sha256").update(await readFile(file)).digest("hex");
-    const installed=(await call(["shell","pm","path",pkg]).catch(()=>"")).trim().split("\n").find(v=>v.startsWith("package:"))?.slice(8);
-    const digest=installed?(await call(["shell","sha256sum",installed]).catch(()=>"")).split(/\s+/)[0]:null;
-    if(digest!==expected){await call(["install","-r",file]);changedPackages.push(pkg);}
+  const changedPackages = [];
+  for (const [pkg, name] of [
+    ["org.fieldnotes.app", "FieldNotes-debug.apk"],
+    ["org.fieldnotes.app.test", "FieldNotes-debug-androidTest.apk"],
+  ]) {
+    const file = "dist/android-emulator/" + name,
+      expected = createHash("sha256")
+        .update(await readFile(file))
+        .digest("hex");
+    const installed = (await call(["shell", "pm", "path", pkg]).catch(() => ""))
+      .trim()
+      .split("\n")
+      .find((v) => v.startsWith("package:"))
+      ?.slice(8);
+    const digest = installed
+      ? (await call(["shell", "sha256sum", installed]).catch(() => "")).split(
+          /\s+/,
+        )[0]
+      : null;
+    if (digest !== expected) {
+      await call(["install", "-r", file]);
+      changedPackages.push(pkg);
+    }
   }
   // Intentional reset only on the named disposable AVD, before seeding.
   await call(["shell", "pm", "clear", "org.fieldnotes.app"]);
