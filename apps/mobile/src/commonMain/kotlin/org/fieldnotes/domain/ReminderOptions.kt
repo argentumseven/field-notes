@@ -14,6 +14,23 @@ import kotlinx.serialization.json.*
 @Serializable data class ReminderOptions(val audience:ReminderAudience=ReminderAudience(),val playback:Map<String,ReminderPlayback> = emptyMap(),@EncodeDefault(EncodeDefault.Mode.NEVER) val playback_version:Int?=null)
 fun Cache.supportsReminderAudio()=compatibility?.features?.contains("reminder-audio-v2")==true
 val reminderTones=linkedMapOf("chime" to "Chime","bell" to "Bell","pulse" to "Pulse","beacon" to "Beacon","marimba" to "Marimba","orbit" to "Orbit","sunrise" to "Sunrise","siren" to "Siren")
+val notificationTones=reminderTones.filterKeys { it in setOf("chime","bell","pulse","marimba") }
+val alarmTones=reminderTones.filterKeys { it in setOf("beacon","orbit","sunrise","siren") }
+fun AlertProfile.withDeliveryMode(alarm:Boolean):AlertProfile {
+    if(this.alarm==alarm)return this
+    val sounds=if(alarm)alarmTones else notificationTones
+    return copy(alarm=alarm,sound=sound.takeIf{it in sounds} ?: if(alarm)"beacon"else"chime",
+        duration=if(alarm)5 else 0,unmute=unmute&&alarm,notificationUnmute=notificationUnmute&&!alarm)
+}
+const val ALARM_VOLUME_DISABLED="This alarm requested temporary alarm-volume control, but it is off on this phone. Enable it in Sound settings or turn off this reminder's volume override."
+const val NOTIFICATION_VOLUME_DISABLED="This notification requested temporary notification-volume control, but it is off on this phone. Enable it in Sound settings or turn off this reminder's volume override."
+fun resolvedVolumeWarning(message:String?,preferences:Preferences):Boolean=when(message) {
+    ALARM_VOLUME_DISABLED->preferences.allowAlarmVolumeOverride
+    NOTIFICATION_VOLUME_DISABLED->preferences.allowNotificationVolumeOverride
+    // Earlier APKs saved an ambiguous warning. A fresh failure now identifies its stream.
+    "This reminder requested temporary volume control, but it is off on this phone. Review Sound settings."->preferences.allowAlarmVolumeOverride||preferences.allowNotificationVolumeOverride
+    else->false
+}
 private val ReminderJson=Json { ignoreUnknownKeys=true;encodeDefaults=true }
 fun reminderOptions(record:Record):ReminderOptions? = record.data["reminder_options"]?.let { runCatching { ReminderJson.decodeFromJsonElement<ReminderOptions>(it) }.getOrNull() }
 fun reminderOptionsData(value:ReminderOptions)=ReminderJson.encodeToJsonElement(value).jsonObject

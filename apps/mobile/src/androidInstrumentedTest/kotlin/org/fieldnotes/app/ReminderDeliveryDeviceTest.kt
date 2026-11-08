@@ -21,7 +21,7 @@ class ReminderDeliveryDeviceTest {
         val now=Clock.System.now();val zone=TimeZone.currentSystemDefault();val day=now.toLocalDateTime(zone).date
         val rules=ReminderSet(listOf(ReminderAlert("bell",0,importance="urgent",sound="bell",volume=100),ReminderAlert("quiet",1,importance="quiet")),
             ReminderWindow("window",weekdays=(1..7).toList(),starts_on=day.toString(),from="00:00",until="00:00",every_minutes=1,zone=zone.id))
-        val event=Record("reminder-fixture","event",1,obj("title" to "Home maintenance check-in".j(),"starts_at" to (now.epochSeconds-2).j(),"notes" to "Bring the filter measurements and the maintenance checklist. Meet in the kitchen.".j(),"created_by" to "owner".j(),"created_by_name" to "Morgan".j(),"updated_by_name" to "Sam".j(),"created_at" to (now.epochSeconds-3600).j(),"updated_at" to (now.epochSeconds-60).j(),"reminders" to reminderData(rules),"reminder_options" to reminderOptionsData(ReminderOptions(ReminderAudience("people",listOf("owner"))))))
+        val event=Record("reminder-fixture","event",1,obj("title" to "Home maintenance check-in".j(),"location" to "Kitchen workbench".j(),"starts_at" to (now.epochSeconds-2).j(),"notes" to "Bring the filter measurements and the maintenance checklist. Meet in the kitchen.".j(),"created_by" to "owner".j(),"created_by_name" to "Morgan".j(),"updated_by_name" to "Sam".j(),"created_at" to (now.epochSeconds-3600).j(),"updated_at" to (now.epochSeconds-60).j(),"reminders" to reminderData(rules),"reminder_options" to reminderOptionsData(ReminderOptions(ReminderAudience("people",listOf("owner"))))))
         val seed=app.model.state.value.cache.copy(config=obj("server_key" to "synthetic-reminders".j()),token="synthetic-token",outbox=emptyList(),drafts=emptyMap(),conflicts=emptyList(),
             snapshot=Snapshot(1,"reminder-fixture",1,1,listOf(event),Actor("owner","Morgan","owner","session")),
             preferences=Preferences(connectionPaused=true,backgroundSync=false,liveUpdates=false,reminders=true))
@@ -40,6 +40,9 @@ class ReminderDeliveryDeviceTest {
         assertTrue(posted.all { it.notification.extras.getString("android.bigText")!!.contains("start only") })
         assertTrue(posted.all { it.notification.extras.getString("android.bigText")!!.contains("For Morgan") })
         assertTrue(posted.all { it.notification.publicVersion.extras.getString("android.title")=="Field Notes alert" })
+        assertTrue(posted.all { it.notification.extras.getString("android.text")!!.contains("Kitchen workbench") })
+        assertTrue(posted.all { it.notification.extras.getString("android.text")!!.contains("Bring the filter measurements") })
+        assertTrue(posted.all { it.notification.actions.any { action->action.title.toString()=="Open item" } })
         val urgent=manager.getNotificationChannel("fn-reminder-v1-urgent-bell-100-true")
         assertEquals(NotificationManager.IMPORTANCE_HIGH,urgent.importance)
         assertTrue(urgent.sound.toString().endsWith("/raw/reminder_bell_100"))

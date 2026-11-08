@@ -50,13 +50,18 @@ fun reminderNotice(cache:Cache,alerts:List<LocalAlert>,zone:TimeZone,now:Instant
     val title=if(targets.size==1&&row!=null)row.data.text("title").ifBlank { "Field Notes reminder" } else if(alerts.all { it.kind=="overdue" })"Overdue tasks" else "${targets.size.coerceAtLeast(1)} reminders"
     val shown=if(targets.isEmpty())records.values.filter { it.kind=="task"&&it.data.text("status")!="done"&&reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty())&&allowsItemReminders(cache,it)&&it.data.text("due").isNotBlank()&&it.data.text("due")<Clock.System.now().toLocalDateTime(zone).date.toString() }.take(8) else occurrences.take(8)
     val details=shown.joinToString("\n\n") { r -> buildString {
-        append(r.data.text("title"));append('\n');append(schedule(r));append("\nFor ");append(people(r))
+        append(r.data.text("title"));append('\n');append(when(r.kind){"event"->"Calendar event · ";"task"->"Task · ";else->"Reminder note · "});append(schedule(r));append("\nFor ");append(people(r))
         r.data.text("project_id").takeIf { it.isNotBlank() }?.let { id->records[id]?.data?.text("title")?.let { append("\nList / project: ");append(it) } }
         r.data.text("location").trim().takeIf{it.isNotBlank()}?.let {append("\nLocation: ");append(it.take(2048))}
         r.data.text("notes").ifBlank {r.data.text("body")}.trim().takeIf { it.isNotBlank() }?.let { append("\n\n");append(it.take(1800)) }
         append("\n\n");append(recordHistory(cache,r,zone))
     } }.take(7000)
-    val summary=if(row!=null)"For ${people(row)} · ${compact(row)}" else shown.joinToString(" · "){it.data.text("title")}.take(240)
+    val summary=if(row!=null)buildString {
+        append("For ${people(row)} · ${compact(row)}")
+        if(row.kind=="event")append(" · Calendar event") else if(row.kind=="task")append(" · Task") else append(" · Reminder note")
+        row.data.text("location").trim().takeIf{it.isNotBlank()}?.let{append(" · ");append(it.lineSequence().first().take(100))}
+        row.data.text("notes").ifBlank{row.data.text("body")}.trim().takeIf{it.isNotBlank()}?.let{append(" · ");append(it.lineSequence().first().take(180))}
+    } else shown.joinToString(" · "){it.data.text("title")}.take(240)
     return ReminderNotice(title.take(240),summary.take(400),details,targets.singleOrNull(),alerts.minOfOrNull { it.at } ?: 0)
 }
 

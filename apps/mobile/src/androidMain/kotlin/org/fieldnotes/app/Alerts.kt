@@ -75,7 +75,14 @@ object Alerts {
             .setPublicVersion(publicNotice.build())
             .setCategory(if(alarm)NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER).setVisibility(if(prefs.notificationOnLockScreen)NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true).setOnlyAlertOnce(true)
-        if(manualSound)builder.setSilent(true).addAction(0,if(alarm)"Stop alarm"else"Stop sound",AlarmPlaybackService.stopIntent(context))
+        if(target!=null)builder.addAction(0,"Open item",open)
+        if(alarm||channel==REMINDERS||channel.startsWith("fn-reminder-"))builder.setSubText(if(alarm)"Alarm"else"Reminder")
+        if(manualSound)builder.setSilent(true).setDeleteIntent(AlarmPlaybackService.stopIntent(context)).addAction(0,if(alarm)"Stop alarm"else"Stop sound",AlarmPlaybackService.stopIntent(context))
+        if(channel==ISSUES&&key=="delivery-health") {
+            val dismiss=PendingIntent.getBroadcast(context,0,Intent(context,DeliveryIssueReceiver::class.java)
+                .setData(Uri.parse("fieldnotes://dismiss-issue/"+digest(text))).putExtra("issue_digest",digest(text)),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.setDeleteIntent(dismiss).addAction(0,"Dismiss",dismiss)
+        }
         val notification=builder.build()
         return try {
             // A unique tag per occurrence lets later reminders sound; retrying
@@ -84,7 +91,7 @@ object Alerts {
             true
         } catch (_: SecurityException) { false }
     }
-    fun test(context: Context) = post(context, REMINDERS, "test:" + System.nanoTime(), "Field Notes sound test", "This is the reminder channel. Android and profile settings control its sound.")
+    fun test(context: Context) = post(context, ReminderSounds.channel(context,AlertProfile()), "test:" + System.nanoTime(), "Field Notes notification test", "One short notification sound. Uses notification volume and respects Silent, Vibrate and Do Not Disturb.")
     internal fun profileTestIntent(context:Context,nonce:String="")=PendingIntent.getBroadcast(context,99,
         Intent(context,AlertReceiver::class.java).setAction("org.fieldnotes.PROFILE_TEST").setData(Uri.parse("fieldnotes://profile-test")).putExtra("nonce",nonce),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

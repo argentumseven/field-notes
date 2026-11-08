@@ -12,6 +12,7 @@ data class DeviceActions(
     val androidDelivery: Boolean = false,
     val status: String = "",
     val warning:String="",
+    val dismissDeliveryIssue:(()->Unit)?=null,
     val use24Hour: Boolean = false,
     val addCalendarWidget: () -> Unit = {},
     val addUpcomingWidget: () -> Unit = {},

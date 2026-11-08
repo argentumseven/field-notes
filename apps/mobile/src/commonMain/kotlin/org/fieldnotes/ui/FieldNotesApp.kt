@@ -262,6 +262,7 @@ import org.fieldnotes.domain.*
                 Text(if(issue!=null)"Needs attention" else "Version compatibility",style=MaterialTheme.typography.titleSmall)
                 Text(issue ?: compat!!.message,style=MaterialTheme.typography.bodySmall)
                 SecondaryButton(onClick={settings=true}){Text("Review settings and updates")}
+                if(issue==device.warning)device.dismissDeliveryIssue?.let{dismiss->SecondaryButton(onClick=dismiss){Text("Dismiss alert")}}
             }}
             if (state.cache.conflicts.isNotEmpty()) SecondaryButton(onClick = { changes = true }) { Text("${state.cache.conflicts.size} changes need review") }
             if(state.cache.recoveryPending!=null)SecondaryButton(onClick={settings=true}){Text("Recovery result needs review")}
@@ -347,18 +348,19 @@ import org.fieldnotes.domain.*
             if(device.androidDelivery){
                 Text("Alerts and home screen",style=MaterialTheme.typography.titleMedium)
                 Text(device.status,style=MaterialTheme.typography.bodySmall)
+                device.dismissDeliveryIssue?.let{dismiss->SecondaryButton(onClick=dismiss){Text("Dismiss delivery alert")}}
                 state.error?.let { ErrorText(it) }
                 ViewChoice("Background updates",backgroundUpdateMode(state.cache.preferences),listOf("live" to "Live · fast updates","periodic" to "Periodic · save battery","manual" to "Manual")){mode->val p=state.cache.preferences.withBackgroundUpdateMode(mode);model.launch { model.preferences(p);background(p) }}
                 Text(when(backgroundUpdateMode(state.cache.preferences)){"live"->"Notes, reminders and widgets update through the private background connection. Android shows an ongoing notification; allow notifications to start it.";"periodic"->"Notes and widgets catch up automatically. Android schedules checks at 15-minute minimum intervals and may delay them to save battery.";else->"Widgets show saved data. Open Field Notes or tap the widget's update status to sync."},style=MaterialTheme.typography.bodySmall)
-                SecondaryButton(onClick=device.testAlert,modifier=Modifier.fillMaxWidth()){Text("Play a sound test now")}
+                SecondaryButton(onClick=device.testAlert,modifier=Modifier.fillMaxWidth()){Text("Test notification sound")}
                 SecondaryButton(onClick=device.profileTest,modifier=Modifier.fillMaxWidth()){Text("Test in another profile (30 s)")}
                 SecondaryButton(onClick=device.notificationSettings,modifier=Modifier.fillMaxWidth()){Text("Notification sound settings")}
                 SecondaryButton(onClick=device.recheckDelivery,modifier=Modifier.fillMaxWidth()){Text("Check reminder delivery again")}
                 Text("Loud alarm reminders",style=MaterialTheme.typography.titleMedium)
-                SettingSwitch("Allow temporary alarm-volume control","For alarm reminders, raise and restore this phone's alarm volume. Manual changes take priority. Stop the alarm before force-stop or direct uninstall; Android cannot run restoration afterward.",state.cache.preferences.allowAlarmVolumeOverride){val p=state.cache.preferences.copy(allowAlarmVolumeOverride=it);model.launch{model.preferences(p)}}
-                SettingSwitch("Allow temporary notification-volume control","Only for a reminder that requests it. Restores the previous level and respects Silent, Vibrate and DND.",state.cache.preferences.allowNotificationVolumeOverride){val p=state.cache.preferences.copy(allowNotificationVolumeOverride=it);model.launch{model.preferences(p)}}
+                SettingSwitch("Allow temporary alarm-volume control","For alarm reminders, raise and restore this phone's alarm volume. Manual changes take priority. Stop the alarm before force-stop or direct uninstall; Android cannot run restoration afterward.",state.cache.preferences.allowAlarmVolumeOverride){val enabled=it;model.launch{model.preferences{it.copy(allowAlarmVolumeOverride=enabled)}}}
+                SettingSwitch("Allow temporary notification-volume control","Only for a reminder that requests it. Restores the previous level and respects Silent, Vibrate and DND.",state.cache.preferences.allowNotificationVolumeOverride){val enabled=it;model.launch{model.preferences{it.copy(allowNotificationVolumeOverride=enabled)}}}
                 SecondaryButton(onClick=device.testLoudAlarm,modifier=Modifier.fillMaxWidth(),enabled=state.cache.preferences.allowAlarmVolumeOverride){Text("Test a loud alarm (5 s)")}
-                SecondaryButton(onClick=device.stopAlarm,modifier=Modifier.fillMaxWidth()){Text("Stop alarm and restore volume")}
+                SecondaryButton(onClick=device.stopAlarm,modifier=Modifier.fillMaxWidth()){Text("Stop reminder sound and restore volume")}
                 SecondaryButton(onClick=device.soundSettings,modifier=Modifier.fillMaxWidth()){Text("Android alarm volume")}
                 SecondaryButton(onClick=device.dndSettings,modifier=Modifier.fillMaxWidth()){Text("Do Not Disturb exceptions")}
                 SecondaryButton(onClick=device.alarmSettings,modifier=Modifier.fillMaxWidth()){Text("Allow precise reminders")}

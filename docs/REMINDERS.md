@@ -1,5 +1,32 @@
 # Reminders and sound
 
+## Notification or alarm
+
+**Notification** plays one short cue (under a second) at notification volume.
+Choose Chime, Bell, Pulse or Marimba. It respects Silent, Vibrate and DND and
+does not repeat or take over the alarm stream. A requested temporary notification
+volume change needs its own phone permission and restores after that one sound.
+
+**Alarm** uses a separate set of sustained phrases: Beacon, Orbit, Sunrise or
+Siren. It uses Android's alarm stream, rings for the selected duration (five
+seconds by default), and offers **Stop alarm**. Stopping or reaching the time
+limit restores any app-owned temporary volume change. Later manual volume choices
+take priority. DND remains controlled by Android. Saved older sound choices and
+durations remain supported; a mode change chooses an appropriate sound for the
+new mode rather than carrying alarm audio into a notification.
+
+The title identifies the actual item. The collapsed summary includes its person,
+schedule, type, location and a short notes preview; expand for full details and
+activity. **Open item** goes to that item. Alarm playback controls show the same
+item details. Notification and lock-screen detail preferences remain independent.
+
+Turning on the appropriate phone volume permission clears its old disabled-volume
+warning, including warnings retained by earlier APKs. **Dismiss alert** in the
+app, **Dismiss** on the issue notification, or swiping that issue away clears the
+current saved warning. It does not disable reminders, hide a newer failure or
+suppress future warnings. A restoration failure is never automatically cleared
+merely because volume control is enabled.
+
 Open an event, task or a non-grocery list item and expand **Reminders**. Add up to eight alerts
 relative to its start. A task date uses 9 AM locally; an event uses its chosen
 start. A repeat window works independently of a deadline, including undated

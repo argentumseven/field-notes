@@ -2,6 +2,25 @@ package org.fieldnotes.domain
 import kotlin.test.*
 import kotlinx.serialization.json.*
 class PlannerSoundClockTest {
+ @Test fun deliveryModesOfferDistinctSoundsAndNeverCarryTheOtherOverride(){
+  assertTrue(notificationTones.keys.intersect(alarmTones.keys).isEmpty())
+  val notification=AlertProfile(notificationUnmute=true,notificationVolume=50)
+  val alarm=notification.withDeliveryMode(true)
+  assertEquals("beacon",alarm.sound);assertEquals(5,alarm.duration);assertTrue(alarm.alarm);assertFalse(alarm.notificationUnmute)
+  val saved=alarm.copy(duration=30,unmute=true)
+  assertEquals(saved,saved.withDeliveryMode(true))
+  val back=saved.withDeliveryMode(false)
+  assertEquals("chime",back.sound);assertEquals(0,back.duration);assertFalse(back.unmute)
+ }
+ @Test fun resolvedVolumeWarningsUseTheCorrectPermissionAndNeverHideOtherFailures(){
+  val alarm=Preferences(allowAlarmVolumeOverride=true)
+  assertTrue(resolvedVolumeWarning(ALARM_VOLUME_DISABLED,alarm))
+  assertFalse(resolvedVolumeWarning(NOTIFICATION_VOLUME_DISABLED,alarm))
+  assertFalse(resolvedVolumeWarning(ALARM_VOLUME_DISABLED,Preferences()))
+  assertTrue(resolvedVolumeWarning(NOTIFICATION_VOLUME_DISABLED,alarm.copy(allowNotificationVolumeOverride=true)))
+  assertTrue(resolvedVolumeWarning("This reminder requested temporary volume control, but it is off on this phone. Review Sound settings.",alarm))
+  assertFalse(resolvedVolumeWarning("Previous alarm volume could not be restored. Open Android sound settings.",alarm))
+ }
  @Test fun oldOptionsDoNotEmitNewDefaultsAndSavedDurationsRemainIntact(){
   val options=ReminderOptions(playback=mapOf("r" to ReminderPlayback(duration_seconds=30,alarm=true)))
   assertFalse(reminderOptionsData(options).containsKey("playback_version"))

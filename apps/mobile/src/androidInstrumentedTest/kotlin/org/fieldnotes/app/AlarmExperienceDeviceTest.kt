@@ -83,7 +83,7 @@ class AlarmExperienceDeviceTest {
         assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
         val instrumentation=InstrumentationRegistry.getInstrumentation();val app=instrumentation.targetContext.applicationContext as FieldNotesApplication;app.initialized.await()
         val old=app.vault.load();val audio=app.getSystemService(AudioManager::class.java);val initial=audio.getStreamVolume(AudioManager.STREAM_ALARM);val initialMuted=audio.isStreamMute(AudioManager.STREAM_ALARM)
-        val activity=instrumentation.startActivitySync(Intent(app,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
+        val activity=instrumentation.startActivitySync(Intent(app,MainActivity::class.java).putExtra("open_page","Tasks").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
         try {
             app.model.preferences(old.preferences.copy(allowAlarmVolumeOverride=true))
             audio.setStreamVolume(AudioManager.STREAM_ALARM,0,0)
@@ -96,7 +96,7 @@ class AlarmExperienceDeviceTest {
             assertTrue(audio.getStreamVolume(AudioManager.STREAM_ALARM)>0)
             val playing=manager.activeNotifications.single {it.id==93}.notification
             assertEquals("Alarm playing",playing.extras.getString("android.subText"))
-            assertTrue(playing.actions.any{it.title.toString()=="Stop sound"})
+            assertTrue(playing.actions.any{it.title.toString()=="Stop alarm"})
             AlarmPlaybackService.stop(app)
             val stopUntil=System.currentTimeMillis()+10_000
             while(System.currentTimeMillis()<stopUntil&&(audio.getStreamVolume(AudioManager.STREAM_ALARM)!=before||audio.isStreamMute(AudioManager.STREAM_ALARM)!=beforeMuted))delay(100)

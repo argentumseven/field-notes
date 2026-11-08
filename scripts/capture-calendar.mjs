@@ -126,6 +126,7 @@ try {
       360000,
     );
   const cases = [
+    ["ReminderSoundPolicyDeviceTest",2,["-e","fieldNotesCalendarGallery","synthetic-only"]],
     ["ListViewportDeviceTest",1,["-e","fieldNotesListViewport","synthetic-only"]],
     [
       "WidgetSyncDeviceTest",

@@ -18,6 +18,8 @@
     sunrise: "Sunrise",
     siren: "Siren",
   };
+  const notificationTones = ["chime", "bell", "pulse", "marimba"];
+  const alarmTones = ["beacon", "orbit", "sunrise", "siren"];
   let activePreview = null;
   const rulesFor = (record) =>
     record?.data?.reminder_schedule_rules ??
@@ -215,6 +217,25 @@
           String(r.volume),
         ),
       );
+      function refreshSoundChoices(changedMode = false) {
+        const keys = extension ? (extra.alarm ? alarmTones : notificationTones) : ["chime", "bell", "pulse"];
+        const saved = extra.tone || r.sound;
+        const chosen = changedMode && !keys.includes(saved) ? keys[0] : saved;
+        sound.replaceChildren(...[...keys, ...(!keys.includes(chosen) ? [chosen] : [])].map(key => {
+          const option = document.createElement("option");
+          option.value = key;
+          option.textContent = tones[key] + (!keys.includes(key) ? " (saved sound)" : "");
+          return option;
+        }));
+        sound.value = chosen;
+        if(changedMode) {
+          extra.tone = chosen;
+          r.sound = ["chime", "bell", "pulse"].includes(chosen) ? chosen : "chime";
+        }
+        sound.title = extra.alarm ? "Alarm sound · repeating phrase" : "Notification sound · one short cue";
+        for(const option of volume.options)option.textContent=option.value+"% of phone "+(extra.alarm?"alarm":"notification")+" volume";
+      }
+      refreshSoundChoices();
       const vibLabel = el("label", "dialog-choice"),
         vib = el("input");
       vib.type = "checkbox";
@@ -257,7 +278,7 @@
           if (r.importance === "quiet") return;
           activePreview?.pause();
           const audio = (activePreview = new Audio(
-            `/sounds/v1/reminder_${extra.tone || r.sound}_${r.volume}.wav`,
+            `/sounds/v1/${extra.alarm ? "alarm" : "reminder"}_${extra.tone || r.sound}_${r.volume}.wav`,
           ));
           audio
             .play()
@@ -338,7 +359,9 @@
             : notificationRaise.checked);
         }
         function updateMode() {
+          const changedMode = extra.alarm !== (mode.value === "alarm");
           extra.alarm = mode.value === "alarm";
+          refreshSoundChoices(changedMode);
           extra.unmute = extra.alarm && alarmRaise.checked;
           extra.notification_unmute = !extra.alarm && notificationRaise.checked;
           extra.alarm_volume = extra.alarm

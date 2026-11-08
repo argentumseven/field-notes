@@ -591,6 +591,7 @@ class Workspace(
         }
     }
     suspend fun preferences(preferences: Preferences) { update { it.copy(preferences = preferences.copy(connectionPaused=it.preferences.connectionPaused)) } }
+    suspend fun preferences(change:(Preferences)->Preferences) { update { it.copy(preferences=change(it.preferences).copy(connectionPaused=it.preferences.connectionPaused)) } }
     suspend fun markReminded(ids: Set<String>) { update { it.copy(reminded = it.reminded + ids) } }
     fun newId() = idFactory.invoke()
 }

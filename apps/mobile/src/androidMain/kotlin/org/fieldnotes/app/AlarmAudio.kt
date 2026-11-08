@@ -56,7 +56,7 @@ internal class VolumeLeaseControl(private val stream:Int,private val name:String
         if(if(stream==AudioManager.STREAM_ALARM) !profile.alarm||!profile.unmute else profile.alarm||!profile.notificationUnmute)return@withLock null
         val app=context.applicationContext as FieldNotesApplication
         if(!(allow ?: if(stream==AudioManager.STREAM_ALARM) app.model.state.value.cache.preferences.allowAlarmVolumeOverride else app.model.state.value.cache.preferences.allowNotificationVolumeOverride)) {
-            app.deliveryError.value="This reminder requested temporary volume control, but it is off on this phone. Review Sound settings."
+            app.deliveryError.value=if(stream==AudioManager.STREAM_ALARM)ALARM_VOLUME_DISABLED else NOTIFICATION_VOLUME_DISABLED
             return@withLock null
         }
         read(app)?.let { restoreLocked(context,it) } // A replacement owns a new lease; never inherit an elevated baseline.

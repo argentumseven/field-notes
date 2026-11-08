@@ -27,8 +27,8 @@ class AlarmPlaybackService:Service() {
         if(intent?.action==STOP){scope.coroutineContext.cancelChildren();stopSelf();return START_NOT_STICKY}
         val app=application as FieldNotesApplication
         val manager=getSystemService(NotificationManager::class.java)
-        if(manager.getNotificationChannel(CHANNEL)==null)manager.createNotificationChannel(NotificationChannel(CHANNEL,"Alarm playback controls",NotificationManager.IMPORTANCE_LOW).apply {setSound(null,null);lockscreenVisibility=Notification.VISIBILITY_SECRET})
-        startForeground(ID,controls("Field Notes reminder","Preparing local sound…"))
+        if(manager.getNotificationChannel(CHANNEL)==null)manager.createNotificationChannel(NotificationChannel(CHANNEL,"Alarm playback controls",NotificationManager.IMPORTANCE_LOW).apply {setSound(null,null);lockscreenVisibility=Notification.VISIBILITY_PRIVATE})
+        startForeground(ID,controls(ReminderNotice("Field Notes reminder","Preparing local sound…","",null,0),app.model.state.value.cache.preferences,AlertProfile(alarm=true)))
         if(requests>=8){app.deliveryError.value="Too many simultaneous alarms. Reminder cards are retained; review their schedules.";return START_NOT_STICKY}
         requests++
         scope.launch {
@@ -42,8 +42,8 @@ class AlarmPlaybackService:Service() {
                     val profile=if(intent?.action in setOf(TEST,TEST_SOUND))if(intent?.action==TEST_SOUND)SyncJson.decodeFromString<AlertProfile>(intent.getStringExtra("sound_profile") ?: error("Missing sound profile")) else AlertProfile("urgent","beacon",100,true,5,true,true,100) else alerts.firstOrNull()?.profile ?: return@withLock
                     if(profile.importance=="quiet")return@withLock
                     val notice=if(intent?.action in setOf(TEST,TEST_SOUND))ReminderNotice("Reminder sound test","Selected sound and volume policy; Stop restores any temporary volume.","",null,Clock.System.now().epochSeconds) else reminderNotice(cache,alerts,TimeZone.currentSystemDefault())
-                    manager.notify(ID,controls(notice.title,notice.summary))
-                    val started={ manager.notify(ID,controls(notice.title,notice.summary,if(profile.alarm)"Alarm playing"else"Notification sound playing")) }
+                    manager.notify(ID,controls(notice,cache.preferences,profile))
+                    val started={ manager.notify(ID,controls(notice,cache.preferences,profile,if(profile.alarm)"Alarm playing"else"Notification sound playing")) }
                     if(intent?.action in setOf(TEST,TEST_SOUND))play(profile,if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride,started) else coroutineScope {
                         val playing=launch { play(profile,if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride,started) }
                         val guard=launch {
@@ -65,19 +65,35 @@ class AlarmPlaybackService:Service() {
         }
         return START_NOT_STICKY
     }
-    private fun controls(title:String,body:String,status:String="Preparing audio"):Notification {
-        val stop=stopIntent(this)
-        val open=PendingIntent.getActivity(this,761,Intent(this,MainActivity::class.java).putExtra("open_page","Settings"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_field_notes).setContentTitle(title).setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body)).setSubText(status).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET).setCategory(NotificationCompat.CATEGORY_ALARM).addAction(0,"Stop sound",stop).build()
+    private fun controls(notice:ReminderNotice,prefs:Preferences,profile:AlertProfile,status:String="Preparing audio"):Notification {
+        val openIntent=Intent(this,MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .setData(android.net.Uri.parse("fieldnotes://playing/"+Alerts.digest(notice.target.orEmpty())))
+            .putExtra("open_record",notice.target)
+        if(notice.target==null)openIntent.putExtra("open_page","Settings")
+        val open=PendingIntent.getActivity(this,761,openIntent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val details=notice.details.ifBlank{notice.summary}
+        val publicNotice=NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_field_notes)
+            .setContentTitle(if(prefs.notificationOnLockScreen)notice.title else "Field Notes alert")
+            .setContentText(if(prefs.notificationOnLockScreen)notice.summary else "Reminder details are hidden on the lock screen.")
+        if(prefs.notificationOnLockScreen)publicNotice.setStyle(NotificationCompat.BigTextStyle().bigText(details))
+        return NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_field_notes).setContentTitle(notice.title).setContentText(notice.summary)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(details)).setSubText(status).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
+            .setWhen(if(notice.whenAt>0)notice.whenAt*1000 else System.currentTimeMillis()).setShowWhen(true)
+            .setPublicVersion(publicNotice.build()).setVisibility(if(prefs.notificationOnLockScreen)NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
+            .setCategory(if(profile.alarm)NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
+            .addAction(0,if(profile.alarm)"Stop alarm"else"Stop sound",stopIntent(this)).build()
     }
     private suspend fun play(profile:AlertProfile,allowVolume:Boolean,onStarted:()->Unit) {
         val audio=getSystemService(AudioManager::class.java)
         val stream=if(profile.alarm)AudioManager.STREAM_ALARM else AudioManager.STREAM_NOTIFICATION
+        if(!profile.alarm&&audio.ringerMode!=AudioManager.RINGER_MODE_NORMAL) {
+            if(profile.vibrate&&audio.ringerMode==AudioManager.RINGER_MODE_VIBRATE)getSystemService(Vibrator::class.java).vibrate(VibrationEffect.createOneShot(250,VibrationEffect.DEFAULT_AMPLITUDE))
+            return // Notification audio never overrides Silent or Vibrate.
+        }
         val attributes=AudioAttributes.Builder().setUsage(if(profile.alarm)AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         val focus=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attributes).setOnAudioFocusChangeListener { change->runCatching {when(change){AudioManager.AUDIOFOCUS_GAIN->player?.start();AudioManager.AUDIOFOCUS_LOSS,AudioManager.AUDIOFOCUS_LOSS_TRANSIENT->player?.pause()}} }.build()
-        check(audio.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Android denied alarm audio focus. Check Do Not Disturb and sound settings."}
+        check(audio.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Android denied reminder audio focus. Check Do Not Disturb and sound settings."}
         var lease:String?=null
         val media=MediaPlayer();player=media
         try {
@@ -88,7 +104,7 @@ class AlarmPlaybackService:Service() {
             media.isLooping=profile.alarm&&profile.duration>0
             val completed=CompletableDeferred<Unit>()
             media.setOnCompletionListener {completed.complete(Unit)}
-            media.setOnErrorListener {_,_,_->completed.completeExceptionally(IllegalStateException("Android could not decode this alarm sound. Choose another sound."));true}
+            media.setOnErrorListener {_,_,_->completed.completeExceptionally(IllegalStateException("Android could not decode this reminder sound. Choose another sound."));true}
             val ready=CompletableDeferred<Unit>();media.setOnPreparedListener {ready.complete(Unit)}
             media.prepareAsync()
             withTimeout(15_000){ready.await()}

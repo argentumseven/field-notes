@@ -1,5 +1,21 @@
 # Implementation and validation record
 
+## 0.11.3 reminder audio and issue handling — 2026-11-08
+
+Notification cues and sustained alarm phrases use distinct bundled audio and
+separate mode-specific choices on phone and web. Existing tone identifiers and
+durations remain readable. Notifications play once on their normal stream;
+alarms retain a bounded duration, visible Stop and durable volume restoration.
+Collapsed notices add item type, location and notes; playback controls carry the
+actual item title/details, matching privacy policy and an item deep link.
+Resolved volume-permission warnings clear automatically; issue dismissal is
+persisted and matched to its displayed warning so it cannot hide a newer failure.
+Volume preference changes use an atomic update of the current saved preferences.
+No protocol/schema/content format or pairing change is introduced.
+
+Focused sound resource, mode/policy, actual Android playback/notification and web
+picker checks are being completed; release delivery is recorded after success.
+
 ## 0.11.2 phone list viewport — 2026-11-08
 
 List indexes, opened lists, task views and project headers now share their page's

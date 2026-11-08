@@ -29,9 +29,10 @@ object ReminderSounds {
         return id
     }
     internal fun sound(context:Context,p:AlertProfile):Uri {
-        val id=context.resources.getIdentifier("reminder_${p.sound}_${p.volume}","raw",context.packageName)
+        val prefix=if(p.alarm)"alarm"else"reminder"
+        val id=context.resources.getIdentifier("${prefix}_${p.sound}_${p.volume}","raw",context.packageName)
         check(id!=0) { "Reminder sound is unavailable" }
-        return Uri.parse("android.resource://${context.packageName}/raw/reminder_${p.sound}_${p.volume}")
+        return Uri.parse("android.resource://${context.packageName}/raw/${prefix}_${p.sound}_${p.volume}")
     }
     @Synchronized fun preview(context:Context,p:AlertProfile) {
         preview?.release();preview=null

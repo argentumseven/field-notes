@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import org.fieldnotes.domain.*
 
 internal data class ReminderEditorSettings(val options:ReminderOptions=ReminderOptions(),val people:List<HouseholdPerson> = emptyList(),val user:String="",val advanced:Boolean=false,val assigned:Boolean=false,val allowLoud:Boolean=false,val enableLoud:()->Unit={},val changed:(ReminderOptions)->Unit={},val calendarTiming:Boolean=false,val dayTiming:Boolean=false,val flat:Boolean=false,val audioV2:Boolean=false,val allowNotification:Boolean=false,val enableNotification:()->Unit={},val testSound:(AlertProfile)->Unit={},val stopSound:()->Unit={})
-internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options:ReminderOptions,assigned:Boolean=false,device:DeviceActions=DeviceActions(),changed:(ReminderOptions)->Unit)=ReminderEditorSettings(options,state.cache.people,state.cache.snapshot!!.actor.user_id,state.cache.supportsRemindersV2(),assigned,state.cache.preferences.allowAlarmVolumeOverride,{model.launch { model.preferences(state.cache.preferences.copy(allowAlarmVolumeOverride=true)) }},changed,calendarTiming=state.cache.supportsReminderTiming(),dayTiming=state.cache.supportsReminderSchedule(),audioV2=state.cache.supportsReminderAudio(),allowNotification=state.cache.preferences.allowNotificationVolumeOverride,enableNotification={model.launch{model.preferences(state.cache.preferences.copy(allowNotificationVolumeOverride=true))}},testSound=device.testReminderSound,stopSound=device.stopAlarm)
+internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options:ReminderOptions,assigned:Boolean=false,device:DeviceActions=DeviceActions(),changed:(ReminderOptions)->Unit)=ReminderEditorSettings(options,state.cache.people,state.cache.snapshot!!.actor.user_id,state.cache.supportsRemindersV2(),assigned,state.cache.preferences.allowAlarmVolumeOverride,{model.launch { model.preferences{it.copy(allowAlarmVolumeOverride=true)} }},changed,calendarTiming=state.cache.supportsReminderTiming(),dayTiming=state.cache.supportsReminderSchedule(),audioV2=state.cache.supportsReminderAudio(),allowNotification=state.cache.preferences.allowNotificationVolumeOverride,enableNotification={model.launch{model.preferences{it.copy(allowNotificationVolumeOverride=true)}}},testSound=device.testReminderSound,stopSound=device.stopAlarm)
 @Composable internal fun ReminderEditor(value:ReminderSet,day:LocalDate,newId:()->String,use24Hour:Boolean=false,preview:(AlertProfile)->Unit={},settings:ReminderEditorSettings=ReminderEditorSettings(),changed:(ReminderSet)->Unit) {
     val emit:(ReminderSet)->Unit={changed(if(settings.dayTiming)it.copy(timing_version=2)else if(settings.calendarTiming)it.copy(timing_version=1)else it)}
     var editingTime by remember {mutableStateOf<ReminderAlert?>(null)}
@@ -35,7 +35,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             Text("Choose a notification or a longer alarm for each reminder.",style=MaterialTheme.typography.bodySmall)
             value.alerts.forEach { rule -> Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                 val p=settings.options.playback[rule.id]?.applyTo(rule.profile) ?: rule.profile
-                Column { Text(reminderTimeLabel(rule,use24Hour));Text("${if(p.alarm)"Alarm" else p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
+                Column { Text(reminderTimeLabel(rule,use24Hour));Text("${if(p.alarm)"Alarm" else "Notification · "+p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 SecondaryButton(onClick={editingTime=rule;newTime=false}){Text("Time")}
                 SecondaryButton(onClick={soundFor=rule.id}){Text("Sound")}
@@ -109,14 +109,18 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
         Text("Importance")
         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf("quiet","normal","urgent"))FilterChip(p.importance==level,{p=p.copy(importance=level,alarm=if(level=="quiet")false else p.alarm,unmute=if(level=="quiet")false else p.unmute,notificationUnmute=if(level=="quiet")false else p.notificationUnmute)},{Text(level.replaceFirstChar { it.uppercase() })})}
         if(p.importance!="quiet") {
-            Text("Sound")
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((tone,name) in reminderTones.filterKeys { settings.advanced||it in setOf("chime","bell","pulse") })FilterChip(p.sound==tone,{p=p.copy(sound=tone)},{Text(name)})}
             if(settings.advanced) {
                 Text("Delivery mode",style=MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    FilterChip(!p.alarm,{p=p.copy(alarm=false,unmute=false)},{Text("Notification")})
-                    FilterChip(p.alarm,{p=p.copy(alarm=true,notificationUnmute=false,duration=if(!p.alarm&&p.duration==0)5 else p.duration)},{Text("Alarm")})
+                    FilterChip(!p.alarm,{p=p.withDeliveryMode(false)},{Text("Notification")})
+                    FilterChip(p.alarm,{p=p.withDeliveryMode(true)},{Text("Alarm")})
                 }
+            }
+            Text(if(p.alarm)"Alarm sound · rings until stopped or time runs out" else "Notification sound · one short sound")
+            val choices=if(p.alarm)alarmTones else notificationTones.filterKeys{settings.advanced||it in setOf("chime","bell","pulse")}
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((tone,name) in choices)FilterChip(p.sound==tone,{p=p.copy(sound=tone)},{Text(name)})}
+            if(p.sound !in choices)Text("Saved sound: ${reminderTones[p.sound] ?: p.sound}. Kept until you choose a replacement.",style=MaterialTheme.typography.bodySmall)
+            if(settings.advanced) {
                 if(p.alarm) {
                     Text("Ring for")
                     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(seconds in listOf(0,5,10,15,30,60))FilterChip(p.duration==seconds,{p=p.copy(duration=seconds)},{Text(if(seconds==0)"Play once" else "$seconds s")})}
@@ -124,7 +128,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                     if(p.unmute) {
                         Text("Alarm volume · ${p.alarmVolume}%")
                         Slider(p.alarmVolume.toFloat(),{p=p.copy(alarmVolume=it.toInt())},valueRange=25f..100f,steps=2)
-                        if(!settings.allowLoud)SecondaryButton(onClick=settings.enableLoud){Text("Enable loud alarms on this phone")}
+                        if(!settings.allowLoud)SecondaryButton(onClick=settings.enableLoud){Text("Enable loud alarms on this phone")} else Text("Temporary alarm-volume control is enabled on this phone.",style=MaterialTheme.typography.bodySmall)
                     }
                 } else if(settings.audioV2) {
                     Row(verticalAlignment=Alignment.CenterVertically){Switch(p.notificationUnmute,{p=p.copy(notificationUnmute=it)},modifier=Modifier.semantics {contentDescription="Temporarily raise notification volume"});Text("Temporarily raise notification volume",Modifier.padding(start=8.dp))}
@@ -136,7 +140,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                 }
                 Text("Restores the previous volume afterward. Later manual changes take priority. Silent, Vibrate and DND remain under Android control.",style=MaterialTheme.typography.bodySmall)
             }
-            Text("Sound level · relative to phone volume")
+            Text(if(p.alarm)"Sound level · relative to alarm volume" else "Sound level · relative to notification volume")
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf(25,50,75,100))FilterChip(p.volume==level,{p=p.copy(volume=level)},{Text("$level%")})}
             Row(verticalAlignment=Alignment.CenterVertically){Switch(p.vibrate,{p=p.copy(vibrate=it)},modifier=Modifier.semantics {contentDescription="Vibration"});Text("Vibration",Modifier.padding(start=8.dp))}
             SecondaryButton(onClick={preview(p)}){Text("Preview sound")}

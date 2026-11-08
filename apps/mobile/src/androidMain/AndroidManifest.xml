@@ -46,6 +46,7 @@
   </receiver>
   <receiver android:name=".WidgetRefreshReceiver" android:exported="false"/>
   <receiver android:name=".AlarmVolumeRecoveryReceiver" android:exported="false"/>
+  <receiver android:name=".DeliveryIssueReceiver" android:exported="false"/>
   <receiver android:name=".AlertReceiver" android:exported="false">
    <intent-filter><action android:name="android.intent.action.TIME_SET"/><action android:name="android.intent.action.TIMEZONE_CHANGED"/><action android:name="android.intent.action.DATE_CHANGED"/><action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"/></intent-filter>
   </receiver>
