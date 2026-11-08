@@ -9,11 +9,11 @@ import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import org.fieldnotes.domain.*
 
-@Composable internal fun SyncStatusLine(state:WorkspaceState) {
+@Composable internal fun SyncStatusLine(state:WorkspaceState,compact:Boolean=false) {
     var now by remember {mutableStateOf(Clock.System.now().epochSeconds)}
     LaunchedEffect(Unit){while(true){delay(1_000);now=Clock.System.now().epochSeconds}}
     val delayed=state.online&&!state.syncing&&(state.contactAt==0L||now-state.contactAt>FOREGROUND_STALE_SECONDS)
-    state.clockWarning?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.labelSmall) }
-    Text(syncStatus(state,now),modifier=Modifier.testTag("sync-status"),style=MaterialTheme.typography.labelSmall,
+    if(!compact)state.clockWarning?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.labelSmall) }
+    Text((if(compact&&state.clockWarning!=null)"Time warning · " else "")+syncStatus(state,now),maxLines=if(compact)1 else Int.MAX_VALUE,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,modifier=Modifier.testTag("sync-status"),style=MaterialTheme.typography.labelSmall,
         color=if((!state.online||delayed||state.refreshPending)&&!state.connectionPaused)MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
 }

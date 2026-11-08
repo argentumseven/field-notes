@@ -65,11 +65,11 @@ class ListExperienceDeviceTest {
                 transport.offline=false
                 compose.waitUntil(90_000){model.state.value.cache.outbox.isEmpty()&&model.state.value.online}
                 assertFalse(transport.snapshot.records.any{it.id==seed.text("bread")})
-                compose.onNodeWithText("List options ▾").performClick()
+                compose.onNodeWithTag("checklist-items").performScrollToIndex(1)
+                compose.onNodeWithText("List options ▾").performScrollTo().performClick()
                 compose.onNode(hasText("Store: All stores",substring=true) and hasClickAction()).performClick()
                 compose.onNode(hasText("Costco") and hasClickAction()).performClick()
-                compose.onNodeWithText("List options ▴").performClick()
-                compose.onNodeWithText("Delete checked (1)").assertIsDisplayed();shot("93-native-list-cleanup")
+                compose.onNodeWithText("Delete checked (1)").performScrollTo().assertIsDisplayed();shot("93-native-list-cleanup")
                 compose.onNodeWithText("Delete checked (1)").performClick();waitText("Delete 1 checked item?")
                 compose.onNodeWithText("Delete checked",substring=false).performClick()
                 compose.waitUntil(90_000){model.state.value.cache.outbox.isEmpty()&&transport.sent.size==2}

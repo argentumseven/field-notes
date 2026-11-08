@@ -186,7 +186,9 @@ class GalleryDeviceTest {
                     // Names can equal preset labels. Select the clickable card;
                     // the price checkbox is distinct from the rolling switch.
                     compose.onNode(hasClickAction() and hasText("Groceries")).performClick()
-                    text("List settings").performClick()
+                    compose.onNodeWithTag("checklist-items").performScrollToIndex(1)
+                    text("List options ▾").performScrollTo().performClick()
+                    text("List settings").performScrollTo().performClick()
                     text("Online shopping").performScrollTo().performClick()
                     field("List name").performScrollTo().performTextReplacement("Home purchases")
                     compose.onNode(isToggleable() and hasAnySibling(hasText("Include a price field")) and SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role,androidx.compose.ui.semantics.Role.Checkbox)).performScrollTo().performClick()

@@ -1,5 +1,21 @@
 # Implementation and validation record
 
+## 0.11.2 phone list viewport — 2026-11-08
+
+List indexes, opened lists, task views and project headers now share their page's
+scrolling body. Only navigation and compact sync status stay fixed. List options
+group filters, settings, history and checked-item operations. Compact item rows
+retain both author/time labels and independent check/delete controls. Reference
+item dialogs keep their list composed; per-page saved state retains scroll and
+filters across navigation. Lists is selected while viewing a list, and Back goes
+to its index or parent project. User drags dismiss the search keyboard without
+discarding the query. No protocol/schema or stored-content format is changed.
+
+Current checks: **128 Kotlin host tests**, **133 Python helper tests**, debug
+compilation and Android lint pass. The actual 360×640 viewport/navigation/IME
+check, live shopping/removal regression, in-place upgrade and release delivery
+are being completed. Screenshots and final evidence are recorded after success.
+
 ## 0.11.1 widget unlock follow-up — 2026-11-08
 
 The actual launcher check found a stale hidden calendar view even though Android

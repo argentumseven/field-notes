@@ -10,12 +10,13 @@ fun listFields(record:Record):Set<String> = (record.data["fields"] as? JsonArray
 fun listConfiguration(template:String, fields:Set<String>, perpetual:Boolean)=obj("template" to (if(template=="tasks")"general" else template).j(),"fields" to JsonArray(listFieldLabels.keys.filter { it in fields }.map { it.j() }),"perpetual" to JsonPrimitive(perpetual))
 fun priceLabel(data:JsonObject):String = data.text("price").takeIf { it.isNotBlank() }?.let { "${data.text("currency","USD")} $it" } ?: ""
 fun recordCreator(record:Record)=record.data.text("created_by").ifBlank { record.data.text("author_id") }
-fun recordHistory(cache:Cache,record:Record,zone:kotlinx.datetime.TimeZone):String {
+fun recordHistory(cache:Cache,record:Record,zone:kotlinx.datetime.TimeZone,compact:Boolean=false,use24Hour:Boolean=false):String {
     if(record.revision==0L)return "Created by ${cache.snapshot?.actor?.name ?: "You"} · Waiting for server timestamps"
     fun person(id:String)=if(id.isBlank())"unavailable" else personName(cache,id)
     fun stamp(key:String):String = (if(key=="updated_at")record.data.number("last_activity_at",record.data.number(key)) else record.data.number(key)).takeIf { it>0 }?.let { seconds ->
         val local=kotlinx.datetime.Instant.fromEpochSeconds(seconds).toLocalDateTime(zone)
-        "${local.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }} ${local.dayOfMonth}, ${local.year} · ${friendlyTime(local.time)}"
+        if(compact)"${local.monthNumber}/${local.dayOfMonth}"+(if(local.year!=kotlinx.datetime.Clock.System.now().toLocalDateTime(zone).year)"/${local.year}" else "")+" "+friendlyTime(local.time,use24Hour)
+        else "${local.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }} ${local.dayOfMonth}, ${local.year} · ${friendlyTime(local.time,use24Hour)}"
     } ?: "time unavailable"
-    return "Created by ${record.data.text("created_by_name").ifBlank { person(recordCreator(record)) }} · ${stamp("created_at")}\nUpdated by ${record.data.text("last_activity_by_name").ifBlank { record.data.text("updated_by_name").ifBlank { person(record.data.text("last_activity_by").ifBlank { record.data.text("updated_by").ifBlank { recordCreator(record) } }) } }} · ${stamp("updated_at")}"
+    return "${if(compact)"Added" else "Created by"} ${record.data.text("created_by_name").ifBlank { person(recordCreator(record)) }} · ${stamp("created_at")}\n${if(compact)"Edited" else "Updated by"} ${record.data.text("last_activity_by_name").ifBlank { record.data.text("updated_by_name").ifBlank { person(record.data.text("last_activity_by").ifBlank { record.data.text("updated_by").ifBlank { recordCreator(record) } }) } }} · ${stamp("updated_at")}"
 }

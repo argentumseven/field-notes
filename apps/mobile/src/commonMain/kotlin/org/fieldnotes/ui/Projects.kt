@@ -14,7 +14,7 @@ import org.fieldnotes.domain.*
 
 internal data class ProjectView(val query:String="",val group:String="",val show:String="open",val context:Boolean=false,val groupsOpen:Boolean=false,val filters:TaskFilters=TaskFilters(sort="smart"))
 
-@Composable internal fun ColumnScope.ProjectWorkspace(model:Workspace,state:WorkspaceState,project:Record,open:(String)->Unit,openList:(String)->Unit,edit:()->Unit,newList:(Boolean)->Unit,history:()->Unit,newTask:(String)->Unit,initialView:ProjectView=ProjectView(),saveView:(ProjectView)->Unit={},groupChanged:(String)->Unit={}) {
+@Composable internal fun ColumnScope.ProjectWorkspace(model:Workspace,state:WorkspaceState,project:Record,open:(String)->Unit,openList:(String)->Unit,edit:()->Unit,newList:(Boolean)->Unit,history:()->Unit,newTask:(String)->Unit,initialView:ProjectView=ProjectView(),saveView:(ProjectView)->Unit={},groupChanged:(String)->Unit={},header:@Composable ()->Unit={}) {
     val graph=remember(state.cache){state.cache.projectGraph()};val today=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString();val stats=graph.rollup(project,today)
     val writable=state.cache.snapshot?.actor?.role!="viewer";val archived=project.data.text("status")=="archived"
     var query by rememberSaveable(project.id){mutableStateOf(initialView.query)};var group by rememberSaveable(project.id){mutableStateOf(initialView.group)};var show by rememberSaveable(project.id){mutableStateOf(initialView.show)}
@@ -29,6 +29,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
     val visible=filterTasks(projectRecords(state.cache).filter {row->val task=row.record;task.id in memberIds&&(group.isBlank()||task.data.text("project_id")==if(group=="__direct")project.id else group)&&(task.data.text("title")+" "+task.data.text("notes")).contains(query,true)&&when(show){"ready"->task.data.text("status")=="todo"&&!task.flag("blocked")&&!graph.held(task)&&(task.data.text("planned_for").isBlank()||task.data.text("planned_for")<=today);"waiting"->task.data.text("status")=="todo"&&(task.flag("blocked")||graph.held(task));"done"->task.data.text("status")=="done";"all"->true;else->task.data.text("status")!="done"} }.sortedWith(compareBy<VisibleRecord>{it.record.data.text("status")=="done"}.thenBy {it.record.data.number("priority",3)}.thenBy {it.record.data.text("due").ifBlank{"9999-12-31"}}.thenBy{it.record.id}),filters)
     val queued=projectRecords(state.cache).count {it.pending&&(it.record.id==project.id||graph.project(it.record)?.id==project.id)}
     VisibleLazyColumn(Modifier.weight(1f).testTag("project-workspace"),contentPadding=PaddingValues(top=8.dp,bottom=110.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        item("workspace-header"){Column {header()}}
         item {OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             RecordBadges(project);Text(projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
             Text(if(stats.total==0)"No work tasks yet" else "${stats.done} of ${stats.total} tasks complete",style=MaterialTheme.typography.titleLarge)

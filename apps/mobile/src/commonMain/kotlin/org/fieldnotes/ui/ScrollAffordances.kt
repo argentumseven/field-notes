@@ -1,18 +1,22 @@
 package org.fieldnotes.ui
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
 @Composable internal fun Modifier.plannerScroll():Modifier {
     val scroll=rememberScrollState()
@@ -36,8 +40,14 @@ import androidx.compose.ui.unit.dp
     val scroll=rememberScrollState()
     Column(modifier.heightIn(max=580.dp).visibleScrollbar(scroll).verticalScroll(scroll).padding(end=12.dp),verticalArrangement=verticalArrangement,content=content)
 }
-@Composable internal fun VisibleLazyColumn(modifier:Modifier=Modifier,contentPadding:PaddingValues=PaddingValues(0.dp),verticalArrangement:Arrangement.Vertical=Arrangement.Top,content:LazyListScope.()->Unit) {
+@Composable internal fun VisibleLazyColumn(modifier:Modifier=Modifier,contentPadding:PaddingValues=PaddingValues(0.dp),verticalArrangement:Arrangement.Vertical=Arrangement.Top,hideKeyboardOnDrag:Boolean=false,content:LazyListScope.()->Unit) {
     val state=rememberLazyListState();val rail=MaterialTheme.colorScheme.outlineVariant;val thumb=MaterialTheme.colorScheme.onSurfaceVariant
+    val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
+    LaunchedEffect(state,hideKeyboardOnDrag,focus,keyboard){
+        if(hideKeyboardOnDrag)state.interactionSource.interactions.collect { interaction ->
+            if(interaction is DragInteraction.Start){focus.clearFocus();keyboard?.hide()}
+        }
+    }
     LazyColumn(modifier.drawWithContent {
         drawContent()
         val layout=state.layoutInfo;val visible=layout.visibleItemsInfo

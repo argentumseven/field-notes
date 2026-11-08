@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -153,7 +154,7 @@ import org.fieldnotes.domain.*
 }
 @Composable private fun WorkspaceScreen(model: Workspace, state: WorkspaceState, copy: (String) -> Unit, attach: (String) -> Unit, background: (Preferences) -> Unit, registerBack: ((() -> Unit)?) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions,requestedPage:String?,requestedDate:String?,navigationSequence:Int,requestedRecord:String?) {
     val focus=LocalFocusManager.current
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }; var page by rememberSaveable { mutableStateOf("Calendar") }
+    var selected by rememberSaveable { mutableStateOf<String?>(null) }; var page by rememberSaveable { mutableStateOf(requestedPage?.takeIf{it in setOf("Focus","Tasks","Calendar","Assignments","Notes")} ?: "Calendar") }
     var calendarDay by rememberSaveable { mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()) }
     var calendarView by rememberSaveable { mutableStateOf("Day") }
     var query by rememberSaveable { mutableStateOf("") }; var project by rememberSaveable { mutableStateOf<String?>(null) }
@@ -197,23 +198,38 @@ import org.fieldnotes.domain.*
     val today = now.toLocalDateTime(zone).date
     var previousToday by rememberSaveable { mutableStateOf(today.toString()) }
     LaunchedEffect(today){if(calendarDay==previousToday)calendarDay=today.toString();previousToday=today.toString()}
-    DisposableEffect(selected) { registerBack(if (selected != null) ({ selected = null }) else null); onDispose { registerBack(null) } }
+    DisposableEffect(selected,project,page,activeContainer?.data?.text("project_id")) {
+        registerBack(when {
+            selected!=null -> ({selected=null})
+            project!=null&&page !in setOf("Calendar","History","Assignments","Lists","Projects","Collections","Notes","Later & reminders","Recipes") -> ({
+                if(activeContainer?.kind=="list") {
+                    val parent=activeContainer.data.text("project_id")
+                    if(parent.isNotBlank())navigate("Tasks",parent)else navigate("Lists")
+                } else navigate("Projects")
+            })
+            else -> null
+        })
+        onDispose{registerBack(null)}
+    }
+    // Each root/container retains its scroll and filter state across navigation.
+    val bodyStates=rememberSaveableStateHolder()
+    val scrollingHeader=page !in setOf("Calendar","History","Assignments","Notes","Later & reminders","Recipes")
+    val navigationPage=if(activeContainer?.kind=="list"&&scrollingHeader)"Lists" else page
+    val referenceList=current?.record?.takeIf{it.kind=="task"}?.let{task->projects.firstOrNull{it.record.id==task.data.text("project_id")&&it.record.kind=="list"&&!it.record.flag("items_are_tasks")}?.record}
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.error) { state.error?.let { snackbar.showSnackbar(it); model.clearError() } }
     if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound,copyLocation=copy,device=device) { selected = null }
     if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null},device)
-    else if (selected != null && current?.record?.kind == "task") {
-        val list=projects.find { it.record.id==current.record.data.text("project_id")&&it.record.kind=="list" }?.record
-        if(list!=null&&!list.flag("items_are_tasks"))ListItemDialog(model,state,list,current,device,attach,image){selected=null}
-        else TaskScreen(model,state,current,{selected=null},attach,image,device){cid->navigate("Tasks",cid)}
+    else if (selected != null && current?.record?.kind == "task"&&referenceList==null) {
+        TaskScreen(model,state,current,{selected=null},attach,image,device){cid->navigate("Tasks",cid)}
     }
     else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().plannerScroll().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Workspace",Modifier.padding(14.dp),style=MaterialTheme.typography.titleLarge)
-        DrawerGroup("Plan",listOf("Calendar","Tasks","Focus","Later & reminders"),page,navigate={navigate(it)})
-        DrawerGroup("Library",listOf("Lists","Projects","Notes","Recipes","History"),page,navigate={navigate(it)})
-        DrawerGroup("Task views",listOf("Inbox","My tasks","Assignments","Unassigned","Unscheduled","Waiting","Completed"),page,initiallyOpen=false,navigate={navigate(it)})
+        DrawerGroup("Plan",listOf("Calendar","Tasks","Focus","Later & reminders"),navigationPage,navigate={navigate(it)})
+        DrawerGroup("Library",listOf("Lists","Projects","Notes","Recipes","History"),navigationPage,navigate={navigate(it)})
+        DrawerGroup("Task views",listOf("Inbox","My tasks","Assignments","Unassigned","Unscheduled","Waiting","Completed"),navigationPage,initiallyOpen=false,navigate={navigate(it)})
 
-    } }}) { Scaffold(topBar = { TopAppBar(title = { Brand() }, navigationIcon={OutlinedIconButton(shape=ControlShape,onClick={uiScope.launch { drawer.open() }}){Icon(Icons.Outlined.Menu,"Browse workspace")}},actions = {
+    } }}) { Scaffold(topBar = { TopAppBar(title = { Column { Brand(activeContainer?.data?.text("title") ?: "Field Notes");if(scrollingHeader)SyncStatusLine(state,compact=true) } }, navigationIcon={OutlinedIconButton(shape=ControlShape,onClick={uiScope.launch { drawer.open() }}){Icon(Icons.Outlined.Menu,"Browse workspace")}},actions = {
         OutlinedIconButton(shape=ControlShape,onClick = { model.requestSync() }, enabled = !state.syncing) { Icon(Icons.Outlined.Refresh, "Sync now") }
         Box { OutlinedIconButton(shape=ControlShape,onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Workspace menu") }; DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text("Retained changes (${state.cache.conflicts.size + state.cache.drafts.size})") }, onClick = { menu = false; changes = true })
@@ -228,11 +244,12 @@ import org.fieldnotes.domain.*
             DropdownMenuItem(text = { Text("Sign out") }, onClick = { menu = false; model.launch { model.logout() } })
         } }
     }) }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { NavigationBar(tonalElevation = 0.dp) {
-        listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = page == label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
+        listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = navigationPage==label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
     } }, floatingActionButton = { if (writable&&page!="History"&&!workClosed&&(page!="Recipes"||state.cache.supportsPlannerDetails())) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders","Recipes"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Recipes" -> "New recipe"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(horizontal = 18.dp)) {
-            if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-            SyncStatusLine(state)
+            val workspaceHeader:@Composable ()->Unit={
+            if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp).testTag("workspace-heading"),maxLines=2,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if(!scrollingHeader)SyncStatusLine(state) else state.clockWarning?.let{Text(it,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.error)}
             if(!state.cache.preferences.visibilityChoiceSeen&&(!state.cache.preferences.notificationTitles||!state.cache.preferences.widgetTitles))OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 Text("Make your schedule visible at a glance",style=MaterialTheme.typography.titleSmall)
                 Text("Show full reminder and widget details while unlocked. Lock-screen visibility and the optional app lock remain separate.",style=MaterialTheme.typography.bodySmall)
@@ -250,6 +267,9 @@ import org.fieldnotes.domain.*
             if(state.cache.recoveryPending!=null)SecondaryButton(onClick={settings=true}){Text("Recovery result needs review")}
             else if(state.cache.recoveryNotice.isNotBlank())Text(state.cache.recoveryNotice)
             if(device.update.available)SecondaryButton(onClick={settings=true}){Text("App update ${device.update.offered} available")}
+            }
+            if(!scrollingHeader)workspaceHeader()
+            bodyStates.SaveableStateProvider(page+":"+project.orEmpty()) {
             if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences(state.cache.preferences.copy(federalHolidays=on))}})
             else if(page=="History") HistoryScreen(model,state,device.use24Hour,historyTarget,historyTitle,{historyTarget=null;historyTitle=""}){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
             else if(page=="Assignments") {
@@ -257,18 +277,23 @@ import org.fieldnotes.domain.*
                 AssignmentRows(state.cache,query){selected=it}
             }
             else if(page in setOf("Collections","Lists","Projects")) {
-                CollectionLibrary(state.cache,if(page=="Lists")listOf("list") else if(page=="Projects")listOf("project") else listOf("list","project"),writable,{navigate("Tasks",it)},{editingContainer=it})
+                CollectionLibrary(state.cache,if(page=="Lists")listOf("list") else if(page=="Projects")listOf("project") else listOf("list","project"),writable,{navigate("Tasks",it)},{editingContainer=it},header=workspaceHeader)
             }
             else if(state.cache.supportsProjects()&&projects.any{it.record.id==project&&it.record.kind=="project"}) {
                 val root=projects.first{it.record.id==project}.record
-                ProjectWorkspace(model,state,root,{selected=it},{navigate("Tasks",it)},{editingContainer=root},{work->projectList=root.id to work},{historyTarget=root.id;historyTitle=root.data.text("title");page="History"},{target->taskContainer=target;addTask=true},projectViews[root.id] ?: ProjectView(),{view->projectViews=(projectViews.filterKeys{it!=root.id}+ (root.id to view)).entries.toList().takeLast(64).associate{it.toPair()}},{taskContainer=it})
+                ProjectWorkspace(model,state,root,{selected=it},{navigate("Tasks",it)},{editingContainer=root},{work->projectList=root.id to work},{historyTarget=root.id;historyTitle=root.data.text("title");page="History"},{target->taskContainer=target;addTask=true},projectViews[root.id] ?: ProjectView(),{view->projectViews=(projectViews.filterKeys{it!=root.id}+ (root.id to view)).entries.toList().takeLast(64).associate{it.toPair()}},{taskContainer=it},header=workspaceHeader)
             }
             else if(projects.any { it.record.id==project&&it.record.kind=="list" }) {
                 val list=projects.first { it.record.id==project }.record
-                SecondaryButton(onClick={if(list.data.text("project_id").isNotBlank())navigate("Tasks",list.data.text("project_id")) else navigate("Lists")}){Text(if(list.data.text("project_id").isNotBlank())"‹ "+(state.cache.projectGraph().project(list)?.data?.text("title") ?: "Project") else "‹ All lists")}
-                Checklist(model,state,list,device,image,{selected=it},{editingContainer=list},history=if(state.cache.supportsHistory())({historyTarget=list.id;historyTitle=list.data.text("title");page="History"})else null,storeChanged={activeStore=it})
+                Checklist(model,state,list,device,image,{selected=it},{editingContainer=list},history=if(state.cache.supportsHistory())({historyTarget=list.id;historyTitle=list.data.text("title");page="History"})else null,storeChanged={activeStore=it},header={
+                    SecondaryButton(onClick={if(list.data.text("project_id").isNotBlank())navigate("Tasks",list.data.text("project_id")) else navigate("Lists")}){Text(if(list.data.text("project_id").isNotBlank())"‹ "+(state.cache.projectGraph().project(list)?.data?.text("title") ?: "Project") else "‹ All lists")}
+                    workspaceHeader()
+                })
             }
             else {
+                val filters=TaskFilters(filterCategory,filterPerson,filterStatus,filterPriority,sortTasks)
+                val taskHeader:@Composable ()->Unit={
+                if(scrollingHeader)workspaceHeader()
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page=="Recipes")"Search recipes" else if(page in setOf("Notes","Later & reminders"))"Search notes" else "Search tasks") }, singleLine = true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
                     if(page !in setOf("Notes","Later & reminders","Recipes")) Box { OutlinedIconButton(shape=ControlShape,onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
@@ -277,18 +302,22 @@ import org.fieldnotes.domain.*
                     } }
                 }
                 if (page == "Focus") Text("Ranked by priority, time and effort. Tap a task for the calculation.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 10.dp))
-                val filters=TaskFilters(filterCategory,filterPerson,filterStatus,filterPriority,sortTasks)
                 if(page !in setOf("Notes","Later & reminders","Recipes"))TaskFilterControls(state.cache,filters){filterCategory=it.category;filterPerson=it.person;filterStatus=it.status;filterPriority=it.priority;sortTasks=it.sort}
+                }
                 val filtered=filterTasks(workspaceTasks(state.cache,page,project,query,today,now.epochSeconds),filters)
-                if(page in setOf("Notes","Later & reminders","Recipes"))NoteRows(state.cache,rows,query,page=="Later & reminders",page=="Recipes"){selected=it}
-                else                 VisibleLazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 90.dp)) {
+                if(page in setOf("Notes","Later & reminders","Recipes")){taskHeader();NoteRows(state.cache,rows,query,page=="Later & reminders",page=="Recipes"){selected=it}}
+                else VisibleLazyColumn(Modifier.weight(1f).testTag("workspace-tasks"), contentPadding = PaddingValues(bottom = 90.dp),hideKeyboardOnDrag=true) {
+                    item("workspace-header"){Column {taskHeader()}}
                     if (filtered.isEmpty()) item { Text("No tasks in this view. Capture a task without creating a project first.", Modifier.padding(vertical = 24.dp)) }
                     items(filtered, key = { it.record.id }) { task -> TaskCard(task,state.cache) { focus.clearFocus();selected = task.record.id } }
                 }
             }
+            }
         }
     }
     }
+    // A reference item is a modal over its list, so its viewport stays alive.
+    if(referenceList!=null&&current!=null)ListItemDialog(model,state,referenceList,current,device,attach,image){selected=null}
     if (selected != null && current == null) EditorDialog(onDismissRequest = { selected = null }, title = { Text("Item removed") }, text = { Text("Retained edits are available under Retained changes.") }, confirmButton = { SecondaryButton(onClick = { selected = null; changes = true }) { Text("Review") } })
     projectList?.let{(parent,work)->CollectionDialog(model,state,null,"list",{projectList=null},parent,work){id->projectList=null;navigate("Tasks",id)}}
     if (addProject) CollectionDialog(model,state,null,"project",{addProject=false})
@@ -526,10 +555,10 @@ import org.fieldnotes.domain.*
     if (discardAll) ConfirmDialog("Discard all retained changes?", "Copy unsynchronized text first. Pending image uploads will also be lost. An attempted command may already exist on the server; this only discards local retry/draft copies.", "DISCARD", { discardAll = false }) { model.launch { model.discardRetainedChanges() }; discardAll = false }
     discard?.let { id -> ConfirmDialog("Discard this retained change?", "Only this local copy will be removed. It cannot be recovered from the server if it was never accepted.", "DISCARD", { discard = null }) { model.launch { model.resolve(id, false) }; discard = null } }
 }
-@Composable private fun Brand() {
+@Composable private fun Brand(title:String="Field Notes") {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Image(LauncherMark, contentDescription = null, modifier = Modifier.size(30.dp))
-        Text("Field Notes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 @Composable private fun ErrorText(text: String) { Text(text, Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.error) }

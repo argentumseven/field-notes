@@ -8,6 +8,7 @@ const run = promisify(execFile),
   root = process.env.FIELD_NOTES_TOOLS || "/workspace/.cache/field-notes";
 const adb = join(root, "android-sdk/platform-tools/adb"),
   serial = process.env.FIELD_NOTES_EMULATOR || "emulator-5554";
+const compact=process.argv.includes("--compact");
 const only = process.argv
   .find((value) => value.startsWith("--only="))
   ?.slice(7);
@@ -48,8 +49,8 @@ await mkdir("docs/screenshots/android", { recursive: true });
 try {
   // Match the documented phone viewport. A stale density override can make
   // Android's launcher reject a widget before showing its pin confirmation.
-  await call(["shell", "wm", "size", "540x1200"]);
-  await call(["shell", "wm", "density", "210"]);
+  await call(["shell", "wm", "size", compact ? "540x960" : "540x1200"]);
+  await call(["shell", "wm", "density", compact ? "240" : "210"]);
   await call([
     "shell",
     "settings",
@@ -125,6 +126,7 @@ try {
       360000,
     );
   const cases = [
+    ["ListViewportDeviceTest",1,["-e","fieldNotesListViewport","synthetic-only"]],
     [
       "WidgetSyncDeviceTest",
       1,
@@ -187,7 +189,9 @@ try {
       throw Error(output);
     console.log(name + " passed");
     const captures =
-      name === "CalendarExperienceDeviceTest"
+      name === "ListViewportDeviceTest"
+        ? ["120-native-list-viewport","121-native-list-return","122-native-list-keyboard","123-native-list-light","124-native-library-viewport"]
+        : name === "CalendarExperienceDeviceTest"
         ? [
             "30-calendar-home",
             "31-local-event",
@@ -239,7 +243,7 @@ try {
       : "Actual calendar, notification and launcher gallery verified and captured.",
   );
 } catch (error) {
-  for (const name of ["host-failure", "pin-confirmation"]) {
+  for (const name of ["host-failure", "pin-confirmation","list-viewport-failure"]) {
     const { stdout } = await run(
       adb,
       [

@@ -140,3 +140,9 @@ produce a backlog of alerts.
 Grocery lists do not expose scheduled item reminder controls. Other list types
 retain that separate setting. [Live updates and shopping](LIVE-UPDATES.md) explains
 freshness, queued removals and why an older phone may miss new amendments.
+
+## Phone page navigation
+
+See [Phone lists and scrolling](MOBILE-LISTS.md). The whole list page scrolls;
+filters and bulk actions are under List options. Opening an item and returning
+keeps your place. Checkboxes and individual delete controls remain separate.

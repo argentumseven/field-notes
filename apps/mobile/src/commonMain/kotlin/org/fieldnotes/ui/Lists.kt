@@ -8,6 +8,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,13 +35,13 @@ import org.fieldnotes.domain.*
     OutlinedCard(onClick=open,modifier=Modifier.fillMaxWidth().padding(bottom=10.dp)) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
             RecordBadges(record)
-            Text(record.data.text("title"),style=MaterialTheme.typography.titleMedium)
+            Text(record.data.text("title"),style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
             if(record.kind=="project") {
                 val progress=cache.projectGraph().rollup(record,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())
                 Text("${progress.done}/${progress.total} tasks · ${projectStateLabel(record,progress)} · ${progress.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
             }else if(record.data.text("project_id").isNotBlank())Text("In "+(cache.projectGraph().project(record)?.data?.text("title") ?: "Project"),style=MaterialTheme.typography.labelMedium)
-            if(record.data.text("notes").isNotBlank())Text(record.data.text("notes"),style=MaterialTheme.typography.bodySmall)
-            Text(recordHistory(cache,record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(record.data.text("notes").isNotBlank())Text(record.data.text("notes"),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis)
+            Text(recordHistory(cache,record,TimeZone.currentSystemDefault(),compact=true),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(writable)SecondaryButton(onClick=edit){Text(if(record.kind=="list")"List settings" else "Project settings")}
         }
     }
@@ -127,16 +134,18 @@ import org.fieldnotes.domain.*
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(recipe)mapOf("note_type" to "recipe".j(),"ingredients" to ingredients.j(),"instructions" to instructions.j())else emptyMap())+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);model.requestSync();close() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(recipe)"Create recipe" else "Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
-@Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,history:(()->Unit)?=null,storeChanged:(String)->Unit={}) {
+@Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,history:(()->Unit)?=null,storeChanged:(String)->Unit={},header:@Composable ()->Unit={}) {
     val rows=projectRecords(state.cache);val all=rows.filter { it.record.kind=="task"&&it.record.data.text("project_id")==list.id }
     val fields=listFields(list);val writable=state.cache.snapshot!!.actor.role!="viewer"
     val finished=list.flag("items_are_tasks")&&state.cache.projectGraph().project(list)?.data?.text("status")=="archived"
     var query by rememberSaveable(list.id){mutableStateOf("")};var store by rememberSaveable(list.id){mutableStateOf("*")};var itemCategoryFilter by rememberSaveable(list.id){mutableStateOf("all")};var sort by rememberSaveable(list.id){mutableStateOf("title")};var status by rememberSaveable(list.id){mutableStateOf("open")}
     var confirmAction by remember { mutableStateOf<String?>(null) };var changingChecked by remember { mutableStateOf(false) }
     var filtersOpen by rememberSaveable(list.id){mutableStateOf(false)}
+    var descriptionOpen by rememberSaveable(list.id){mutableStateOf(false)}
+    val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
     var removing by remember {mutableStateOf<Pair<Basis,Record>?>(null)}
     var checkedSelection by remember { mutableStateOf<Pair<Basis,List<Record>>?>(null) }
-    LaunchedEffect(fields){if("store" !in fields){store="*";storeChanged("")};if(sort !in setOf("title","added","updated","item_category")+fields.filter{it !in setOf("notes","images","store","link_url")})sort="title"}
+    LaunchedEffect(fields,store){storeChanged(if("store" in fields&&store!="*")store else "");if("store" !in fields){store="*"};if(sort !in setOf("title","added","updated","item_category")+fields.filter{it !in setOf("notes","images","store","link_url")})sort="title"}
     val stores=all.map { storeName(it.record) }.distinct().sortedWith(compareBy { it.lowercase() })
     val matching=all.filter { row->val d=row.record.data;itemCategoryMatches(d.text("item_category"),itemCategoryFilter)&&("store" !in fields||store=="*"||storeName(row.record)==store)&&(listOf(d.text("title"),d.text("notes"),d.text("store"),d.text("quantity"),d.text("link_url"),d.text("price"),d.text("item_category")).joinToString(" ").contains(query,true)) }
     val filtered=matching.filter { status=="all"||((it.record.data.text("status")=="done")==(status=="done")) }
@@ -146,52 +155,54 @@ import org.fieldnotes.domain.*
         order.takeIf { it!=0 } ?: x.text("title").compareTo(y.text("title"),true).takeIf { it!=0 } ?: a.record.id.compareTo(b.record.id)
     }
     val sorted=filtered.sortedWith(comparator);val checked=matching.filter { it.record.data.text("status")=="done" }
-    RecordBadges(list)
-    if(finished)Text("Project finished. Reopen it before adding or reopening work.",style=MaterialTheme.typography.bodyMedium)
-    if(list.data.text("notes").isNotBlank())Text(list.data.text("notes"),style=MaterialTheme.typography.bodyMedium)
-    OutlinedTextField(query,{query=it},label={Text("Search titles and item content")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(vertical=8.dp))
-    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        if("store" in fields)ViewChoice("Store",store,listOf("*" to "All stores")+stores.map { it to it.ifBlank { "No store yet" } }){store=it;storeChanged(if(it=="*")"" else it)}
-        ViewChoice("Show",status,listOf("open" to "Unchecked","all" to "All items","done" to "Checked")){status=it}
-        SecondaryButton(onClick={filtersOpen=!filtersOpen}){Text("List options"+if(filtersOpen)" ▴" else " ▾")}
-        if(writable)SecondaryButton(onClick=edit){Text("List settings")}
-    }
-    if(filtersOpen)FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        ViewChoice("Item category",itemCategoryFilter,itemCategoryFilters(all.map{it.record},itemCategoryFilter)){itemCategoryFilter=it}
-        ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed","item_category" to "Item category")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
-        if(history!=null)SecondaryButton(onClick=history){Text("List history")}
-    }
-    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        if(query.isNotBlank()||store!="*"||status=="done"||itemCategoryFilter!="all")SecondaryButton(onClick={query="";store="*";status="open";itemCategoryFilter="all";storeChanged("")}){Text("Clear filters")}
-        if(writable) {
-            if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"},enabled=checked.isNotEmpty()){Text("Reuse checked (${checked.size})")}
-            SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="clear"},enabled=checked.isNotEmpty(),dangerous=true){Text("Delete checked (${checked.size})")}
-        }
-    }
-    Text("${sorted.size} of ${all.size} items · ${all.count { it.record.data.text("status")!="done" }} unchecked",Modifier.padding(vertical=8.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-    if(store!="*"||query.isNotBlank())Text("Cleanup applies to this search and ${store.ifBlank{"No store yet"}.takeIf{it!="*"} ?: "all stores"}, including hidden checked items.",style=MaterialTheme.typography.labelSmall)
-    if(list.data["notify_additions"]==JsonPrimitive(false)||list.data.text("template")!="groceries"&&list.data["item_reminders"]==JsonPrimitive(false))Text(listOfNotNull(if(list.data["notify_additions"]==JsonPrimitive(false))"Item-addition alerts muted" else null,if(list.data.text("template")!="groceries"&&list.data["item_reminders"]==JsonPrimitive(false))"Scheduled item reminders muted" else null).joinToString(" · "),style=MaterialTheme.typography.labelSmall)
-    if(!filtersOpen&&itemCategoryFilter!="all")Text("Showing category: "+(if(itemCategoryFilter=="none")"Uncategorized" else itemCategoryFilter.removePrefix("value:")),style=MaterialTheme.typography.labelSmall)
     val groups=if("store" in fields&&store=="*")sorted.groupBy { storeName(it.record) }.toList().sortedBy { it.first.lowercase() }.toMap() else mapOf("" to sorted)
-    VisibleLazyColumn(Modifier.weight(1f).testTag("checklist-items"),verticalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(bottom=100.dp)) {
+    VisibleLazyColumn(Modifier.weight(1f).testTag("checklist-items"),verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(bottom=100.dp),hideKeyboardOnDrag=true) {
+        item("workspace-header"){Column {header()}}
+        item("list-controls"){Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            RecordBadges(list)
+            if(finished)Text("Project finished. Reopen it before adding or reopening work.",style=MaterialTheme.typography.bodyMedium)
+            if(list.data.text("notes").isNotBlank()) {
+                Text(list.data.text("notes"),style=MaterialTheme.typography.bodyMedium,maxLines=if(descriptionOpen)Int.MAX_VALUE else 2,overflow=TextOverflow.Ellipsis)
+                if(list.data.text("notes").length>80||list.data.text("notes").contains('\n'))SecondaryButton(onClick={descriptionOpen=!descriptionOpen}){Text(if(descriptionOpen)"Less description ▴" else "Full description ▾")}
+            }
+            OutlinedTextField(query,{query=it},label={Text("Search titles and item content")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus();keyboard?.hide()}),modifier=Modifier.fillMaxWidth())
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                if("store" in fields)ViewChoice("Store",store,listOf("*" to "All stores")+stores.map { it to it.ifBlank { "No store yet" } }){store=it;storeChanged(if(it=="*")"" else it)}
+                SecondaryButton(onClick={filtersOpen=!filtersOpen}){Text("List options"+if(filtersOpen)" ▴" else " ▾")}
+            }
+            if(filtersOpen)FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                ViewChoice("Show",status,listOf("open" to "Unchecked","all" to "All items","done" to "Checked")){status=it}
+                ViewChoice("Item category",itemCategoryFilter,itemCategoryFilters(all.map{it.record},itemCategoryFilter)){itemCategoryFilter=it}
+                ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed","item_category" to "Item category")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
+                if(writable)SecondaryButton(onClick=edit){Text("List settings")}
+                if(history!=null)SecondaryButton(onClick=history){Text("List history")}
+                if(writable) {
+                    if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"},enabled=checked.isNotEmpty()){Text("Reuse checked (${checked.size})")}
+                    SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="clear"},enabled=checked.isNotEmpty(),dangerous=true){Text("Delete checked (${checked.size})")}
+                }
+            }
+            if(query.isNotBlank()||store!="*"||status!="open"||itemCategoryFilter!="all")SecondaryButton(onClick={query="";store="*";status="open";itemCategoryFilter="all";storeChanged("")}){Text("Clear filters")}
+            Text("${sorted.size} of ${all.size} items · "+when(status){"all"->"All items";"done"->"Checked";else->"${all.count { it.record.data.text("status")!="done" }} unchecked"},style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(filtersOpen&&(store!="*"||query.isNotBlank()))Text("Cleanup applies to this search and ${store.ifBlank{"No store yet"}.takeIf{it!="*"} ?: "all stores"}, including hidden checked items.",style=MaterialTheme.typography.labelSmall)
+            if(list.data["notify_additions"]==JsonPrimitive(false)||list.data.text("template")!="groceries"&&list.data["item_reminders"]==JsonPrimitive(false))Text(listOfNotNull(if(list.data["notify_additions"]==JsonPrimitive(false))"Item-addition alerts muted" else null,if(list.data.text("template")!="groceries"&&list.data["item_reminders"]==JsonPrimitive(false))"Scheduled item reminders muted" else null).joinToString(" · "),style=MaterialTheme.typography.labelSmall)
+            if(!filtersOpen&&itemCategoryFilter!="all")Text("Showing category: "+(if(itemCategoryFilter=="none")"Uncategorized" else itemCategoryFilter.removePrefix("value:")),style=MaterialTheme.typography.labelSmall)
+        }}
         if(sorted.isEmpty())item { Text(when{all.isEmpty()->"Your list is ready. Add an item to get started.";matching.isEmpty()->"No items match these search, store or item category filters. Use Clear filters to return to the list.";status=="open"->"Everything in this view is checked. Show checked items or use Delete checked to clean up.";else->"No checked items in this view. Choose Unchecked to continue."},Modifier.padding(vertical=28.dp),color=MaterialTheme.colorScheme.onSurfaceVariant) }
         for((name,items) in groups){
-            if("store" in fields&&store=="*")item("store:$name"){Row(Modifier.fillMaxWidth().padding(top=14.dp,bottom=6.dp)){Text(name.ifBlank { "No store yet" },Modifier.weight(1f),style=MaterialTheme.typography.titleSmall);Text(items.size.toString(),style=MaterialTheme.typography.labelMedium)}}
+            if("store" in fields&&store=="*")item("store:$name"){Row(Modifier.fillMaxWidth().padding(top=10.dp,bottom=2.dp)){Text(name.ifBlank { "No store yet" },Modifier.weight(1f),style=MaterialTheme.typography.titleSmall);Text(items.size.toString(),style=MaterialTheme.typography.labelMedium)}}
             items(items,key={it.record.id}){row->
                 val d=row.record.data;val done=d.text("status")=="done"
-                OutlinedCard(Modifier.fillMaxWidth()) { Row(Modifier.padding(10.dp),verticalAlignment=Alignment.Top) {
+                OutlinedCard(onClick={focus.clearFocus();open(row.record.id)},modifier=Modifier.fillMaxWidth().testTag("checklist-row-"+row.record.id)) { Row(Modifier.padding(horizontal=6.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(done,{model.enqueueAsync(if(done)"task.reopen" else "task.complete",row.record.id,obj(),row.record.revision)},enabled=writable&&!finished&&(d.text("claimant").isBlank()||d.text("claimant")==state.cache.snapshot.actor.user_id))
-                    Column(Modifier.weight(1f).clickable { open(row.record.id) }.padding(top=8.dp,bottom=6.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                        RecordBadges(row.record,list)
-                        Text(d.text("title"),style=MaterialTheme.typography.titleMedium,color=if(done)MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
-                        val details=buildList { if("quantity" in fields&&d.text("quantity").isNotBlank())add(d.text("quantity"));if("store" in fields&&storeName(row.record).isNotBlank())add(storeName(row.record));if("price" in fields&&priceLabel(d).isNotBlank())add(priceLabel(d));if("link_url" in fields&&d.text("link_url").isNotBlank())add(d.text("link_url").substringAfter("://").substringBefore('/'));if(row.pending)add("Queued") }
-                        if(details.isNotEmpty())Text(details.joinToString(" · "),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
-                        if("notes" in fields&&d.text("notes").isNotBlank())Text(d.text("notes").take(150),style=MaterialTheme.typography.bodySmall)
-                        Text(recordHistory(state.cache,row.record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Open item ›",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                        Text(d.text("title"),style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis,color=if(done)MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                        val details=buildList { itemCategory(row.record).takeIf{it.isNotBlank()}?.let{add(it)};if("quantity" in fields&&d.text("quantity").isNotBlank())add(d.text("quantity"));if("store" in fields&&storeName(row.record).isNotBlank())add(storeName(row.record));if("price" in fields&&priceLabel(d).isNotBlank())add(priceLabel(d));if("link_url" in fields&&d.text("link_url").isNotBlank())add(d.text("link_url").substringAfter("://").substringBefore('/'));if(row.pending)add("Queued") }
+                        if(details.isNotEmpty())Text(details.joinToString(" · "),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.primary)
+                        if("notes" in fields&&d.text("notes").isNotBlank())Text(d.text("notes"),style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(recordHistory(state.cache,row.record,TimeZone.currentSystemDefault(),compact=true,use24Hour=device.use24Hour),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if(writable)SecondaryButton(onClick={removing=state.cache.snapshot!!.basis to row.record},dangerous=true){Text("Delete")}
-                    if("images" in fields)rows.firstOrNull { it.record.kind=="image"&&it.record.data.text("task_id")==row.record.id }?.let { attachment ->Box(Modifier.padding(start=8.dp).size(64.dp).clip(RoundedCornerShape(10.dp))){image(attachment)} }
+                    if("images" in fields)rows.firstOrNull { it.record.kind=="image"&&it.record.data.text("task_id")==row.record.id }?.let { attachment ->Box(Modifier.padding(start=6.dp).size(48.dp).clip(RoundedCornerShape(8.dp))){image(attachment)} }
+                    if(writable)OutlinedIconButton(shape=ControlShape,onClick={removing=state.cache.snapshot!!.basis to row.record}){Icon(Icons.Outlined.Delete,"Delete item "+d.text("title"),tint=MaterialTheme.colorScheme.error)}
                 } }
             }
         }
