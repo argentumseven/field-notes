@@ -27,6 +27,27 @@ separately below.
 The 0.11 planner API/browser/container evidence remains applicable; this patch
 changes Android widget handling and release/version packaging.
 
+Delivery verified: [v0.11.1](https://github.com/argentumseven/field-notes/releases/tag/v0.11.1)
+publishes clean tagged source `1dc12b83bc19b044aa849df58ef32163626b167f`, Android
+code 20, using the unchanged public signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+All four public assets match the built release byte-for-byte; actual APK
+signature/package/ARM64 verification passes. Latest-download metadata resolves
+to this release. Public APK SHA-256:
+`5254c013d93e0cd215f542a27861cadf00eff722be47ae7b39f9498e18dd6b7b`.
+
+The ordinary Linux x86_64 build fetched those same public bytes without APK or
+download-directory overrides. All **15** host helpers match source; both pinned
+images exist; archive/image/binary checksums pass; no private-key entries appear
+in the outer archive. Its executable reports 0.11.1. The isolated packaged-server
+check verifies current capabilities, clock diagnostics, partial recipe editing,
+reminder/location persistence across restart and the exact paired APK offer/chunk.
+Complete local bundle SHA-256:
+`5f4f186bd55b7f5bc0735dd64d70bfe66dbf6eee7dd585561210f9d8a96c4968`.
+The GitHub release contains the four Android assets; the Linux bundle is locally
+built and verified. Screenshots use synthetic data. Home-server deployment and
+physical GrapheneOS full-profile sound/forwarding remain separate device checks.
+
 ## 0.11.0 planner and widget continuity — 2026-11-08
 
 Implemented explicit day/time reminders, week/day presets, optional federal
@@ -57,8 +78,9 @@ The actual container integration suite also passes all **10 cases**, including
 pinned direct TLS, private WireGuard enrollment, bounded authenticated APK
 updates, source-bound phone access, denial of management/LAN/peer routes, real
 app-UID egress/DNS drop counters, retained keys and scoped cleanup. Launcher
-lifecycle verification remains pending; publication and ordinary bundle
-verification are recorded below. The native JNI → WireGuard → TLS → Rust check passes
+lifecycle correctness was not established by 0.11.0; the verified 0.11.1
+follow-up above fixes the stale hidden view. Publication and ordinary bundle
+verification for 0.11.0 are recorded below. The native JNI → WireGuard → TLS → Rust check passes
 both runtime/manifest cases, including stop/reconnect with the same identity.
 A cold
 software-emulated Android System UI stalled during one discarded gallery run;
@@ -68,8 +90,8 @@ the test paused before it finished. The recipe remained queued; the corrected
 fixture waits for acknowledgement before pausing. No failed gallery is published. Repeated launcher attempts hit AOSP
 job-stop timeouts (`No response to onStopJob`) during cold software-emulated
 startup; their lifecycle assertions have not been counted as passing. The
-final launcher rerun uses the documented phone viewport, cleared fixture jobs
-and a restarted framework with an emulator-only timeout multiplier of 10.
+0.11.1 launcher passes above use the documented phone viewport, cleared fixture
+jobs and a restarted framework with an emulator-only timeout multiplier of 10.
 Production timeout policy and test assertions are unchanged.
 
 The local queue persists and publishes a write as one cancellation-safe unit.
