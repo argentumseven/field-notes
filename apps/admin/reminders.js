@@ -530,7 +530,7 @@
         const dayRow = el("div", "reminder-day-controls"),
           dayCount = field(
             dayRow,
-            "Days before",
+            "How far before",
             r.day_time?.days_before || 0,
             "number",
           ),
@@ -603,8 +603,14 @@
         customRow.prepend(amountQuick);
         const configure = () => {
           dayRow.hidden = when.value !== "day-time";
+          dayCount.disabled =
+            dayClock.disabled =
+            dayUnit.disabled =
+              dayRow.hidden;
+          dayCount.max = dayUnit.value === "weeks" ? 522 : 3660;
           dayCount.required = dayClock.required = !dayRow.hidden;
           customRow.hidden = when.value !== "custom";
+          custom.disabled = unit.disabled = customRow.hidden;
           custom.required = !customRow.hidden;
           custom.max = String(FieldReminderTiming.limits[unit.value]);
           if (customRow.hidden) custom.setCustomValidity("");

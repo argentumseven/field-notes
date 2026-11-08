@@ -5,9 +5,11 @@ val recordCategories = linkedMapOf("general" to "General", "action" to "Action",
 fun categoryKey(value:String)=if(value=="honey_do")"home" else value.ifBlank { "general" }
 fun categoryChoices(value:String)=recordCategories.map { (key,label)->(if(key=="home"&&value=="honey_do")value else key) to label }
 fun recordTypeLabel(record:Record):String = when {
+    record.isRecipe()->"Recipe"
     record.kind=="list"&&record.flag("items_are_tasks")->"Task list"
     record.kind=="list" -> listTemplates[record.data.text("template","general")] ?: "List"
     record.kind=="note"&&record.flag("on_radar") -> "Later & reminders"
+    record.kind=="note" -> "Note"
     record.kind=="event" -> "Calendar event"
     record.kind=="project" -> "Project"
     else -> "Task"

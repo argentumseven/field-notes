@@ -15,6 +15,9 @@ impl Store {
         let Some(mut v) = read() else {
             return json!({"status":"unknown","source":"unavailable"});
         };
+        if !v.is_object() {
+            return json!({"status":"unknown","source":"unavailable"});
+        }
         let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap_or_default();
         let uptime = std::fs::read_to_string("/proc/uptime")
             .ok()

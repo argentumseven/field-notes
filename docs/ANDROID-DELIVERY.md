@@ -172,3 +172,17 @@ channel; that channel controls forwarded sound/volume rather than retaining the
 source app's chosen tone. Test that channel while the source profile is running.
 The Android Calendar launcher widget now has a busy-time strip in addition to
 its month grid; [CALENDAR.md](CALENDAR.md) covers sizing and privacy.
+
+## Widget refresh and sound controls — 0.11
+
+Widget privacy does not block synchronization. Background checks remain governed
+by the existing Live / periodic / manual preference and Android scheduling. A
+manual widget refresh replaces its own pending backoff. Initialization and sync
+have bounded timeouts with visible errors. Screen-on and profile unlock trigger
+immediate and short delayed visibility checks, including when the snapshot did
+not change. The app credential lock does not decide widget visibility.
+
+See [reminder controls](REMINDERS.md) for independent notification/alarm volume
+consent, five-second new alarms and real sound tests. A system-ended profile
+cannot run the service; GrapheneOS cross-user forwarding still requires its
+receiving-profile settings and physical verification.

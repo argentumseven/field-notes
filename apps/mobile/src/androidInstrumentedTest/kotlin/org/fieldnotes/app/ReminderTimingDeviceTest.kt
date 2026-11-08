@@ -61,7 +61,7 @@ class ReminderTimingDeviceTest {
                 compose.waitUntil(90_000){model.state.value.cache.outbox.isEmpty()&&reminderSet(model.state.value.cache.snapshot!!.records.first{it.id==seed.text("home_item")})?.alerts?.size==2}
                 val saved=runBlocking{app.vault.load()};val rules=reminderSet(saved.snapshot!!.records.first{it.id==seed.text("home_item")})!!
                 assertEquals(listOf("months","years"),rules.alerts.map{it.lead_time!!.unit})
-                assertEquals(2,rules.alerts.map{it.id}.distinct().size);assertEquals(1,rules.timing_version)
+                assertEquals(2,rules.alerts.map{it.id}.distinct().size);assertEquals(2,rules.timing_version)
                 assertEquals(cache.keys,saved.keys);assertEquals(cache.config,saved.config)
             }catch(failure:Throwable){runCatching{shot("failure")};throw failure}
         }}finally{app.model=original;scope.cancel()}

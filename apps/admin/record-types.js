@@ -139,6 +139,8 @@ function canScheduleReminders(record) {
   return listForTask(record)?.data.template !== "groceries";
 }
 function recordTypeLabel(record) {
+  if (record.kind === "note" && record.data.note_type === "recipe")
+    return "Recipe";
   if (record.kind === "list" && record.data.items_are_tasks) return "Task list";
   if (record.kind === "list")
     return listTemplates[record.data.template || "general"] || "List";

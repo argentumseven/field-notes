@@ -93,6 +93,7 @@ class AlarmPlaybackService:Service() {
             media.prepareAsync()
             withTimeout(15_000){ready.await()}
             media.start();onStarted()
+            if(profile.vibrate&&(profile.alarm||audio.ringerMode!=AudioManager.RINGER_MODE_SILENT))getSystemService(Vibrator::class.java).vibrate(VibrationEffect.createOneShot(250,VibrationEffect.DEFAULT_AMPLITUDE),attributes)
             if(profile.alarm&&profile.duration>0)withTimeoutOrNull(profile.duration.coerceIn(5,60)*1000L){completed.await()} else withTimeout(20_000){completed.await()}
         }finally {
             runCatching {media.setOnPreparedListener(null);media.setOnCompletionListener(null);media.setOnErrorListener(null);media.release()};if(player===media)player=null
@@ -110,7 +111,11 @@ class AlarmPlaybackService:Service() {
         fun stopIntent(context:Context)=PendingIntent.getService(context,760,Intent(context,AlarmPlaybackService::class.java).setAction(STOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         fun start(context:Context,keys:List<String>):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).putStringArrayListExtra("occurrences",ArrayList(keys.take(32))))
         fun test(context:Context):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST))
-        fun testSound(context:Context,profile:AlertProfile):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST_SOUND).putExtra("sound_profile",WireJson.encodeToString(AlertProfile.serializer(),profile)))
+        fun testSound(context:Context,profile:AlertProfile):Boolean {
+            val channel=ReminderSounds.channel(context,profile)
+            if(!Alerts.post(context,channel,"sound-test:"+System.nanoTime(),"Reminder sound test","Selected sound, importance and delivery mode.",alarm=profile.alarm||profile.notificationUnmute))return false
+            return if(profile.alarm||profile.notificationUnmute)startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST_SOUND).putExtra("sound_profile",WireJson.encodeToString(AlertProfile.serializer(),profile))) else true
+        }
         private fun startIntent(context:Context,intent:Intent):Boolean=try {
             check(Alerts.permissionAllowed(context)){"Allow notifications before playing alarm reminders."}
             ContextCompat.startForegroundService(context,intent);true

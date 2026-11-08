@@ -705,6 +705,11 @@ function renderWorkspace(viewKey) {
     }),
   );
   main.append(top);
+  const clockNotice = el("p", "error", state.clockWarning || "");
+  clockNotice.id = "clock-warning";
+  clockNotice.hidden = !state.clockWarning;
+  main.append(clockNotice);
+
   shell.append(side, main);
   $("#app").replaceChildren(shell);
   side.scrollTop = sidebarScrollTop;
@@ -731,10 +736,6 @@ function renderWorkspace(viewKey) {
     if (state.selected) renderDetail();
     return;
   }
-  const clockNotice = el("p", "error", state.clockWarning || "");
-  clockNotice.id = "clock-warning";
-  clockNotice.hidden = !state.clockWarning;
-  main.append(clockNotice);
   if (["notes", "later", "recipes"].includes(state.page)) {
     renderNotes(main);
     if (state.selected) renderDetail();

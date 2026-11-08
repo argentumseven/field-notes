@@ -60,6 +60,25 @@ class AlarmExperienceDeviceTest {
             assertNull(AlarmAudio.raise(app,profile,false));assertEquals(denied,audio.getStreamVolume(AudioManager.STREAM_ALARM));assertEquals(deniedMute,audio.isStreamMute(AudioManager.STREAM_ALARM));assertNotNull(app.deliveryError.value)
         } finally {AlarmAudio.restoreAfterStop(app);audio.setStreamVolume(AudioManager.STREAM_ALARM,initial,0);if(muted)audio.adjustStreamVolume(AudioManager.STREAM_ALARM,AudioManager.ADJUST_MUTE,0)}
     }
+    @Test fun notificationLeaseReplacementRestoresOriginalVolumeAndLeavesRingerModeAlone()=runBlocking {
+        assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as FieldNotesApplication;app.initialized.await()
+        val audio=app.getSystemService(AudioManager::class.java);val stream=AudioManager.STREAM_NOTIFICATION
+        val initial=audio.getStreamVolume(stream);val initialMute=audio.isStreamMute(stream);val ringer=audio.ringerMode
+        try {
+            // Never switch ringer mode to make this pass; the normal-volume branch is tested only when Android allows it.
+            assumeTrue(audio.ringerMode==AudioManager.RINGER_MODE_NORMAL)
+            audio.setStreamVolume(stream,2,0);val before=audio.getStreamVolume(stream)
+            val p=AlertProfile(notificationUnmute=true,notificationVolume=100)
+            assertNull(NotificationAudio.raise(app,p,false));assertEquals(before,audio.getStreamVolume(stream))
+            val first=NotificationAudio.raise(app,p,true);assertNotNull(first)
+            val second=NotificationAudio.raise(app,p,true);assertNotNull(second);assertNotEquals(first,second)
+            NotificationAudio.restore(app,first);assertTrue(audio.getStreamVolume(stream)>before)
+            NotificationAudio.restore(app,second);assertEquals(before,audio.getStreamVolume(stream));assertEquals(ringer,audio.ringerMode)
+            val third=NotificationAudio.raise(app,p,true);audio.setStreamVolume(stream,3,0);val manual=audio.getStreamVolume(stream)
+            NotificationAudio.restore(app,third);assertEquals(manual,audio.getStreamVolume(stream));assertEquals(ringer,audio.ringerMode)
+        }finally{NotificationAudio.restoreAfterStop(app);audio.setStreamVolume(stream,initial,0);if(initialMute)audio.adjustStreamVolume(stream,AudioManager.ADJUST_MUTE,0)}
+    }
     @Test fun alarmServicePlaysWithAVisibleStopAndRestoresAfterStopping()=runBlocking {
         assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
         val instrumentation=InstrumentationRegistry.getInstrumentation();val app=instrumentation.targetContext.applicationContext as FieldNotesApplication;app.initialized.await()

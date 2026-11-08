@@ -31,37 +31,36 @@ class CalendarWidgetHostDeviceTest {
         val start=scheduledInstant(today.toString(),"10:00",zone)
         val event=Record("calendar-fixture","event",1,obj("title" to "Household check-in".j(),"author_id" to "owner".j(),"starts_at" to start.j(),"ends_at" to (start+3600).j()))
         val cache=Cache(keys=app.model.state.value.cache.keys,config=obj("server_key" to "synthetic-calendar".j()),token="synthetic-session",snapshot=Snapshot(1,"calendar-fixture",1,1,listOf(event),Actor("owner","Owner","owner","session")),
-            preferences=Preferences(connectionPaused=true,backgroundSync=false,reminders=false,liveUpdates=false,widgetTitles=true))
+            preferences=Preferences(connectionPaused=true,backgroundSync=false,reminders=false,liveUpdates=false,widgetTitles=true,appLock=true))
         runBlocking { app.vault.save(cache);app.model.initialize() }
         app.deliveryError.value=null
-        fun nodes(text:String):List<AccessibilityNodeInfo> {
-            val found=mutableListOf<AccessibilityNodeInfo>()
-            fun visit(node:AccessibilityNodeInfo) {
-                if(node.isVisibleToUser&&node.text?.contains(text)==true)found+=node
-                for(i in 0 until node.childCount)node.getChild(i)?.let(::visit)
-            }
-            instrumentation.uiAutomation.windows.forEach { it.root?.let(::visit) }
-            return found
+        fun root(window:android.view.accessibility.AccessibilityWindowInfo)=if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0)else window.root
+        fun child(node:AccessibilityNodeInfo,index:Int)=if(android.os.Build.VERSION.SDK_INT>=33)node.getChild(index,0)else node.getChild(index)
+        fun search(text:String,description:Boolean=false):List<AccessibilityNodeInfo> {
+            val windows=instrumentation.uiAutomation.windows
+            for(window in windows){val r=root(window)?:continue
+                if(r.packageName?.toString()=="com.android.launcher3"){
+                    val found=r.findAccessibilityNodeInfosByText(text).filter{it.isVisibleToUser&&(!description||it.contentDescription?.contains(text)==true)}
+                    if(found.isNotEmpty())return found
+                }else{
+                    fun visit(node:AccessibilityNodeInfo):AccessibilityNodeInfo?{
+                        if(node.isVisibleToUser&&(if(description)node.contentDescription else node.text)?.contains(text)==true)return node
+                        for(i in 0 until node.childCount)child(node,i)?.let{visit(it)}?.let{return it};return null
+                    }
+                    visit(r)?.let{return listOf(it)}
+                }
+            };return emptyList()
         }
-        // RemoteViews descendants retain the provider package name. Select the
-        // launcher window, rather than incorrectly filtering each child by it.
-        fun launcher(text:String)=instrumentation.uiAutomation.windows.filter { it.root?.packageName?.toString()=="com.android.launcher3" }.flatMap { it.root?.findAccessibilityNodeInfosByText(text).orEmpty() }
-        fun described(value:String):List<AccessibilityNodeInfo> {
-            val found=mutableListOf<AccessibilityNodeInfo>()
-            fun visit(node:AccessibilityNodeInfo) {
-                if(node.isVisibleToUser&&node.contentDescription?.contains(value)==true)found+=node
-                for(i in 0 until node.childCount)node.getChild(i)?.let(::visit)
-            }
-            instrumentation.uiAutomation.windows.forEach { it.root?.let(::visit) }
-            return found
-        }
+        fun nodes(text:String)=search(text)
+        fun launcher(text:String)=instrumentation.uiAutomation.windows.filter{root(it)?.packageName?.toString()=="com.android.launcher3"}.flatMap{root(it)?.findAccessibilityNodeInfosByText(text).orEmpty()}.filter{it.isVisibleToUser}
+        fun described(value:String)=search(value,true)
         fun picture(name:String) {
             File(app.filesDir,"calendar-gallery").mkdirs()
             instrumentation.uiAutomation.takeScreenshot().also { bitmap -> File(app.filesDir,"calendar-gallery/$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle() }
         }
         fun waitFor(stage:String,condition:()->Boolean) {
             val end=System.currentTimeMillis()+90_000
-            while(System.currentTimeMillis()<end) { if(condition())return;Thread.sleep(250) }
+            while(System.currentTimeMillis()<end) { if(condition())return;Thread.sleep(500) }
             instrumentation.runOnMainSync {ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().forEach {it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)}}
             picture("host-failure")
             error("Calendar host did not reach $stage; active="+instrumentation.uiAutomation.rootInActiveWindow?.packageName)
@@ -83,7 +82,7 @@ class CalendarWidgetHostDeviceTest {
             }
             waitFor("calendar view controls") {nodes("Month").isNotEmpty()}
             val month=nodes("Month").first();assertTrue((if(month.isClickable)month else month.parent).performAction(AccessibilityNodeInfo.ACTION_CLICK))
-            Thread.sleep(500)
+            instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync { assertTrue(if(weekly)WeekCalendarWidget.pin(activity!!) else CalendarWidget.pin(activity!!)) }
             waitFor("pin confirmation") { launcher("Add").any { it.isClickable||it.parent?.isClickable==true } }
             picture("pin-confirmation")
@@ -106,6 +105,13 @@ class CalendarWidgetHostDeviceTest {
             if(!weekly)assertTrue(described("Monday").isNotEmpty())
             assertTrue(described(if(weekly)"Next week" else "Next month").isNotEmpty())
             if(weekly)assertTrue(nodes("Updated check-in").isNotEmpty())
+            val beforeSequence=app.model.state.value.cache.snapshot!!.sequence
+            fun shell(command:String){instrumentation.uiAutomation.executeShellCommand(command).use{fd->android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).readBytes()}}
+            shell("input keyevent KEYCODE_SLEEP")
+            waitFor("lock redaction"){nodes("Unlock phone").isNotEmpty()}
+            shell("input keyevent KEYCODE_WAKEUP");shell("wm dismiss-keyguard")
+            waitFor("reveal after unlock without a new sync"){described(friendlyDate(tomorrow)).any{it.contentDescription?.contains("1 scheduled")==true}}
+            assertEquals(beforeSequence,app.model.state.value.cache.snapshot!!.sequence)
             picture(if(weekly)"42-home-week" else "32-home-calendar")
             assertTrue(described(friendlyDate(tomorrow)).first { it.isClickable }.performAction(AccessibilityNodeInfo.ACTION_CLICK))
             waitFor("calendar date link") { instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()=="org.fieldnotes.app"&&nodes("Tomorrow’s reminder").any { it.packageName?.toString()=="org.fieldnotes.app" } }

@@ -68,15 +68,12 @@ struct Job {
 
 fn allowed(kind: &str) -> &'static [&'static str] {
     match kind {
-        "project" => &[
-            "title", "notes", "location", "category", "status", "due", "assignee",
-        ],
+        "project" => &["title", "notes", "category", "status", "due", "assignee"],
         "list" => &[
             "project_id",
             "items_are_tasks",
             "title",
             "notes",
-            "location",
             "category",
             "template",
             "fields",
@@ -116,7 +113,6 @@ fn allowed(kind: &str) -> &'static [&'static str] {
             "item_category",
             "category",
             "notes",
-            "location",
             "project_id",
             "quadrant",
             "due",
@@ -303,7 +299,7 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
     if d.get("note_type") == Some(&json!("general")) {
         d.as_object_mut().unwrap().remove("note_type");
     }
-    if let Some(options) = d["reminder_options"].as_object_mut() {
+    if let Some(options) = d.get_mut("reminder_options").and_then(Value::as_object_mut) {
         options.remove("playback_version");
         if let Some(playback) = options.get_mut("playback").and_then(Value::as_object_mut) {
             for p in playback.values_mut() {

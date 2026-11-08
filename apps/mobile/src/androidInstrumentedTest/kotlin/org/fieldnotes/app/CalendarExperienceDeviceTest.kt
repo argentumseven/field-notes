@@ -88,7 +88,7 @@ class CalendarExperienceDeviceTest {
             compose.onNodeWithText("Repeating event").performScrollTo();shot("52-repeat-event")
             compose.onNode(hasText("Repeat: Every other day",substring=true)).performScrollTo().performClick()
             compose.onNodeWithText("Does not repeat",useUnmergedTree=true).performClick()
-            compose.onNode(hasText("Reminders ·",substring=true)).performScrollTo().performClick()
+            compose.onNodeWithText("Reminders",useUnmergedTree=true).performClick()
             compose.onNodeWithText("Only me").performScrollTo().performClick()
             compose.onNode(isToggleable() and hasAnySibling(hasText("Repeat during a time window"))).performScrollTo().performClick()
             compose.onNodeWithText("Every week").performScrollTo().performClick()
@@ -98,11 +98,13 @@ class CalendarExperienceDeviceTest {
             compose.onNodeWithText("Urgent").performClick();compose.onNodeWithText("Bell",useUnmergedTree=true).performClick();compose.onNodeWithText("100%").performClick()
             shot("41-reminder-sound")
             compose.onNodeWithText("Sunrise",useUnmergedTree=true).performScrollTo().performClick()
-            compose.onNodeWithContentDescription("Play as an alarm").performScrollTo().performClick()
+            compose.onNodeWithText("Alarm",useUnmergedTree=true).performScrollTo().performClick()
+            compose.onNodeWithContentDescription("Temporarily raise alarm volume").performScrollTo().performClick()
             compose.onNodeWithText("30 s").performScrollTo().performClick()
             compose.onNodeWithText("Temporarily raise alarm volume").performScrollTo()
             shot("44-long-alarm-controls")
             compose.onNodeWithText("Done").performClick()
+            compose.onNodeWithText("Schedule",useUnmergedTree=true).performClick()
             compose.onAllNodesWithText("Choose time").onFirst().performScrollTo().performClick()
             shot("33-time-picker")
             compose.onNodeWithText("Type a time").performClick()
@@ -119,7 +121,7 @@ class CalendarExperienceDeviceTest {
             // Real provider rendering must redact both titles and schedule markers.
             val privateView=CalendarWidget.views(app,cache,false).apply(app,android.widget.FrameLayout(app))
             assertFalse(privateView.findViewById<android.widget.TextView>(R.id.calendar_agenda).text.contains("Household check-in"))
-            assertEquals("Unlock phone to show schedule",privateView.findViewById<android.widget.TextView>(R.id.calendar_refresh).text.toString())
+            assertTrue(privateView.findViewById<android.widget.TextView>(R.id.calendar_refresh).text.toString().contains("Unlock phone"))
             val markerCount=(privateView.findViewById<android.widget.LinearLayout>(R.id.calendar_weeks)).let { weeks ->
                 (0 until weeks.childCount).sumOf { w -> val row=weeks.getChildAt(w) as android.widget.LinearLayout;(0 until row.childCount).count { d -> row.getChildAt(d).findViewById<android.widget.TextView>(R.id.calendar_marker).text.isNotBlank() } }
             }

@@ -61,3 +61,8 @@ remains the route for a complete installation recovery, including accounts;
 portable imports are for content, not server identity restoration.
 
 The [portable format](PORTABLE-FORMAT.md) describes its encryption and bounds.
+
+0.11 portable content includes recipe ingredients/instructions, appointment
+locations and complete day/time reminder rules. The server prefers the full
+reminder projection when importing phone snapshots. Default-only metadata does
+not manufacture duplicates; existing image-normalization identity remains stable.

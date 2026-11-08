@@ -93,16 +93,17 @@ internal class ContextFixtureTransport(private val seed:JsonObject,private var s
     override suspend fun stop(){}
     override suspend fun exchange(path:String,token:String?,body:JsonObject?,serverKey:String?):Reply {
         val value=when(path){
-            "/api/head"->JsonObject(seed.getValue("head").jsonObject+("sequence" to snapshot.sequence.j()))
+            "/api/head"->JsonObject(seed.getValue("head").jsonObject+("sequence" to snapshot.sequence.j())+("server_time_ms" to Clock.System.now().toEpochMilliseconds().j()))
             "/api/snapshot"->WireJson.encodeToJsonElement(snapshot)
             "/api/people"->obj("people" to seed.getValue("people"),"revision" to seed.getValue("head").jsonObject.getValue("directory_revision"))
             "/api/device/update"->seed.getValue("apk_update")
             "/api/commands"->{
-                val command=WireJson.decodeFromJsonElement<Command>(checkNotNull(body));check(command.action=="task.update")
+                val command=WireJson.decodeFromJsonElement<Command>(checkNotNull(body));check(command.action in setOf("task.update","event.update","note.update","note.create"))
                 receipts[command.operation_id]?:run{
-                    val old=snapshot.records.first{it.id==command.target};check(old.revision==command.expected_revision)
-                    val updated=old.copy(revision=old.revision+1,data=JsonObject(old.data+command.data))
-                    snapshot=snapshot.copy(sequence=snapshot.sequence+1,records=snapshot.records.map{if(it.id==old.id)updated else it})
+                    val old=snapshot.records.firstOrNull{it.id==command.target} ?: Record(command.target,command.action.substringBefore("."),0,obj());check(if(command.action.endsWith(".create"))command.expected_revision==null else old.revision==command.expected_revision)
+                    val clean=if(command.data.containsKey("reminders"))JsonObject(old.data.filterKeys{it !in setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules")})else old.data
+                    val updated=old.copy(revision=old.revision+1,data=JsonObject(clean+command.data))
+                    snapshot=snapshot.copy(sequence=snapshot.sequence+1,records=if(snapshot.records.none{it.id==old.id})snapshot.records+updated else snapshot.records.map{if(it.id==old.id)updated else it})
                     obj("sequence" to snapshot.sequence.j(),"record" to WireJson.encodeToJsonElement(updated)).also{receipts[command.operation_id]=it}
                 }
             }

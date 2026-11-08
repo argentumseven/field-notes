@@ -33,7 +33,7 @@ test("custom reminder time uses amount and friendly units and round-trips month/
       .fill("Annual household review");
     await page.getByLabel("Starts", { exact: true }).fill("2028-03-31");
     await page.getByLabel("Start time", { exact: true }).fill("10:00");
-    await page.locator(".reminder-editor>summary").click();
+    await page.getByRole("tab",{name:"Reminders",exact:true}).click();
     await page.getByLabel("Reminder 1", { exact: true }).selectOption("custom");
     assert.deepEqual(
       await page
@@ -80,7 +80,7 @@ test("custom reminder time uses amount and friendly units and round-trips month/
     await page.evaluate((id) => {
       void eventEditor(byId(id));
     }, event.id);
-    await page.locator(".reminder-editor>summary").click();
+    await page.getByRole("tab",{name:"Reminders",exact:true}).click();
     assert.equal(
       await page
         .locator(".reminder-row")

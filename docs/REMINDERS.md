@@ -128,3 +128,32 @@ Physical cross-profile sound, prolonged Doze and battery behavior remain device
 checks; emulator notification delivery does not establish those properties.
 
 See [Android delivery and clean removal](ANDROID-DELIVERY.md).
+
+## Explicit days and clock times — 0.11
+
+In an event's **Reminders** section, choose **Day & time**. Use **Day of**,
+**1 day before**, **1 week before**, or the amount and Days/Weeks selectors,
+then choose a clock time. A new all-day event starts with day-of at 9 AM. Saved
+all-day reminders keep their existing 9 AM anchor until explicitly changed.
+No old reminder is moved to midnight. Calendar timezone and daylight-saving rules
+are retained with the setting; a skipped spring-forward clock time advances by
+the gap and an ambiguous fall-back time uses the earlier occurrence.
+
+Choose one delivery mode: **Notification** or **Alarm**. A new alarm defaults to
+**5 seconds**. Existing saved durations, including **Play once**, are retained.
+Preview plays the chosen bundled sound. **Test on this phone** exercises actual
+delivery; **Stop sound and restore volume** stops playback and restores any
+app-owned volume lease. There is one audible playback path for each delivery.
+
+Temporary alarm-volume control and notification-volume control are independent:
+both the reminder and the receiving phone must opt in to the relevant stream.
+The app saves the previous state durably before changing it, fences replacement
+playback, and preserves later manual volume changes. Notification mode respects
+Silent/Vibrate; neither mode changes DND. Android and full-profile forwarding
+policies still apply. Force-stop or direct uninstall prevents Android from
+running cleanup; stop playback first or use Field Notes' clean removal flow.
+
+The app credential lock, Android user unlocking and widget visibility are separate.
+A hidden schedule can still sync encrypted content. Unlocking retries widget
+visibility without waiting for a new server snapshot; Refresh retries its own
+backoff immediately. A profile ended by Android cannot run workers or alarms.

@@ -10,14 +10,14 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.10.0.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.11.0.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
-[Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [List types and fields](docs/LISTS.md) · [Live updates](docs/LIVE-UPDATES.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
+[Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [Recipes](docs/RECIPES.md) · [Time checks](docs/TIME-ACCURACY.md) · [List types and fields](docs/LISTS.md) · [Live updates](docs/LIVE-UPDATES.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
 [Household planning](docs/PLANNER-0.6.md) · [Tasks and project tracking](docs/PROJECTS.md) · [History & restore](docs/HISTORY.md) · [Planner comparison](docs/PLANNER-COMPARISON.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/50-sunday-week-aligned.png)
@@ -29,7 +29,7 @@ services. iOS/native desktop packages are deferred.
   tasks and linked task lists with progress, coordinator, optional target, hold
   and finish/reopen controls. Reference/shopping lists can sit alongside the work
   without inflating progress. Move tasks and lists while preserving their identity.
-  Standalone Notes hold shared reference material with pinning and search.
+  Standalone Notes hold shared reference material with pinning and search. Recipes keep ingredients and cooking instructions together.
   Unscheduled, Waiting and Completed views surface different kinds of work.
 - Tasks and Assignments are explicit views, with My tasks and Unassigned filters.
   Planned responsibility is separate from the exclusive working claim. Handoffs
@@ -42,9 +42,9 @@ services. iOS/native desktop packages are deferred.
   Multiple reminders support separate importance, eight sounds and relative volume.
   Custom reminder times use amounts in minutes, hours, days, weeks, months or
   years; calendar months/years handle month ends and leap years without rewriting
-  existing reminders.
+  existing reminders. All-day events support an explicit day-of or days/weeks-before clock time. Federal holidays are an optional offline display layer; adjacent-month cells are blank.
   Choose recipients per person or everyone, and optionally ring a longer alarm
-  with temporary alarm-volume raising and restoration on each consenting phone.
+  with a five-second default. Alarm and notification volume have separate explicit phone and reminder opt-ins, with restoration that respects later manual changes.
   Repeat events on selected weekdays, alternate days/weeks, custom intervals or individual dates, with skipped dates and yearly intervals. Repeat reminders within a chosen daily/weekly window, even without a due date. New items default to Everyone; existing personal choices are preserved.
 - Lists have grocery, online shopping, general and custom presets, with optional
   item categories appropriate to groceries, shopping, household,

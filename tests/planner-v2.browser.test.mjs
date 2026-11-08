@@ -62,7 +62,7 @@ test("calendar uses the highlighted day, local ten AM, optional ends and per-rem
       .getByLabel("Event title", { exact: true })
       .fill("Weekly check-in");
     await page.getByLabel("Start time", { exact: true }).fill("10:00");
-    await page.locator(".reminder-editor>summary").click();
+    await page.getByRole("tab", { name: "Reminders", exact: true }).click();
     await page
       .getByRole("button", { name: "Add reminder", exact: true })
       .click();
@@ -94,7 +94,10 @@ test("calendar uses the highlighted day, local ten AM, optional ends and per-rem
       .getByLabel("Reminder 2 sound", { exact: true })
       .selectOption("sunrise");
     await page
-      .getByLabel("Reminder 2 · play as an alarm", { exact: true })
+      .getByLabel("Reminder 2 delivery mode", { exact: true })
+      .selectOption("alarm");
+    await page
+      .getByLabel("Temporarily raise alarm volume", { exact: true })
       .check();
     await page
       .getByLabel("Reminder 2 alarm duration", { exact: true })

@@ -756,6 +756,14 @@ async function eventEditor(record, selectedTime) {
         },
       );
       reminderUi.flat();
+      if (d.all_day && !reminderSettings.alerts?.some((r) => r.day_time))
+        reminderRoot.prepend(
+          el(
+            "p",
+            "muted",
+            "Saved all-day reminders use 9 AM on the first day. Choose Day & time to set an explicit clock time.",
+          ),
+        );
       const originalChange = nodes.all_day.onchange;
       let timingTouched = false;
       reminderRoot.addEventListener("input", () => {

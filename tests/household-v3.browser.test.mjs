@@ -158,6 +158,7 @@ test("task filters, grocery store subviews, later notes and irregular event cont
     await page
       .getByLabel("Content", { exact: true })
       .fill("Compare winter heating options");
+    await page.locator(".editor-details>summary").click();
     await page.getByRole("button", { name: "Tomorrow", exact: true }).click();
     await page.getByLabel("At", { exact: true }).fill("10:00");
     const response = page.waitForResponse(

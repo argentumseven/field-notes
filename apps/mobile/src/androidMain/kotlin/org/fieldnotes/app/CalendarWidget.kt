@@ -148,11 +148,11 @@ open class CalendarWidget : AppWidgetProvider() {
                     cell.setTextViewText(R.id.calendar_day,day?.dayOfMonth?.toString() ?: "")
                     cell.setTextColor(R.id.calendar_day,if(day==today)palette.accent else palette.text)
                     val busy=if(day!=null&&reveal)occupiedFraction(records,day.atStartOfDayIn(zone).epochSeconds,day.plus(1,DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds) else 0.0
-                    cell.setTextViewText(R.id.calendar_marker,if(busy>0)"▬".repeat(kotlin.math.ceil(busy*8).toInt().coerceIn(1,4)) else if(day!=null&&cache.preferences.federalHolidays&&holidaysOn(day).isNotEmpty())"◆" else if(entries.isNotEmpty())"•" else "")
+                    cell.setTextViewText(R.id.calendar_marker,if(busy>0)"▬".repeat(kotlin.math.ceil(busy*8).toInt().coerceIn(1,4)) else if(day!=null&&cache.preferences.federalHolidays&&holidaysOn(day,true).isNotEmpty())"◆" else if(entries.isNotEmpty())"•" else "")
                     cell.setTextColor(R.id.calendar_marker,palette.accent)
                     cell.setInt(R.id.calendar_day,"setBackgroundColor",if(day==today)palette.selected else android.graphics.Color.TRANSPARENT)
                     if(day!=null) {
-                        cell.setContentDescription(R.id.calendar_cell,friendlyDate(day)+(if(cache.preferences.federalHolidays)holidaysOn(day).joinToString(prefix=" · ")else "")+(if(day==today)" · Today" else "")+(if(reveal)" · ${entries.size} scheduled" else ""))
+                        cell.setContentDescription(R.id.calendar_cell,friendlyDate(day)+(if(cache.preferences.federalHolidays)holidaysOn(day,true).joinToString(prefix=" · ")else "")+(if(day==today)" · Today" else "")+(if(reveal)" · ${entries.size} scheduled" else ""))
                         if(interactive)cell.setOnClickPendingIntent(R.id.calendar_cell,open(context,day))
                     }
                     row.addView(R.id.calendar_week,cell)

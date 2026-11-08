@@ -84,3 +84,17 @@ For an idea that only needs to return later, use **Later & reminders** instead
 of reserving calendar time. See [Household planning](PLANNER-0.6.md).
 
 Every year and custom Years show upcoming dates beyond the current year. February 29 skips years without that date. Existing recurring events are edited in their saved timezone. Tapping a home-screen calendar day opens that exact day’s timeline, regardless of the previous view. Background updates offer Live, Periodic and Manual; widget status shows cache freshness.
+
+## Calendar options and focused editing — 0.11
+
+Month grids show only dates in the selected month. Empty surrounding cells do
+not navigate or display adjacent-month events. Sunday remains the first day.
+Enable **Calendar options → US federal holidays** separately on the website or
+phone. Holidays are calculated offline, include observed dates and appear in
+the native month/week widgets when enabled on that phone; they create no events
+or reminders and make no external requests.
+
+Events use Schedule / Reminders / Details sections. Appointments have an optional
+location with **Copy location**, so you can paste it into your chosen navigation
+app. Field Notes performs no geocoding or map lookup. Start-only events still
+require no end time and remain distinct from blocks of occupied time.
