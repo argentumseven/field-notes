@@ -27,6 +27,8 @@ async function scene() {
 async function shot(page, name) {
   if (process.env.FIELD_NOTES_CAPTURE_PLANNER !== "synthetic-only") return;
   await mkdir("docs/screenshots/web", { recursive: true });
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(150);
   await page.screenshot({
     path: "docs/screenshots/web/" + name + ".png",
     fullPage: true,
@@ -93,6 +95,7 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
         .getAttribute("aria-selected"),
       "true",
     );
+    await page.locator("#notice:not(.visible)").waitFor();
     await shot(page, "111-event-details");
     await page.getByRole("button", { name: "Save event", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -111,15 +114,49 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
       ].duration_seconds,
       5,
     );
-    if(process.env.FIELD_NOTES_CAPTURE_PLANNER==="synthetic-only"){
-      await page.evaluate(async()=>{
-        const start=FieldPlanning.scheduledInstant(state.day,"10:00");
-        await mutate("event.create",uuid(),{title:"Household check-in",all_day:false,starts_at:start,ends_at:start+3600,location:"Kitchen table"},null);
-        await mutate("event.create",uuid(),{title:"Pickup",all_day:false,starts_at:start+5*3600,ends_at:null,location:"Library entrance",category:"errands"},null);
-        await mutate("task.create",uuid(),{title:"Plan weekend meals",planned_for:state.day,category:"food",priority:3},null);
-        await refresh();render();
+    if (process.env.FIELD_NOTES_CAPTURE_PLANNER === "synthetic-only") {
+      await page.evaluate(async () => {
+        const start = FieldPlanning.scheduledInstant(state.day, "10:00");
+        await mutate(
+          "event.create",
+          uuid(),
+          {
+            title: "Household check-in",
+            all_day: false,
+            starts_at: start,
+            ends_at: start + 3600,
+            location: "Kitchen table",
+          },
+          null,
+        );
+        await mutate(
+          "event.create",
+          uuid(),
+          {
+            title: "Pickup",
+            all_day: false,
+            starts_at: start + 5 * 3600,
+            ends_at: null,
+            location: "Library entrance",
+            category: "errands",
+          },
+          null,
+        );
+        await mutate(
+          "task.create",
+          uuid(),
+          {
+            title: "Plan weekend meals",
+            planned_for: state.day,
+            category: "food",
+            priority: 3,
+          },
+          null,
+        );
+        await refresh();
+        render();
       });
-      await shot(page,"119-calendar-at-glance");
+      await shot(page, "119-calendar-at-glance");
     }
     await page.getByRole("button", { name: "Month", exact: true }).click();
     await page.locator(".calendar-options>summary").click();

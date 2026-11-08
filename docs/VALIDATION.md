@@ -22,8 +22,12 @@ volume restoration/refusal, later manual changes, replacement leases, separate
 notification control and service Stop. These use the named disposable AVD and
 actual Keystore-backed storage, not a household server or physical phone.
 
-Final native galleries, launcher transitions, in-place upgrade, clean-tag public
-publication and the matching ordinary server bundle remain pending. A cold
+The native planner gallery passed: explicit week/day time, five-second alarm
+selection, recipe entry with the actual keyboard, Done typing, offline queue
+projection, acknowledged sync and Keystore-backed vault retention. The same-signer
+**0.10/code 18 → 0.11/code 19** APK upgrade also passed both seed and verify phases.
+Launcher transitions, clean-tag public publication and the matching ordinary
+server bundle remain pending. A cold
 software-emulated Android System UI stalled during one discarded gallery run;
 its keyboard/system UI were warmed before the repeat. Another discarded run
 revealed a fixture race: sync() intentionally yields to an existing sync, and

@@ -39,32 +39,31 @@ class CalendarWidgetHostDeviceTest {
         fun search(text:String,description:Boolean=false):List<AccessibilityNodeInfo> {
             val windows=instrumentation.uiAutomation.windows
             for(window in windows){val r=root(window)?:continue
-                if(r.packageName?.toString()=="com.android.launcher3"){
-                    val found=r.findAccessibilityNodeInfosByText(text).filter{it.isVisibleToUser&&(!description||it.contentDescription?.contains(text)==true)}
-                    if(found.isNotEmpty())return found
-                }else{
-                    fun visit(node:AccessibilityNodeInfo):AccessibilityNodeInfo?{
-                        if(node.isVisibleToUser&&(if(description)node.contentDescription else node.text)?.contains(text)==true)return node
-                        for(i in 0 until node.childCount)child(node,i)?.let{visit(it)}?.let{return it};return null
-                    }
-                    visit(r)?.let{return listOf(it)}
+                fun visit(node:AccessibilityNodeInfo):AccessibilityNodeInfo?{
+                    if(node.isVisibleToUser&&(if(description)node.contentDescription else node.text)?.contains(text,ignoreCase=true)==true)return node
+                    for(i in 0 until node.childCount)child(node,i)?.let{visit(it)}?.let{return it};return null
                 }
+                visit(r)?.let{return listOf(it)}
+
             };return emptyList()
         }
+        fun shell(command:String){instrumentation.uiAutomation.executeShellCommand(command).use{fd->android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).readBytes()}}
         fun nodes(text:String)=search(text)
-        fun launcher(text:String)=instrumentation.uiAutomation.windows.filter{root(it)?.packageName?.toString()=="com.android.launcher3"}.flatMap{root(it)?.findAccessibilityNodeInfosByText(text).orEmpty()}.filter{it.isVisibleToUser}
+        fun launcher(text:String)=search(text)
         fun described(value:String)=search(value,true)
         fun picture(name:String) {
             File(app.filesDir,"calendar-gallery").mkdirs()
             instrumentation.uiAutomation.takeScreenshot().also { bitmap -> File(app.filesDir,"calendar-gallery/$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle() }
         }
         fun waitFor(stage:String,condition:()->Boolean) {
+            android.util.Log.i("FieldNotesWidgetTest",stage)
             val end=System.currentTimeMillis()+90_000
             while(System.currentTimeMillis()<end) { if(condition())return;Thread.sleep(500) }
             instrumentation.runOnMainSync {ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().forEach {it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)}}
             picture("host-failure")
-            error("Calendar host did not reach $stage; active="+instrumentation.uiAutomation.rootInActiveWindow?.packageName)
+            error("Calendar host did not reach $stage; unlocked="+WidgetVisibility.unlocked(app)+"; delivery="+app.deliveryError.value+"; active="+instrumentation.uiAutomation.rootInActiveWindow?.packageName)
         }
+        check(android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("getprop ro.boot.qemu.avd_name")).bufferedReader().use{it.readText().trim()}=="field-notes-test")
         // A launcher PendingIntent uses a real app task. ActivityScenario owns a
         // special launch Intent and cannot follow that task's lifecycle reliably.
         // MonitoringInstrumentation's fixed 45-second idle budget is too short
@@ -95,7 +94,13 @@ class CalendarWidgetHostDeviceTest {
             var page=0;var nextSwipe=System.currentTimeMillis()+8000
             waitFor("visible month") {
                 if(described(if(weekly)"Next week" else "Next month").isNotEmpty()&&described(friendlyDate(today)).any { it.contentDescription?.contains("1 scheduled")==true })true else {
-                    if(page<6&&System.currentTimeMillis()>=nextSwipe) { val m=app.resources.displayMetrics;instrumentation.uiAutomation.executeShellCommand("input swipe ${m.widthPixels*9/10} ${m.heightPixels/3} ${m.widthPixels/10} ${m.heightPixels/3} 250").close();page++;nextSwipe=System.currentTimeMillis()+5000 };false
+                    if(page<6&&System.currentTimeMillis()>=nextSwipe) {
+                        val bounds=android.graphics.Rect()
+                        instrumentation.uiAutomation.windows.firstOrNull{root(it)?.packageName?.toString()=="com.android.launcher3"}?.let{root(it)?.getBoundsInScreen(bounds)}
+                        check(bounds.width()>0&&bounds.height()>0){"Launcher bounds unavailable"}
+                        shell("input swipe ${bounds.right-bounds.width()/10} ${bounds.top+bounds.height()/3} ${bounds.left+bounds.width()/10} ${bounds.top+bounds.height()/3} 300")
+                        page++;nextSwipe=System.currentTimeMillis()+5000
+                    };false
                 }
             }
             runBlocking { app.model.enqueue("event.update",event.id,obj("title" to "Updated check-in".j()),1) }
@@ -106,7 +111,7 @@ class CalendarWidgetHostDeviceTest {
             assertTrue(described(if(weekly)"Next week" else "Next month").isNotEmpty())
             if(weekly)assertTrue(nodes("Updated check-in").isNotEmpty())
             val beforeSequence=app.model.state.value.cache.snapshot!!.sequence
-            fun shell(command:String){instrumentation.uiAutomation.executeShellCommand(command).use{fd->android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).readBytes()}}
+
             shell("input keyevent KEYCODE_SLEEP")
             waitFor("screen-off privacy state"){!WidgetVisibility.unlocked(app)}
             Thread.sleep(1500)

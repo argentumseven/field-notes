@@ -43,7 +43,8 @@ clear-storage or uninstall to update. Controlled **0.3.1 → 0.3.2**,
 **0.3.2/code 5 → 0.6.0/code 12**, and
 **0.3.2/code 5 → 0.7.0/code 13**, **0.8.1/code 15 → 0.9.0/code 16**, and
 **0.9.0/code 16 → 0.9.1/code 17**, and
-**0.9.1/code 17 → 0.10.0/code 18** APK upgrades
+**0.9.1/code 17 → 0.10.0/code 18**, and
+**0.10.0/code 18 → 0.11.0/code 19** APK upgrades
 were exercised on the disposable AVD with the actual Keystore-backed vault and
 queued task command. Physical GrapheneOS installation/profile checks remain
 separate. Android app code can be shared across full user profiles; their vaults

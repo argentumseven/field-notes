@@ -11,6 +11,18 @@ const adb = join(root, "android-sdk/platform-tools/adb"),
 const only = process.argv
   .find((value) => value.startsWith("--only="))
   ?.slice(7);
+const method = process.argv.find((v) => v.startsWith("--method="))?.slice(9);
+if (
+  method &&
+  !(
+    only === "CalendarWidgetHostDeviceTest" &&
+    [
+      "monthIsHostedRepaintsOfflineAndOpensTheChosenDate",
+      "weekIsHostedRepaintsOfflineAndOpensTheChosenDate",
+    ].includes(method)
+  )
+)
+  throw Error("Unknown isolated launcher case");
 const call = async (args, timeout = 180000) =>
   (
     await run(adb, ["-s", serial, ...args], {
@@ -141,14 +153,24 @@ try {
         "-r",
         "-e",
         "class",
-        "org.fieldnotes.app." + name,
+        "org.fieldnotes.app." + name + (method ? "#" + method : ""),
         ...extra,
         "org.fieldnotes.app.test/androidx.test.runner.AndroidJUnitRunner",
       ],
       600000,
     );
-    await writeFile("dist/android-test-results/" + name + ".txt", output);
-    if (!output.includes(`OK (${count} test${count === 1 ? "" : "s"})`))
+    await writeFile(
+      "dist/android-test-results/" +
+        name +
+        (method ? "-" + method : "") +
+        ".txt",
+      output,
+    );
+    if (
+      !output.includes(
+        `OK (${method ? 1 : count} test${(method ? 1 : count) === 1 ? "" : "s"})`,
+      )
+    )
       throw Error(output);
     console.log(name + " passed");
     const captures =
@@ -175,7 +197,13 @@ try {
           : name === "ReminderDeliveryDeviceTest"
             ? ["43-detailed-notifications"]
             : [];
-    for (const capture of captures) {
+    for (const capture of captures.filter(
+      (v) =>
+        !method ||
+        (method.startsWith("week")
+          ? v.includes("week") || v.includes("42-home")
+          : !v.includes("week") && !v.includes("42-home")),
+    )) {
       const { stdout } = await run(
         adb,
         [

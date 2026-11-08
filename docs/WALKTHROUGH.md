@@ -17,6 +17,36 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Focused planner controls — 0.11
+
+The current captures below show the event sections, optional detail, recipes,
+local holidays, clock diagnostics and the real keyboard. The browser fixture
+has no host NTP helper, so its clock card correctly reports verification as
+unavailable. All content is synthetic.
+
+| Web | What it shows |
+| --- | --- |
+| [Calendar at a glance](screenshots/web/119-calendar-at-glance.png) | Sunday-first occupied time, a start-only marker and a planned task |
+| [All-day reminder](screenshots/web/110-all-day-reminder.png) | A chosen clock time one week beforehand, with focused event sections |
+| [Alarm controls](screenshots/web/116-alarm-volume-controls.png) | One delivery mode, five-second default and separate volume consent |
+| [Appointment location](screenshots/web/111-event-details.png) | Optional location, Copy location and notes |
+| [Month and holidays](screenshots/web/112-calendar-holidays.png) | Offline US federal holidays and blank adjacent-month cells |
+| [Light theme](screenshots/web/117-calendar-light.png) | The same continuous month grid and controls in light mode |
+| [New recipe](screenshots/web/113-recipe-editor.png) | Ingredients and instructions in one form, with More options closed |
+| [Recipe search](screenshots/web/114-recipes.png) | Search matches cooking instructions, not just the title |
+| [Server time](screenshots/web/115-server-time.png) | Read-only clock-service diagnostics in management |
+
+| Android | What it shows |
+| --- | --- |
+| [Day and clock](screenshots/android/111-native-all-day-reminder.png) | Day/time mode and week units in the native picker |
+| [New alarm](screenshots/android/112-native-five-second-alarm.png) | Alarm selected with a five-second duration |
+| [Keyboard visible](screenshots/android/113-native-recipe-keyboard.png) | A real Android keyboard, scroll indicator and reachable actions |
+| [Done typing](screenshots/android/115-native-recipe-editor.png) | Keyboard dismissed and the complete recipe form available |
+
+The native planner check saves the event and recipe while paused, inspects their
+queued projection, resumes and waits for acknowledgement, then reads them back
+from the actual encrypted vault while verifying the keys and binding are unchanged.
+
 ## Purpose-aware categories and reminder units — 0.10
 
 [Category inheritance](LISTS.md#categories-follow-purpose) ·
