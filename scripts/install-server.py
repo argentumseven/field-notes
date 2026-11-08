@@ -269,7 +269,7 @@ def main():
     # systemd ProtectHome) or another service's Docker registry/proxy settings.
     (config/'docker').mkdir(mode=0o700)
     shutil.copy2(binary,install/'field-notes-server');(install/'field-notes-server').chmod(0o755)
-    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py'):
+    for helper in ('server_installation.py','uninstall-server.py','container_deployment.py','container-runtime.py','peer-agent.py','clock_health.py','tls.py','android_artifact.py','upgrade-server.py','terminal_input.py','reset-password.py'):
         shutil.copy2(root/'scripts'/helper,install/helper);(install/helper).chmod(0o644 if '_' in helper else 0o755)
     (install/'uninstall-server.sh').write_text(uninstall_wrapper(config));(install/'uninstall-server.sh').chmod(0o755)
     (install/'upgrade-server.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+str(config)+' "$@"\n');(install/'upgrade-server.sh').chmod(0o755)

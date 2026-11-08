@@ -154,7 +154,25 @@ function renderCalendar(root) {
   toolbar.append(nav, modes);
   if (mayWrite())
     toolbar.append(button("New event", () => eventEditor(), "primary"));
-  root.append(toolbar);
+  const options = el("details", "calendar-options");
+  options.append(el("summary", "", "Calendar options"));
+  const holidayLabel = el("label", "dialog-choice"),
+    holidayChoice = el("input");
+  holidayChoice.type = "checkbox";
+  holidayChoice.checked = FieldHolidays.enabled();
+  holidayLabel.append(
+    holidayChoice,
+    document.createTextNode("Show US federal holidays"),
+  );
+  holidayChoice.onchange = () => {
+    localStorage.setItem(
+      "field-notes-federal-holidays",
+      holidayChoice.checked ? "on" : "off",
+    );
+    render();
+  };
+  options.append(holidayLabel);
+  root.append(toolbar, options);
   if (view === "month") {
     renderCalendarMonth(root);
     return;
@@ -196,6 +214,8 @@ function renderCalendar(root) {
         (i) =>
           i.record.kind === "task" || i.record.data.all_day || i.windowLabel,
       );
+    for (const name of FieldHolidays.on(day))
+      cell.append(el("span", "holiday-label", name));
     for (const item of items.slice(0, view === "week" ? 2 : 6))
       cell.append(
         button(
@@ -401,8 +421,14 @@ function renderCalendarMonth(root) {
       state.month.getMonth() + 1,
       0,
     ).getDate();
-  for (let i = 0; i < 42; i++) {
+  for (let i = 0; i < Math.ceil((first + length) / 7) * 7; i++) {
     const n = i - first + 1;
+    if (n < 1 || n > length) {
+      const blank = el("div", "calendar-day outside");
+      blank.setAttribute("aria-hidden", "true");
+      grid.append(blank);
+      continue;
+    }
     const day = FieldPlanning.localDay(
         new Date(state.month.getFullYear(), state.month.getMonth(), n),
       ),
@@ -420,6 +446,8 @@ function renderCalendarMonth(root) {
       );
     b.setAttribute("aria-label", day + " · " + items.length + " items");
     b.append(el("strong", "", String(n)));
+    for (const name of FieldHolidays.on(day))
+      b.append(el("span", "holiday-label", name));
     for (const item of items.slice(0, 2))
       b.append(el("span", "calendar-preview", item.record.data.title));
     if (items.length > 2) b.append(el("span", "", "+" + (items.length - 2)));
@@ -523,6 +551,13 @@ async function eventEditor(record, selectedTime) {
       { key: "title", label: "Event title", value: d.title, max: 240 },
       categoryField(record),
       {
+        key: "location",
+        label: "Location · optional",
+        value: d.location || "",
+        required: false,
+        max: 2048,
+      },
+      {
         key: "notes",
         label: "Notes",
         type: "textarea",
@@ -618,6 +653,7 @@ async function eventEditor(record, selectedTime) {
           category: v.category,
           recurrence,
           notes: v.notes,
+          location: v.location,
           all_day: all,
           start_date: all ? v.start_date : "",
           end_date: all ? FieldPlanning.shiftDay(v.end_date, 1) : "",
@@ -691,16 +727,20 @@ async function eventEditor(record, selectedTime) {
         );
         $("#dialog-body").append(remove);
       }
+      const recurrenceRoot = el("section");
+      $("#dialog-body").append(recurrenceRoot);
       FieldRecurrence.controls(
-        $("#dialog-body"),
+        recurrenceRoot,
         recurrence,
         () => nodes.start_date.value || state.day,
         (value) => {
           recurrence = value;
         },
       );
-      FieldReminders.controls(
-        $("#dialog-body"),
+      const reminderRoot = el("section");
+      $("#dialog-body").append(reminderRoot);
+      const reminderUi = FieldReminders.controls(
+        reminderRoot,
         reminderSettings,
         () => nodes.start_date.value || state.day,
         (v) => {
@@ -715,6 +755,67 @@ async function eventEditor(record, selectedTime) {
           },
         },
       );
+      reminderUi.flat();
+      const originalChange = nodes.all_day.onchange;
+      let timingTouched = false;
+      reminderRoot.addEventListener("input", () => {
+        timingTouched = true;
+      });
+      reminderRoot.addEventListener("change", () => {
+        timingTouched = true;
+      });
+      nodes.all_day.onchange = () => {
+        originalChange();
+        if (!record && !timingTouched && nodes.all_day.checked) {
+          reminderSettings = {
+            ...reminderSettings,
+            timing_version: 2,
+            alerts: reminderSettings.alerts.map((r) => ({
+              ...r,
+              minutes_before: 0,
+              lead_time: undefined,
+              day_time: { days_before: 0, time: "09:00", zone: editZone },
+            })),
+          };
+          reminderUi.replace(reminderSettings);
+        }
+      };
+      const details = el("div"),
+        copy = button("Copy location", () =>
+          copyPlannerText(nodes.location.value),
+        );
+      copy.disabled = !nodes.location.value;
+      nodes.location.addEventListener("input", () => {
+        copy.disabled = !nodes.location.value;
+      });
+      details.append(copy);
+      const fieldNodes = (keys) =>
+        keys.flatMap((k) => editorFieldNodes(nodes[k]));
+      editorTabs($("#dialog-body"), [
+        [
+          "Schedule",
+          [
+            ...fieldNodes([
+              "all_day",
+              "start_date",
+              "start_time",
+              "has_end",
+              "end_date",
+              "end_time",
+            ]),
+            recurrenceRoot,
+          ],
+        ],
+        ["Reminders", [reminderRoot]],
+        [
+          "Details",
+          [
+            ...fieldNodes(["location"]),
+            details,
+            ...fieldNodes(["notes", "category"]),
+          ],
+        ],
+      ]);
       let oldDate = nodes.start_date.value;
       nodes.start_date.onchange = () => {
         const days = Math.max(

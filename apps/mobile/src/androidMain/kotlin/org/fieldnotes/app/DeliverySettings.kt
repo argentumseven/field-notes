@@ -42,7 +42,7 @@ object DeliverySettings {
     }
     suspend fun remove(context:Context){
         val app=context.applicationContext as FieldNotesApplication
-        AlarmPlaybackService.stop(context);AlarmAudio.restoreAfterStop(context)
+        AlarmPlaybackService.stop(context);AlarmAudio.restoreAfterStop(context);NotificationAudio.restoreAfterStop(context)
         app.model.removeInstallation()
         PrivateUpdatesService.stop(context)
         withContext(Dispatchers.IO){WorkManager.getInstance(context).cancelAllWork()}
@@ -60,7 +60,7 @@ object DeliverySettings {
     suspend fun recheck(context:Context) {
         val app=context.applicationContext as FieldNotesApplication
         app.deliveryError.value=null
-        try { AlarmAudio.restore(context);LocalAlarms.reconcile(context,true);problem(context)?.let {app.deliveryError.value=it} }
+        try { AlarmAudio.restore(context);NotificationAudio.restore(context);LocalAlarms.reconcile(context,true);problem(context)?.let {app.deliveryError.value=it} }
         catch(_:Exception){app.deliveryError.value="Delivery checks could not complete. Check storage and Android alarm permissions."}
     }
     fun pin(context:Context){

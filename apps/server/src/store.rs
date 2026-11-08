@@ -1,6 +1,7 @@
 mod admin;
 mod assignment;
 mod auth;
+mod clock_health;
 mod commands;
 mod enrollment;
 mod history;

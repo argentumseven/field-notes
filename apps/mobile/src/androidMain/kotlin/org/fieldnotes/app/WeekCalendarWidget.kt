@@ -41,7 +41,7 @@ class WeekCalendarWidget:CalendarWidget() {
                 row.setInt(R.id.week_day_title,"setBackgroundColor",if(day==today)p.selected else android.graphics.Color.TRANSPARENT)
                 row.setTextColor(R.id.week_day_summary,p.text)
                 row.setInt(R.id.week_day_summary,"setMaxLines",if(height<420)1 else 2)
-                row.setTextViewText(R.id.week_day_summary,if(!reveal)"Schedule details hidden" else entries.take(2).joinToString(" · "){"${calendarEntryLabel(it,zone)} ${it.record.data.text("title")}"}.ifBlank{"No scheduled items"}+(if(entries.size>2)" · +${entries.size-2} more" else ""))
+                row.setTextViewText(R.id.week_day_summary,if(!reveal)"Schedule details hidden" else (if(cache.preferences.federalHolidays)holidaysOn(day).joinToString(" · ").let{if(it.isBlank())""else "$it · "}else "")+entries.take(2).joinToString(" · "){"${calendarEntryLabel(it,zone)} ${it.record.data.text("title")}"}.ifBlank{"No scheduled items"}+(if(entries.size>2)" · +${entries.size-2} more" else ""))
                 row.setViewVisibility(R.id.week_day_busy,if(height<360||!reveal)View.GONE else View.VISIBLE)
                 val from=day.atStartOfDayIn(zone).epochSeconds;val until=day.plus(1,DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
                 for(slot in 0 until 24) {

@@ -219,31 +219,60 @@ function noteFollowUpControls(parent, initial = {}, changed = () => {}) {
   };
 }
 async function newNote() {
-  const later = state.page === "later";
+  const later = state.page === "later",
+    recipe = state.page === "recipes";
   let follow;
   await formDialog(
-    later ? "New reminder note" : "New note",
+    recipe ? "New recipe" : later ? "New reminder note" : "New note",
     "Keep the idea and context together. Dates are optional.",
     [
-      { key: "title", label: "Note title", max: 240 },
+      { key: "title", label: recipe ? "Recipe name" : "Note title", max: 240 },
+      ...(recipe
+        ? [
+            {
+              key: "ingredients",
+              label: "Ingredients",
+              type: "textarea",
+              required: false,
+              max: 16384,
+            },
+            {
+              key: "instructions",
+              label: "Cooking instructions",
+              type: "textarea",
+              required: false,
+              max: 16384,
+            },
+          ]
+        : []),
       {
         key: "body",
-        label: "Content",
+        label: recipe ? "Notes · optional" : "Content",
         type: "textarea",
         required: false,
         max: 16384,
       },
-      categoryField(),
+      { ...categoryField(), value: recipe ? "food" : "general" },
     ],
     async (v) => {
-      await mutate("note.create", uuid(), { ...v, ...follow.value() }, null);
+      await mutate(
+        "note.create",
+        uuid(),
+        { ...v, ...(recipe ? { note_type: "recipe" } : {}), ...follow.value() },
+        null,
+      );
     },
-    later ? "Create reminder note" : "Create note",
-    () => {
-      follow = noteFollowUpControls($("#dialog-body"), { on_radar: later });
+    recipe ? "Create recipe" : later ? "Create reminder note" : "Create note",
+    (nodes) => {
+      const extra = el("div");
+      follow = noteFollowUpControls(extra, { on_radar: later });
+      editorDetails($("#dialog-body"), "More options", [
+        ...editorFieldNodes(nodes.category),
+        extra,
+      ]);
     },
   );
-  state.page = later ? "later" : "notes";
+  state.page = recipe ? "recipes" : later ? "later" : "notes";
   state.query = "";
   state.project = null;
   state.selected = null;
@@ -259,7 +288,10 @@ function renderNotes(root) {
   const tools = el("div", "toolbar"),
     search = el("input");
   search.type = "search";
-  search.placeholder = "Search note titles and content";
+  search.placeholder =
+    state.page === "recipes"
+      ? "Search titles, ingredients and instructions"
+      : "Search note titles and content";
   search.value = state.query;
   search.setAttribute("aria-label", "Find a note");
   search.oninput = () => {
@@ -267,7 +299,14 @@ function renderNotes(root) {
     draw();
   };
   tools.append(search);
-  if (mayWrite()) tools.append(button("New note", newNote, "primary"));
+  if (mayWrite())
+    tools.append(
+      button(
+        state.page === "recipes" ? "New recipe" : "New note",
+        newNote,
+        "primary",
+      ),
+    );
   root.append(tools);
   const filters = el("div", "view-filters");
   const choice = (label, options, value, change) => {
@@ -315,7 +354,13 @@ function renderNotes(root) {
   function draw() {
     list.replaceChildren();
     const notes = records("note")
-      .filter((n) => state.page !== "later" || n.data.on_radar)
+      .filter((n) =>
+        state.page === "recipes"
+          ? n.data.note_type === "recipe"
+          : state.page === "notes"
+            ? n.data.note_type !== "recipe"
+            : n.data.on_radar,
+      )
       .filter(
         (n) =>
           !view.category ||
@@ -332,7 +377,9 @@ function renderNotes(root) {
             n.data.remind_at <= Date.now() / 1000),
       )
       .filter((n) =>
-        (n.data.title + " " + n.data.body)
+        [n.data.title, n.data.body, n.data.ingredients, n.data.instructions]
+          .filter(Boolean)
+          .join(" ")
           .toLowerCase()
           .includes(state.query.toLowerCase()),
       )
@@ -368,7 +415,11 @@ function renderNotes(root) {
       row.append(
         typeBadges(n),
         el("strong", "", n.data.title),
-        el("span", "note-preview", n.data.body.slice(0, 180)),
+        el(
+          "span",
+          "note-preview",
+          (n.data.ingredients || n.data.body || "").slice(0, 180),
+        ),
         el(
           "span",
           "item-sub",
@@ -393,17 +444,23 @@ function renderNotes(root) {
   draw();
 }
 function renderNoteDetail(note) {
+  const recipe = note.data.note_type === "recipe";
   const backdrop = el("div", "detail-backdrop");
   backdrop.onclick = closeDetail;
   const detail = el("aside", "detail");
   detail.dataset.scrollKey = "note-detail:" + note.id;
   detail.setAttribute("role", "dialog");
-  detail.setAttribute("aria-label", "Note details");
+  detail.setAttribute("aria-label", recipe ? "Recipe details" : "Note details");
   detail.setAttribute("aria-modal", "true");
   detail.tabIndex = -1;
   const head = el("div", "detail-header");
   head.append(
-    el("span", "eyebrow", "Shared note · revision " + note.revision),
+    el(
+      "span",
+      "eyebrow",
+      (recipe ? "Shared recipe · revision " : "Shared note · revision ") +
+        note.revision,
+    ),
     button("Close", closeDetail, "quiet"),
   );
   detail.append(head);
@@ -412,8 +469,14 @@ function renderNoteDetail(note) {
     kind: "note",
     baseRevision: note.revision,
   };
-  const title = addField(detail, input("Note title", draft.title)),
-    body = addField(detail, input("Content", draft.body, "textarea")),
+  const title = addField(
+      detail,
+      input(recipe ? "Recipe name" : "Note title", draft.title),
+    ),
+    body = addField(
+      detail,
+      input(recipe ? "Notes · optional" : "Content", draft.body, "textarea"),
+    ),
     pinned = addField(
       detail,
       select(
@@ -433,20 +496,58 @@ function renderNoteDetail(note) {
       draft.category || "general",
     ),
   );
-  const follow = noteFollowUpControls(detail, draft, () => dirty());
+  const ingredients = recipe
+      ? addField(
+          detail,
+          input("Ingredients", draft.ingredients || "", "textarea"),
+        )
+      : null,
+    instructions = recipe
+      ? addField(
+          detail,
+          input("Cooking instructions", draft.instructions || "", "textarea"),
+        )
+      : null;
+  if (recipe) {
+    ingredients.maxLength = instructions.maxLength = 16384;
+    ingredients.rows = 5;
+    instructions.rows = 8;
+    body.rows = 3;
+  }
+  const optional = el("div"),
+    follow = noteFollowUpControls(optional, draft, () => dirty());
+  editorDetails(detail, "More options", [
+    ...editorFieldNodes(pinned),
+    ...editorFieldNodes(category),
+    optional,
+  ]);
   title.maxLength = 240;
   body.maxLength = 16384;
-  body.rows = 16;
+  body.rows = recipe ? 3 : 16;
   const dirty = () =>
     state.drafts.set(note.id, {
       ...draft,
       title: title.value,
+      ...(recipe
+        ? {
+            note_type: "recipe",
+            ingredients: ingredients.value,
+            instructions: instructions.value,
+          }
+        : {}),
       body: body.value,
       category: category.value,
       followup: follow.raw(),
       pinned: pinned.value === "true",
     });
-  for (const n of [title, body, pinned, category]) {
+  for (const n of [
+    title,
+    body,
+    pinned,
+    category,
+    ingredients,
+    instructions,
+  ].filter(Boolean)) {
     n.disabled = !mayWrite();
     n.oninput = dirty;
   }
@@ -470,7 +571,7 @@ function renderNoteDetail(note) {
   if (mayWrite()) {
     detail.append(
       button(
-        "Save note",
+        recipe ? "Save recipe" : "Save note",
         async () => {
           dirty();
           const d = state.drafts.get(note.id);
@@ -480,6 +581,13 @@ function renderNoteDetail(note) {
             {
               title: d.title,
               body: d.body,
+              ...(recipe
+                ? {
+                    note_type: "recipe",
+                    ingredients: d.ingredients,
+                    instructions: d.instructions,
+                  }
+                : {}),
               pinned: d.pinned,
               category: d.category,
               ...follow.value(),

@@ -317,9 +317,12 @@ class Workspace(
         }
     }
     private suspend fun request(path: String, body: JsonObject? = null, token: String? = cache.token): JsonObject {
+        val wallStart=Clock.System.now().toEpochMilliseconds()
+        val tick=kotlin.time.TimeSource.Monotonic.markNow()
         val r=exchange(path,body,token)
         val json = try { WireJson.parseToJsonElement(r.body).jsonObject } catch (_: Exception) { throw ApiError(r.status, "The server returned an invalid response.") }
         if(r.status>=400)throw ApiError(r.status,json.text("error","Request failed"))
+        if(path=="/api/head")_state.update { it.copy(clockWarning=clockWarning(json,wallStart,Clock.System.now().toEpochMilliseconds(),tick.elapsedNow().inWholeMilliseconds)) }
         return json
     }
     suspend fun login(name: String, password: String) = connection.withLock {
@@ -490,10 +493,13 @@ class Workspace(
                 val c = item.command
                 val fence = when {
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
+                    (c.data["reminder_options"] as? JsonObject)?.number("playback_version")==2L&&!cache.supportsReminderAudio()->"This saved edit needs the newer server’s sound controls. Update the server; the complete edit is kept."
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
                     c.data.keys.any { it in setOf("recurrence","category","store","on_radar","remind_at","notify_additions","item_reminders") }&&!cache.supportsPlannerV3()->"This saved edit uses newer planner fields. Update the paired server; the complete edit is kept in Retained changes."
                     (c.data.containsKey("items_are_tasks")||c.action.startsWith("list.")&&c.data.containsKey("project_id")||c.action.startsWith("project.")&&c.data.keys.any{it in setOf("status","due","assignee")})&&!cache.supportsProjects()->"This saved edit needs the newer project/work-list server. Update the server; its complete content is kept."
+                    (c.data["reminders"] as? JsonObject)?.number("timing_version")==2L&&!cache.supportsReminderSchedule()->"This saved edit needs the newer server’s day-and-time reminders. Update the server; the complete edit is kept."
                     (c.data["reminders"] as? JsonObject)?.containsKey("timing_version")==true&&!cache.supportsReminderTiming()->"This saved edit needs the newer server’s custom reminder timing. Update the server; the complete edit is kept."
+                    c.data.keys.any{it in setOf("note_type","ingredients","instructions","location")}&&!cache.supportsPlannerDetails()->"This saved edit needs newer recipe/location fields. Update the server; the complete edit is kept."
                     c.data.containsKey("item_category")&&!cache.supportsItemContexts()->"This saved item category needs a newer server. Update the server; the complete edit is kept."
                     item.parentCreation!=null->"The parent collection could not be created. Review its retained change before this child item."
                     item.dependsOn != null -> "An earlier queued edit was rejected. Review this dependent draft."

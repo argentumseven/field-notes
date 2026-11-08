@@ -55,6 +55,7 @@ impl Store {
             &[
                 "title",
                 "notes",
+                "location",
                 "all_day",
                 "start_date",
                 "end_date",
@@ -107,6 +108,13 @@ impl Store {
             .ok_or(Fault(400, "Notes must be text".into()))?;
         if notes.len() > 16384 {
             return fail(400, "Notes too long");
+        }
+        if record
+            .data
+            .get("location")
+            .is_some_and(|v| v.as_str().is_none_or(|s| s.len() > 2048))
+        {
+            return fail(400, "Location must be text, up to 2048 bytes");
         }
         let all_day = record.data["all_day"]
             .as_bool()

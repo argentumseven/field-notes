@@ -94,7 +94,7 @@ import org.fieldnotes.domain.*
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp)){for(p in 1..4)FilterChip(priority==p,{priority=p},{Text(priorityName(p))},enabled=!busy)}
                 DateField("Due date · optional",due,!busy){due=it}
                 DateField("Planned day · optional",planned,!busy){planned=it}
-                if(state.cache.projectGraph().byId[keepIn]?.data?.text("template")!="groceries")ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,reminderEditorSettings(model,state,options,true){optionsJson=reminderOptionsData(it).toString()}){remindersJson=reminderData(it).toString()}
+                if(state.cache.projectGraph().byId[keepIn]?.data?.text("template")!="groceries")ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,reminderEditorSettings(model,state,options,true,device){optionsJson=reminderOptionsData(it).toString()}){remindersJson=reminderData(it).toString()}
                 if(stale)Text("The workspace was reset. Copy this title before reopening the form.",color=MaterialTheme.colorScheme.error)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }

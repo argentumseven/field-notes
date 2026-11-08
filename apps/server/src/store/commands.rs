@@ -116,7 +116,10 @@ impl Store {
             if let Some(incoming) = c.data.get("reminders") {
                 if super::reminder_timing::extended_timing(&record.data["reminders"])
                     && incoming != &record.data["reminders"]
-                    && incoming["timing_version"].as_i64() != Some(1)
+                    && !matches!(incoming["timing_version"].as_i64(), Some(1 | 2))
+                    || super::reminder_timing::has_day_time(&record.data["reminders"])
+                        && incoming != &record.data["reminders"]
+                        && incoming["timing_version"].as_i64() != Some(2)
                 {
                     return fail(409,"This item has calendar/custom reminder timing. Update the app before editing its reminders; the existing reminders and your other content were not overwritten");
                 }

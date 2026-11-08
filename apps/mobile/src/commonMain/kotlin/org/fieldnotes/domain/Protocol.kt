@@ -25,7 +25,7 @@ val Snapshot.basis get() = Basis(epoch, generation)
 @Serializable data class Conflict(val command: Command, val reason: String)
 @Serializable data class Draft(val target: String, val epoch: String, val generation: Long, val revision: Long, val data: JsonObject, val dependsOn: String? = null, val action: String = "task.update")
 @Serializable data class Preferences(val backgroundSync: Boolean = true, val reminders: Boolean = true, val widgetTitles: Boolean = true, val liveUpdates: Boolean = true, val connectionPaused: Boolean = false, val autoRefresh:Boolean=true, val theme:String="system", val notificationTitles:Boolean=true,
-    val appLock:Boolean=false,val lockMinutes:Int=5,val notificationOnLockScreen:Boolean=false,val widgetOnLockScreen:Boolean=false,val widgetHousehold:Boolean=false,val allowAlarmVolumeOverride:Boolean=false,val autoDownloadUpdates:Boolean=true,val visibilityChoiceSeen:Boolean=false,val sharedAdditions:Boolean=true)
+    val appLock:Boolean=false,val lockMinutes:Int=5,val notificationOnLockScreen:Boolean=false,val widgetOnLockScreen:Boolean=false,val widgetHousehold:Boolean=false,val allowAlarmVolumeOverride:Boolean=false,val autoDownloadUpdates:Boolean=true,val visibilityChoiceSeen:Boolean=false,val sharedAdditions:Boolean=true,val federalHolidays:Boolean=false,val allowNotificationVolumeOverride:Boolean=false)
 @Serializable data class Cache(
     val keys: JsonObject? = null, val config: JsonObject? = null, val token: String? = null,
     val snapshot: Snapshot? = null, val people: List<HouseholdPerson> = emptyList(), val directoryRevision:Long = 0, val lastSyncedAt:Long = 0, val outbox: List<Pending> = emptyList(),
@@ -38,7 +38,7 @@ val Snapshot.basis get() = Basis(epoch, generation)
     val recoveryPending:RecoveryIntent? = null,
     val recoveryNotice:String = "",
 )
-data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0,val refreshPending:Boolean=false)
+data class WorkspaceState(val cache: Cache = Cache(), val ready: Boolean = false, val syncing: Boolean = false, val online: Boolean = false, val needsLogin: Boolean = false, val error: String? = null, val connectionPaused:Boolean = false,val problem:String?=null,val contactAt:Long=0,val refreshPending:Boolean=false,val clockWarning:String?=null)
 data class Reply(val status: Int, val body: String = "", val binary: String? = null)
 interface Transport {
     suspend fun keys(): JsonObject

@@ -20,6 +20,7 @@
   };
   let activePreview = null;
   const rulesFor = (record) =>
+    record?.data?.reminder_schedule_rules ??
     record?.data?.reminder_timing_rules ??
     (record?.data && "reminder_rules" in record.data
       ? record.data.reminder_rules
@@ -47,7 +48,12 @@
         !Number.isInteger(p.alarm_volume) ||
         p.alarm_volume < 25 ||
         p.alarm_volume > 100 ||
-        (p.unmute && !p.alarm)
+        (p.unmute && !p.alarm) ||
+        (p.notification_unmute && p.alarm) ||
+        (p.notification_volume !== undefined &&
+          (!Number.isInteger(p.notification_volume) ||
+            p.notification_volume < 25 ||
+            p.notification_volume > 100))
       )
         throw Error("Choose a supported sound, duration and alarm volume.");
   }
@@ -61,7 +67,10 @@
   function validate(rules) {
     if (!Array.isArray(rules.alerts) || rules.alerts.length > 8)
       throw Error("Use up to eight reminders.");
-    if (rules.timing_version !== undefined && rules.timing_version !== 1)
+    if (
+      rules.timing_version !== undefined &&
+      ![1, 2].includes(rules.timing_version)
+    )
       throw Error("Update the app for this reminder timing.");
     const ids = new Set();
     const check = (p) => {
@@ -78,9 +87,14 @@
     };
     for (const r of rules.alerts) {
       check(r);
+      if (r.day_time) {
+        FieldReminderTiming.validateDay(r.day_time);
+        if (rules.timing_version !== 2 || r.minutes_before !== 0 || r.lead_time)
+          throw Error("Check day-and-time reminder settings.");
+      }
       if (r.lead_time) {
         FieldReminderTiming.validate(r.lead_time);
-        if (rules.timing_version !== 1 || r.minutes_before !== 0)
+        if (![1, 2].includes(rules.timing_version) || r.minutes_before !== 0)
           throw Error("Check the reminder timing format.");
       }
       if (
@@ -136,7 +150,7 @@
     section.append(summary, body);
     parent.append(section);
     const notify = () => {
-      rules.timing_version = 1;
+      rules.timing_version = 2;
       summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat ? " + recurring" : ""}`;
       changed(structuredClone(rules));
       if (extension) {
@@ -166,7 +180,7 @@
       const profileSummary = container.querySelector(":scope > summary");
       const updateSummary = () => {
         if (profileSummary)
-          profileSummary.textContent = `${extra.alarm ? "Alarm" : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.duration_seconds || 30) + " seconds" : "notification"} · ${r.volume}%`;
+          profileSummary.textContent = `${extra.alarm ? "Alarm" : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.duration_seconds ? extra.duration_seconds + " seconds" : "play once") : "notification"} · ${r.volume}%`;
       };
       const importance = addField(
         fields,
@@ -219,6 +233,7 @@
           if (r.importance === "quiet") {
             extra.alarm = false;
             extra.unmute = false;
+            extra.notification_unmute = false;
             if (alarmControl) alarmControl.checked = false;
             if (unmuteControl) unmuteControl.checked = false;
           }
@@ -262,56 +277,108 @@
       if (extension) {
         alarmSection = el("div", "alarm-options");
         alarmSection.hidden = r.importance === "quiet";
-        const choice = (label, checked) => {
-          const l = el("label", "dialog-choice"),
-            n = el("input");
-          n.type = "checkbox";
-          n.checked = checked;
-          l.append(n, document.createTextNode(label));
-          alarmSection.append(l);
-          return n;
-        };
-        const alarm = choice(prefix + " · play as an alarm", extra.alarm),
-          unmute = choice("Temporarily raise alarm volume", extra.unmute);
-        alarmControl = alarm;
-        unmuteControl = unmute;
-        const duration = addField(
+        const mode = addField(
+          alarmSection,
+          select(
+            prefix + " delivery mode",
+            [
+              ["notification", "Notification"],
+              ["alarm", "Alarm"],
+            ],
+            extra.alarm ? "alarm" : "notification",
+          ),
+        );
+        const length = addField(
           alarmSection,
           select(
             prefix + " alarm duration",
-            [5, 10, 15, 30, 60].map((n) => [String(n), n + " seconds"]),
-            String(extra.duration_seconds || 30),
+            [
+              ["0", "Play once"],
+              ...[5, 10, 15, 30, 60].map((n) => [String(n), n + " seconds"]),
+            ],
+            String(extra.duration_seconds),
           ),
         );
+        const alarmLabel = el("label", "dialog-choice"),
+          alarmRaise = el("input");
+        alarmRaise.type = "checkbox";
+        alarmRaise.checked = !!extra.unmute;
+        alarmLabel.append(
+          alarmRaise,
+          document.createTextNode("Temporarily raise alarm volume"),
+        );
+        const notificationLabel = el("label", "dialog-choice"),
+          notificationRaise = el("input");
+        notificationRaise.type = "checkbox";
+        notificationRaise.checked = !!extra.notification_unmute;
+        notificationLabel.append(
+          notificationRaise,
+          document.createTextNode("Temporarily raise notification volume"),
+        );
+        alarmSection.append(alarmLabel, notificationLabel);
         const level = addField(
           alarmSection,
           select(
-            prefix + " alarm volume",
-            [25, 50, 75, 100].map((n) => [String(n), n + "% alarm volume"]),
-            String(extra.alarm_volume),
+            prefix + " raised volume",
+            [25, 50, 75, 100].map((n) => [String(n), n + "%"]),
+            String(
+              extra.alarm
+                ? extra.alarm_volume
+                : extra.notification_volume || 100,
+            ),
           ),
         );
-        const updateAlarm = () => {
-          extra.alarm = alarm.checked;
-          extra.unmute = alarm.checked && unmute.checked;
-          extra.duration_seconds = alarm.checked ? Number(duration.value) : 0;
-          extra.alarm_volume = Number(level.value);
+        function configureMode() {
+          const alarm = mode.value === "alarm";
+          length.hidden = length.previousElementSibling.hidden = !alarm;
+          alarmLabel.hidden = !alarm;
+          notificationLabel.hidden = alarm;
+          level.disabled = !(alarm
+            ? alarmRaise.checked
+            : notificationRaise.checked);
+        }
+        function updateMode() {
+          extra.alarm = mode.value === "alarm";
+          extra.unmute = extra.alarm && alarmRaise.checked;
+          extra.notification_unmute = !extra.alarm && notificationRaise.checked;
+          extra.alarm_volume = extra.alarm
+            ? Number(level.value)
+            : extra.alarm_volume;
+          extra.notification_volume = extra.alarm
+            ? extra.notification_volume || 100
+            : Number(level.value);
+          extra.duration_seconds = extra.alarm ? Number(length.value) : 0;
           extension.value.playback[r.id] = extra;
-          unmute.disabled = duration.disabled = level.disabled = !alarm.checked;
+          extension.value.playback_version = 2;
+          configureMode();
           updateSummary();
           notify();
+        }
+        mode.onchange = () => {
+          if (
+            mode.value === "alarm" &&
+            !extra.alarm &&
+            Number(length.value) === 0
+          )
+            length.value = "5";
+          level.value = String(
+            mode.value === "alarm"
+              ? extra.alarm_volume
+              : extra.notification_volume || 100,
+          );
+          updateMode();
         };
-        alarm.onchange = () => {
-          if (alarm.checked) unmute.checked = true;
-          updateAlarm();
-        };
-        unmute.onchange = duration.onchange = level.onchange = updateAlarm;
-        unmute.disabled = duration.disabled = level.disabled = !alarm.checked;
+        alarmRaise.onchange =
+          notificationRaise.onchange =
+          length.onchange =
+          level.onchange =
+            updateMode;
+        configureMode();
         alarmSection.append(
           el(
             "p",
             "muted",
-            "Alarm mode uses the phone’s alarm audio stream. Each phone must enable temporary volume control; its previous level is restored afterward. Android’s DND and profile settings apply.",
+            "Each phone must separately allow temporary volume control. Previous volume is restored unless changed manually. Silent, Vibrate and DND remain under Android control. Test actual delivery on the phone.",
           ),
         );
         fields.append(alarmSection);
@@ -404,17 +471,32 @@
           [60, "1 hour before"],
           [120, "2 hours before"],
           [1440, "1 day before"],
+          [2880, "2 days before"],
+          [4320, "3 days before"],
+          [10080, "1 week before"],
+          [20160, "2 weeks before"],
+          [30240, "3 weeks before"],
+          [40320, "4 weeks before"],
         ];
         const isPreset =
-            !r.lead_time && options.some(([n]) => n === r.minutes_before),
+            !r.lead_time &&
+            !r.day_time &&
+            options.some(([n]) => n === r.minutes_before),
           when = addField(
             head,
             select(
               `Reminder ${i + 1}`,
               options
                 .map(([n, t]) => [String(n), t])
-                .concat([["custom", "Custom time…"]]),
-              isPreset ? String(r.minutes_before) : "custom",
+                .concat([
+                  ["custom", "Custom time…"],
+                  ["day-time", "Day & time…"],
+                ]),
+              r.day_time
+                ? "day-time"
+                : isPreset
+                  ? String(r.minutes_before)
+                  : "custom",
             ),
           );
         const customRow = el("div", "reminder-time-controls"),
@@ -445,7 +527,83 @@
         customRow.append(help);
         custom.min = "0";
         custom.step = "1";
+        const dayRow = el("div", "reminder-day-controls"),
+          dayCount = field(
+            dayRow,
+            "Days before",
+            r.day_time?.days_before || 0,
+            "number",
+          ),
+          dayUnit = addField(
+            dayRow,
+            select(
+              "Day unit",
+              [
+                ["days", "Days"],
+                ["weeks", "Weeks"],
+              ],
+              "days",
+            ),
+          ),
+          dayClock = field(
+            dayRow,
+            "At time",
+            r.day_time?.time || "09:00",
+            "time",
+          );
+        dayCount.min = 0;
+        dayCount.max = 3660;
+        dayCount.step = 1;
+        dayClock.required = false;
+        row.append(dayRow);
+        const dayQuick = el("div", "repeat-presets");
+        for (const [n, label] of [
+          [0, "Day of"],
+          [1, "1 day before"],
+          [2, "2 days before"],
+          [7, "1 week before"],
+          [14, "2 weeks before"],
+        ])
+          dayQuick.append(
+            button(label, () => {
+              dayCount.value = n;
+              dayUnit.value = "days";
+              updateDay();
+            }),
+          );
+        dayRow.prepend(dayQuick);
+        const updateDay = () => {
+          const count =
+            Number(dayCount.value) * (dayUnit.value === "weeks" ? 7 : 1);
+          if (
+            !Number.isInteger(count) ||
+            count < 0 ||
+            count > 3660 ||
+            !dayClock.value
+          )
+            return;
+          r.minutes_before = 0;
+          delete r.lead_time;
+          r.day_time = {
+            days_before: count,
+            time: dayClock.value,
+            zone: r.day_time?.zone || localZone(),
+          };
+          notify();
+        };
+        dayCount.oninput = dayUnit.onchange = dayClock.oninput = updateDay;
+        const amountQuick = el("div", "repeat-presets");
+        for (const n of [0, 1, 2, 3, 5, 10, 15, 30])
+          amountQuick.append(
+            button(String(n), () => {
+              custom.value = n;
+              update();
+            }),
+          );
+        customRow.prepend(amountQuick);
         const configure = () => {
+          dayRow.hidden = when.value !== "day-time";
+          dayCount.required = dayClock.required = !dayRow.hidden;
           customRow.hidden = when.value !== "custom";
           custom.required = !customRow.hidden;
           custom.max = String(FieldReminderTiming.limits[unit.value]);
@@ -466,10 +624,14 @@
         unit.onchange = update;
         when.onchange = () => {
           configure();
-          if (when.value === "custom") custom.focus();
+          if (when.value === "day-time") {
+            updateDay();
+            dayClock.focus();
+          } else if (when.value === "custom") custom.focus();
           else {
             r.minutes_before = Number(when.value);
             delete r.lead_time;
+            delete r.day_time;
             notify();
           }
         };
@@ -640,7 +802,21 @@
     }
     summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat ? " + recurring" : ""}`;
     render();
-    return { read: () => structuredClone(rules) };
+    return {
+      root: section,
+      read: () => structuredClone(rules),
+      replace(value) {
+        Object.keys(rules).forEach((k) => delete rules[k]);
+        Object.assign(rules, structuredClone(value));
+        render();
+        notify();
+      },
+      flat() {
+        section.open = true;
+        summary.hidden = true;
+        section.classList.add("flat");
+      },
+    };
   }
   async function edit(record) {
     let settings = structuredClone(

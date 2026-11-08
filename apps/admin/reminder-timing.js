@@ -42,7 +42,23 @@ const FieldReminderTiming = (() => {
         return { amount: rule.minutes_before / factors[unit], unit };
     return { amount: rule.minutes_before, unit: "minutes" };
   }
+  function validateDay(day) {
+    if (
+      !day ||
+      !Number.isInteger(day.days_before) ||
+      day.days_before < 0 ||
+      day.days_before > 3660 ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(day.time || "")
+    )
+      throw Error("Choose a day and reminder time.");
+    validate({ amount: 0, unit: "days", zone: day.zone });
+  }
   function label(rule) {
+    if (rule.day_time) {
+      const d = rule.day_time;
+      return `${d.days_before === 0 ? "Day of" : d.days_before % 7 === 0 ? d.days_before / 7 + " weeks before" : d.days_before + " days before"} at ${d.time}`;
+    }
+
     const p = parts(rule);
     return p.amount === 0
       ? "At the start"
@@ -50,6 +66,7 @@ const FieldReminderTiming = (() => {
   }
   function apply(rule, amount, unit, zone) {
     validate({ amount, unit, zone });
+    delete rule.day_time;
     const minutes = unit in factors ? amount * factors[unit] : null;
     if (amount === 0 || (minutes !== null && minutes <= 43200)) {
       rule.minutes_before = minutes || 0;
@@ -59,5 +76,5 @@ const FieldReminderTiming = (() => {
       rule.lead_time = { amount, unit, zone };
     }
   }
-  return { units, limits, parts, label, apply, validate };
+  return { units, limits, parts, label, apply, validate, validateDay };
 })();

@@ -52,6 +52,7 @@ fun reminderNotice(cache:Cache,alerts:List<LocalAlert>,zone:TimeZone,now:Instant
     val details=shown.joinToString("\n\n") { r -> buildString {
         append(r.data.text("title"));append('\n');append(schedule(r));append("\nFor ");append(people(r))
         r.data.text("project_id").takeIf { it.isNotBlank() }?.let { id->records[id]?.data?.text("title")?.let { append("\nList / project: ");append(it) } }
+        r.data.text("location").trim().takeIf{it.isNotBlank()}?.let {append("\nLocation: ");append(it.take(2048))}
         r.data.text("notes").ifBlank {r.data.text("body")}.trim().takeIf { it.isNotBlank() }?.let { append("\n\n");append(it.take(1800)) }
         append("\n\n");append(recordHistory(cache,r,zone))
     } }.take(7000)

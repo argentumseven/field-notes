@@ -121,7 +121,11 @@ impl Store {
         for field in [
             "title",
             "notes",
+            "location",
             "body",
+            "note_type",
+            "ingredients",
+            "instructions",
             "project_id",
             "quadrant",
             "category",
@@ -576,7 +580,7 @@ pub(super) fn history_diff(
     new: Option<&Value>,
     out: &mut Vec<(String, Value, Value)>,
 ) {
-    if path.ends_with(".timing_version") {
+    if path.ends_with(".timing_version") || path.ends_with(".playback_version") {
         return;
     }
     if old == new {

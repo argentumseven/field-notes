@@ -54,7 +54,8 @@ Distinguish compiled/tested behavior from physical GrapheneOS verification.
   visibility. Keep stored off preferences; expose separate lock-screen choices.
   Alarm-volume override requires per-phone opt-in and a per-reminder alarm
   setting. Restore durably without replacing a later manual volume choice;
-  never alter DND or notification-stream volume automatically.
+  notification-volume override has its own per-phone and per-reminder opt-ins.
+  Never alter Silent/Vibrate mode or DND; notification audio respects both.
 - Do not reuse upstream code/assets without recording their licenses and
   satisfying their terms. Visual inspiration does not require copying code.
 

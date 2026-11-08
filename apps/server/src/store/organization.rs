@@ -22,6 +22,9 @@ impl Store {
                 &[
                     "title",
                     "body",
+                    "note_type",
+                    "ingredients",
+                    "instructions",
                     "pinned",
                     "category",
                     "on_radar",
@@ -66,6 +69,20 @@ impl Store {
             record.data[body] = json!("");
         }
         if note {
+            if let Some(kind) = data.get("note_type") {
+                if !matches!(kind.as_str(), Some("general" | "recipe")) {
+                    return fail(400, "Choose a note or recipe");
+                }
+                record.data["note_type"] = kind.clone();
+            }
+            for field in ["ingredients", "instructions"] {
+                if let Some(value) = data.get(field) {
+                    if value.as_str().is_none_or(|s| s.len() > 16384) {
+                        return fail(400, "Recipe fields must be text, up to 16 KiB");
+                    }
+                    record.data[field] = value.clone();
+                }
+            }
             {
                 let key = "on_radar";
                 let value = data

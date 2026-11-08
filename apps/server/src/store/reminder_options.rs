@@ -17,7 +17,20 @@ impl Store {
         }) else {
             return Ok(());
         };
-        fields(value, &["audience", "playback"])?;
+        fields(value, &["audience", "playback", "playback_version"])?;
+        if value
+            .get("playback_version")
+            .is_some_and(|v| v.as_i64() != Some(2))
+        {
+            return fail(400, "Unsupported reminder audio version");
+        }
+        let current = &record.data["reminder_options"];
+        if current["playback_version"] == 2 && value.get("playback_version").is_none() {
+            if legacy_audio(value) == legacy_audio(current) {
+                return Ok(());
+            }
+            return fail(409,"This reminder uses newer audio controls. Update the app; the complete edit is retained without replacing the saved settings");
+        }
         let audience = &value["audience"];
         fields(audience, &["mode", "people"])?;
         if !matches!(
@@ -68,6 +81,8 @@ impl Store {
                     "alarm",
                     "unmute",
                     "alarm_volume",
+                    "notification_unmute",
+                    "notification_volume",
                 ],
             )?;
             if !matches!(
@@ -95,6 +110,22 @@ impl Store {
                 return fail(
                     400,
                     "Choose a supported sound, duration, alarm mode and volume",
+                );
+            }
+        }
+        for p in sounds.values() {
+            if p.get("notification_unmute")
+                .is_some_and(|v| !v.is_boolean())
+                || p.get("notification_volume")
+                    .is_some_and(|v| !v.as_i64().is_some_and(|n| (25..=100).contains(&n)))
+                || p["alarm"] == true && p["notification_unmute"] == true
+                || (p.get("notification_unmute").is_some()
+                    || p.get("notification_volume").is_some())
+                    && value["playback_version"] != 2
+            {
+                return fail(
+                    400,
+                    "Choose one sound delivery mode and valid notification volume",
                 );
             }
         }
@@ -129,7 +160,9 @@ impl Store {
     pub fn notification_projection(mut record: Record, actor: &Actor) -> Record {
         if let Some(rules) = record.data.get("reminders").cloned() {
             if super::reminder_timing::extended_timing(&rules) {
-                record.data["reminder_timing_rules"] = rules.clone();
+                record.data["reminder_schedule_rules"] = rules.clone();
+                record.data["reminder_timing_rules"] =
+                    super::reminder_timing::timing_v1_rules(&rules);
             }
             record.data["reminders"] = super::reminder_timing::legacy_rules(&rules);
         }
@@ -148,6 +181,22 @@ impl Store {
             "/../../release.json"
         )))
         .expect("valid release metadata");
-        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","project-workspaces-v1","item-context-v1","reminder-timing-v1"]})
+        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","project-workspaces-v1","item-context-v1","reminder-timing-v1","reminder-schedule-v2","reminder-audio-v2","planner-details-v1"]})
     }
+}
+
+fn legacy_audio(value: &Value) -> Value {
+    let mut value = value.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("playback_version");
+    }
+    if let Some(sounds) = value["playback"].as_object_mut() {
+        for p in sounds.values_mut() {
+            if let Some(p) = p.as_object_mut() {
+                p.remove("notification_unmute");
+                p.remove("notification_volume");
+            }
+        }
+    }
+    value
 }

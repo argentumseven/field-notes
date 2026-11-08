@@ -106,17 +106,25 @@ import org.fieldnotes.domain.*
     if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={Text("The empty $kind will be removed from your household.")},confirmButton={Button(shape=ControlShape,onClick={model.enqueueAsync("$kind.delete",record.id,obj(),record.revision,basis);remove=false;close()}){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
 }
 
-@Composable internal fun NewNoteDialog(model:Workspace,state:WorkspaceState,initialRadar:Boolean=false,device:DeviceActions=DeviceActions(),close:()->Unit) {
-    var onRadar by rememberSaveable { mutableStateOf(initialRadar) };var remindAt by rememberSaveable { mutableStateOf(0L) };var category by rememberSaveable{mutableStateOf("general")}
+@Composable internal fun NewNoteDialog(model:Workspace,state:WorkspaceState,initialRadar:Boolean=false,device:DeviceActions=DeviceActions(),recipe:Boolean=false,close:()->Unit) {
+    var ingredients by rememberSaveable{mutableStateOf("")};var instructions by rememberSaveable{mutableStateOf("")};var extra by rememberSaveable{mutableStateOf(false)}
+    var onRadar by rememberSaveable { mutableStateOf(initialRadar) };var remindAt by rememberSaveable { mutableStateOf(0L) };var category by rememberSaveable{mutableStateOf(if(recipe)"food" else "general")}
     var title by rememberSaveable { mutableStateOf("") };var body by rememberSaveable { mutableStateOf("") };var pinned by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) };var busy by remember { mutableStateOf(false) };val scope=rememberCoroutineScope();val basis=remember { state.cache.snapshot!!.basis }
-    EditorDialog(onDismissRequest=close,title={Text(if(initialRadar)"New reminder note" else "New note")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(title,{title=it.take(240)},label={Text("Note title")},modifier=Modifier.fillMaxWidth())
-        OutlinedTextField(body,{body=it.take(16384)},label={Text("Content")},minLines=6,modifier=Modifier.fillMaxWidth())
+    EditorDialog(onDismissRequest=close,title={Text(if(recipe)"New recipe" else if(initialRadar)"New reminder note" else "New note")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(title,{title=it.take(240)},label={Text(if(recipe)"Recipe name" else "Note title")},modifier=Modifier.fillMaxWidth())
+        if(recipe){
+            OutlinedTextField(ingredients,{ingredients=it.take(16384)},label={Text("Ingredients")},minLines=3,modifier=Modifier.fillMaxWidth())
+            OutlinedTextField(instructions,{instructions=it.take(16384)},label={Text("Cooking instructions")},minLines=4,modifier=Modifier.fillMaxWidth())
+        }
+        OutlinedTextField(body,{body=it.take(16384)},label={Text(if(recipe)"Notes · optional" else "Content")},minLines=if(recipe)2 else 6,modifier=Modifier.fillMaxWidth())
+        SecondaryButton(onClick={extra=!extra},modifier=Modifier.fillMaxWidth()){Text(if(extra)"Fewer options ▴" else "More options ▾")}
+        if(extra){
         if(state.cache.supportsPlannerV3()){CategoryPicker(category){category=it};FollowUpControls(onRadar,remindAt,device.use24Hour){radar,at->onRadar=radar;remindAt=at}}
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(pinned,{pinned=it});Text("Pin this note")}
+        }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-    }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);model.requestSync();close() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text("Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
+    }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try { model.enqueue("note.create",model.newId(),JsonObject(obj("title" to title.j(),"body" to body.j(),"pinned" to JsonPrimitive(pinned))+(if(recipe)mapOf("note_type" to "recipe".j(),"ingredients" to ingredients.j(),"instructions" to instructions.j())else emptyMap())+(if(state.cache.supportsPlannerV3())mapOf("category" to category.j(),"on_radar" to JsonPrimitive(onRadar),"remind_at" to remindAt.j()) else emptyMap())),null,basis);model.requestSync();close() }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(recipe)"Create recipe" else "Create note")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }
 
 @Composable internal fun ColumnScope.Checklist(model:Workspace,state:WorkspaceState,list:Record,device:DeviceActions,image:@Composable (VisibleRecord)->Unit,open:(String)->Unit,edit:()->Unit,history:(()->Unit)?=null,storeChanged:(String)->Unit={}) {
@@ -247,7 +255,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         }
         val rules=itemReminderRules(data,id)
         if(writable&&list.data.text("template")!="groceries")ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,
-            reminderEditorSettings(model,state,reminderOptions(Record(id,"task",revision,data)) ?: ReminderOptions(),true){set("reminder_options",reminderOptionsData(it))}){set("reminders",reminderData(it))}
+            reminderEditorSettings(model,state,reminderOptions(Record(id,"task",revision,data)) ?: ReminderOptions(),true,device){set("reminder_options",reminderOptionsData(it))}){set("reminders",reminderData(it))}
         if(record!=null) {
             Text(recordHistory(state.cache,record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(writable){OutlinedTextField(comment,{comment=it.take(8192)},label={Text("Add a comment")},minLines=2);SecondaryButton(onClick={model.enqueueAsync("comment.create",model.newId(),obj("task_id" to id.j(),"body" to comment.j()),null,basis);comment=""},enabled=comment.isNotBlank()){Text("Post comment")}}

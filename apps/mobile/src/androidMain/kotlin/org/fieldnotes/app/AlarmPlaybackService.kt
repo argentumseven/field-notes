@@ -14,8 +14,8 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import org.fieldnotes.domain.*
 
-/** Bounded local alarm audio, with a visible Stop action. Neither notification
- * volume nor Do Not Disturb policy is modified. No network/media URLs are used. */
+/** Bounded local alarm audio, with a visible Stop action. Volume changes require separate phone and reminder opt-ins.
+ * Do Not Disturb and ringer mode remain under Android control. No network/media URLs are used. */
 class AlarmPlaybackService:Service() {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private val playback=Mutex()
@@ -37,19 +37,19 @@ class AlarmPlaybackService:Service() {
                 playback.withLock {
                     val state=app.model.state.value
                     val cache=if(state.ready)state.cache else app.vault.load()
-                    if(intent?.action!=TEST&&(cache.token==null||state.ready&&state.needsLogin))return@withLock
-                    val alerts=if(intent?.action==TEST)emptyList() else localAlerts(cache,Clock.System.now(),TimeZone.currentSystemDefault()).filter { it.key in keys&&it.profile?.alarm==true }
-                    val profile=if(intent?.action==TEST)AlertProfile("urgent","beacon",100,true,10,true,true,100) else alerts.firstOrNull()?.profile ?: return@withLock
+                    if(intent?.action !in setOf(TEST,TEST_SOUND)&&(cache.token==null||state.ready&&state.needsLogin))return@withLock
+                    val alerts=if(intent?.action in setOf(TEST,TEST_SOUND))emptyList() else localAlerts(cache,Clock.System.now(),TimeZone.currentSystemDefault()).filter { it.key in keys&&it.profile?.let{p->p.alarm||p.notificationUnmute}==true }
+                    val profile=if(intent?.action in setOf(TEST,TEST_SOUND))if(intent?.action==TEST_SOUND)SyncJson.decodeFromString<AlertProfile>(intent.getStringExtra("sound_profile") ?: error("Missing sound profile")) else AlertProfile("urgent","beacon",100,true,5,true,true,100) else alerts.firstOrNull()?.profile ?: return@withLock
                     if(profile.importance=="quiet")return@withLock
-                    val notice=if(intent?.action==TEST)ReminderNotice("Loud alarm test","Ten-second alarm; the previous alarm volume will be restored.","",null,Clock.System.now().epochSeconds) else reminderNotice(cache,alerts,TimeZone.currentSystemDefault())
+                    val notice=if(intent?.action in setOf(TEST,TEST_SOUND))ReminderNotice("Reminder sound test","Selected sound and volume policy; Stop restores any temporary volume.","",null,Clock.System.now().epochSeconds) else reminderNotice(cache,alerts,TimeZone.currentSystemDefault())
                     manager.notify(ID,controls(notice.title,notice.summary))
                     val started={ manager.notify(ID,controls(notice.title,notice.summary,"Alarm playing")) }
-                    if(intent?.action==TEST)play(profile,cache.preferences.allowAlarmVolumeOverride,started) else coroutineScope {
-                        val playing=launch { play(profile,cache.preferences.allowAlarmVolumeOverride,started) }
+                    if(intent?.action in setOf(TEST,TEST_SOUND))play(profile,if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride,started) else coroutineScope {
+                        val playing=launch { play(profile,if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride,started) }
                         val guard=launch {
                             app.model.state.first { current ->
                                 current.ready && (current.needsLogin || current.cache.token!=cache.token || current.cache.snapshot?.basis!=cache.snapshot?.basis ||
-                                    localAlerts(current.cache,Clock.System.now(),TimeZone.currentSystemDefault()).none { it.key in keys&&it.profile?.alarm==true })
+                                    localAlerts(current.cache,Clock.System.now(),TimeZone.currentSystemDefault()).none { it.key in keys&&it.profile?.let{p->p.alarm||p.notificationUnmute}==true })
                             }
                             playing.cancel()
                         }
@@ -74,17 +74,18 @@ class AlarmPlaybackService:Service() {
     }
     private suspend fun play(profile:AlertProfile,allowVolume:Boolean,onStarted:()->Unit) {
         val audio=getSystemService(AudioManager::class.java)
-        val attributes=AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+        val stream=if(profile.alarm)AudioManager.STREAM_ALARM else AudioManager.STREAM_NOTIFICATION
+        val attributes=AudioAttributes.Builder().setUsage(if(profile.alarm)AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         val focus=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attributes).setOnAudioFocusChangeListener { change->runCatching {when(change){AudioManager.AUDIOFOCUS_GAIN->player?.start();AudioManager.AUDIOFOCUS_LOSS,AudioManager.AUDIOFOCUS_LOSS_TRANSIENT->player?.pause()}} }.build()
         check(audio.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){"Android denied alarm audio focus. Check Do Not Disturb and sound settings."}
         var lease:String?=null
         val media=MediaPlayer();player=media
         try {
-            lease=AlarmAudio.raise(this,profile,allowVolume)
-            if(audio.isStreamMute(AudioManager.STREAM_ALARM)||audio.getStreamVolume(AudioManager.STREAM_ALARM)==0)(application as FieldNotesApplication).deliveryError.value="Alarm volume is muted. Enable temporary alarm-volume control or unmute alarms in Android Settings."
+            lease=if(profile.alarm)AlarmAudio.raise(this,profile,allowVolume) else NotificationAudio.raise(this,profile,allowVolume)
+            if(audio.isStreamMute(stream)||audio.getStreamVolume(stream)==0)(application as FieldNotesApplication).deliveryError.value="Alarm volume is muted. Enable temporary alarm-volume control or unmute alarms in Android Settings."
             wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"fieldnotes:alarm-audio").also {it.setReferenceCounted(false);it.acquire((profile.duration.takeIf {it>0} ?: 20)*1000L+20_000)}
             media.setAudioAttributes(attributes);media.setDataSource(this,ReminderSounds.sound(this,profile))
-            media.isLooping=profile.duration>0
+            media.isLooping=profile.alarm&&profile.duration>0
             val completed=CompletableDeferred<Unit>()
             media.setOnCompletionListener {completed.complete(Unit)}
             media.setOnErrorListener {_,_,_->completed.completeExceptionally(IllegalStateException("Android could not decode this alarm sound. Choose another sound."));true}
@@ -92,11 +93,11 @@ class AlarmPlaybackService:Service() {
             media.prepareAsync()
             withTimeout(15_000){ready.await()}
             media.start();onStarted()
-            if(profile.duration>0)withTimeoutOrNull(profile.duration.coerceIn(5,60)*1000L){completed.await()} else withTimeout(20_000){completed.await()}
+            if(profile.alarm&&profile.duration>0)withTimeoutOrNull(profile.duration.coerceIn(5,60)*1000L){completed.await()} else withTimeout(20_000){completed.await()}
         }finally {
             runCatching {media.setOnPreparedListener(null);media.setOnCompletionListener(null);media.setOnErrorListener(null);media.release()};if(player===media)player=null
             runCatching {audio.abandonAudioFocusRequest(focus)};wake?.takeIf {it.isHeld}?.release();wake=null
-            withContext(NonCancellable){try{if(lease!=null)AlarmAudio.restore(this@AlarmPlaybackService,lease)}catch(_:Exception){(application as FieldNotesApplication).deliveryError.value="Previous alarm volume could not be restored. Open Android sound settings."}}
+            withContext(NonCancellable){try{if(lease!=null){if(profile.alarm)AlarmAudio.restore(this@AlarmPlaybackService,lease) else NotificationAudio.restore(this@AlarmPlaybackService,lease)}}catch(_:Exception){(application as FieldNotesApplication).deliveryError.value="Previous alarm volume could not be restored. Open Android sound settings."}}
         }
     }
     override fun onDestroy(){runCatching {player?.pause()};scope.cancel();super.onDestroy()}
@@ -104,10 +105,12 @@ class AlarmPlaybackService:Service() {
         private const val ID=93
         private const val CHANNEL="alarm-playback-controls"
         internal const val STOP="org.fieldnotes.STOP_ALARM"
+        private const val TEST_SOUND="org.fieldnotes.TEST_REMINDER_SOUND"
         private const val TEST="org.fieldnotes.TEST_LOUD_ALARM"
         fun stopIntent(context:Context)=PendingIntent.getService(context,760,Intent(context,AlarmPlaybackService::class.java).setAction(STOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         fun start(context:Context,keys:List<String>):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).putStringArrayListExtra("occurrences",ArrayList(keys.take(32))))
         fun test(context:Context):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST))
+        fun testSound(context:Context,profile:AlertProfile):Boolean=startIntent(context,Intent(context,AlarmPlaybackService::class.java).setAction(TEST_SOUND).putExtra("sound_profile",WireJson.encodeToString(AlertProfile.serializer(),profile)))
         private fun startIntent(context:Context,intent:Intent):Boolean=try {
             check(Alerts.permissionAllowed(context)){"Allow notifications before playing alarm reminders."}
             ContextCompat.startForegroundService(context,intent);true

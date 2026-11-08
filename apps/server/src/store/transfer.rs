@@ -68,12 +68,15 @@ struct Job {
 
 fn allowed(kind: &str) -> &'static [&'static str] {
     match kind {
-        "project" => &["title", "notes", "category", "status", "due", "assignee"],
+        "project" => &[
+            "title", "notes", "location", "category", "status", "due", "assignee",
+        ],
         "list" => &[
             "project_id",
             "items_are_tasks",
             "title",
             "notes",
+            "location",
             "category",
             "template",
             "fields",
@@ -84,6 +87,9 @@ fn allowed(kind: &str) -> &'static [&'static str] {
         "note" => &[
             "title",
             "body",
+            "note_type",
+            "ingredients",
+            "instructions",
             "pinned",
             "category",
             "on_radar",
@@ -94,6 +100,7 @@ fn allowed(kind: &str) -> &'static [&'static str] {
         "event" => &[
             "title",
             "notes",
+            "location",
             "category",
             "all_day",
             "start_date",
@@ -109,6 +116,7 @@ fn allowed(kind: &str) -> &'static [&'static str] {
             "item_category",
             "category",
             "notes",
+            "location",
             "project_id",
             "quadrant",
             "due",
@@ -176,7 +184,8 @@ fn content(
     }
     if let Some(rules) = record
         .data
-        .get("reminder_timing_rules")
+        .get("reminder_schedule_rules")
+        .or_else(|| record.data.get("reminder_timing_rules"))
         .or_else(|| record.data.get("reminder_rules"))
     {
         data.insert("reminders".into(), rules.clone());
@@ -236,9 +245,10 @@ fn content(
 fn content_types(record: &Record) -> Result<()> {
     for (key, value) in record.data.as_object().unwrap() {
         let valid = match key.as_str() {
-            "title" | "notes" | "body" | "quantity" | "store" | "link_url" | "price"
-            | "item_category" | "currency" | "due" | "planned_for" | "quadrant" | "category"
-            | "template" | "start_date" | "end_date" | "name" => value.is_string(),
+            "title" | "notes" | "body" | "note_type" | "ingredients" | "instructions"
+            | "location" | "quantity" | "store" | "link_url" | "price" | "item_category"
+            | "currency" | "due" | "planned_for" | "quadrant" | "category" | "template"
+            | "start_date" | "end_date" | "name" => value.is_string(),
             "pinned" | "blocked" | "all_day" | "perpetual" | "notify_additions"
             | "item_reminders" | "on_radar" | "items_are_tasks" => value.is_boolean(),
             "priority" | "estimate_minutes" => value.as_i64().is_some(),
@@ -247,9 +257,11 @@ fn content_types(record: &Record) -> Result<()> {
             "fields" => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
-            "recurrence" | "reminder_rules" | "reminder_timing_rules" | "reminder_options" => {
-                value.is_null() || value.is_object()
-            }
+            "recurrence"
+            | "reminder_rules"
+            | "reminder_schedule_rules"
+            | "reminder_timing_rules"
+            | "reminder_options" => value.is_null() || value.is_object(),
             "reminders" => value.is_array() || value.is_object() || value.is_null(),
             _ => true,
         };
@@ -281,6 +293,29 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
     for (k, v) in defaults.as_object().unwrap() {
         if d.get(k).is_none() {
             d[k] = v.clone();
+        }
+    }
+    for field in ["location", "ingredients", "instructions"] {
+        if d.get(field) == Some(&json!("")) {
+            d.as_object_mut().unwrap().remove(field);
+        }
+    }
+    if d.get("note_type") == Some(&json!("general")) {
+        d.as_object_mut().unwrap().remove("note_type");
+    }
+    if let Some(options) = d["reminder_options"].as_object_mut() {
+        options.remove("playback_version");
+        if let Some(playback) = options.get_mut("playback").and_then(Value::as_object_mut) {
+            for p in playback.values_mut() {
+                if let Some(p) = p.as_object_mut() {
+                    if p.get("notification_unmute") == Some(&json!(false)) {
+                        p.remove("notification_unmute");
+                    }
+                    if p.get("notification_volume") == Some(&json!(100)) {
+                        p.remove("notification_volume");
+                    }
+                }
+            }
         }
     }
     if record.kind == "task" {
@@ -400,6 +435,7 @@ impl Store {
                             | "size"
                             | "original_sha256"
                             | "reminder_rules"
+                            | "reminder_schedule_rules"
                             | "reminder_timing_rules"
                             | "imported_from"
                             | "recovery_incarnation"

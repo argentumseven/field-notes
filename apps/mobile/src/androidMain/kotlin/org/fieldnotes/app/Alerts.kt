@@ -75,7 +75,7 @@ object Alerts {
             .setPublicVersion(publicNotice.build())
             .setCategory(if(alarm)NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER).setVisibility(if(prefs.notificationOnLockScreen)NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true).setOnlyAlertOnce(true)
-        if(alarm)builder.addAction(0,"Stop alarm",AlarmPlaybackService.stopIntent(context))
+        if(alarm)builder.setSilent(true).addAction(0,"Stop alarm",AlarmPlaybackService.stopIntent(context))
         val notification=builder.build()
         return try {
             // A unique tag per occurrence lets later reminders sound; retrying
@@ -189,9 +189,9 @@ object LocalAlarms {
             val keys=group.map { it.key }.sorted()
             val notice=reminderNotice(cache,group,TimeZone.currentSystemDefault())
             val channel=profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS
-            if(Alerts.post(context,channel,"$binding:"+keys.joinToString("|"),notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true)) {
+            if(Alerts.post(context,channel,"$binding:"+keys.joinToString("|"),notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.let{it.alarm||it.notificationUnmute}==true)) {
                 posted+=keys
-                if(profile?.alarm==true&&!AlarmPlaybackService.start(context,keys))Alerts.post(context,Alerts.REMINDERS,"alarm-fallback:"+keys.joinToString("|"),notice.title,"Alarm playback needs attention · ${notice.summary}",notice.target,notice.details)
+                if(profile?.let{it.alarm||it.notificationUnmute}==true&&!AlarmPlaybackService.start(context,keys))Alerts.post(context,Alerts.REMINDERS,"alarm-fallback:"+keys.joinToString("|"),notice.title,"Alarm playback needs attention · ${notice.summary}",notice.target,notice.details)
             } else app.deliveryError.value="A reminder channel or notification permission is blocked. Open Android notification settings."
         }
         if(posted.isNotEmpty()) {

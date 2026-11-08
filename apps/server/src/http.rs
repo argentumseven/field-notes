@@ -341,7 +341,7 @@ async fn head(State(app): State<App>, h: HeaderMap) -> Result<Json<Value>, Fault
         blocking(app, move |s| {
             s.actor(&token)?;
             let (e, g, q) = s.meta()?;
-            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?,"history_revision":s.recovery_revision()?,"compatibility":crate::store::Store::compatibility()}))
+            Ok(json!({"epoch":e,"generation":g,"sequence":q,"directory_revision":s.directory_revision()?,"history_revision":s.recovery_revision()?,"compatibility":crate::store::Store::compatibility(),"server_time_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"clock_health":s.clock_health()}))
         })
         .await?,
     ))
@@ -869,6 +869,33 @@ pub fn router(app: App) -> Router {
                     (
                         [("content-type", "text/javascript; charset=utf-8")],
                         include_str!("../../admin/projects.js"),
+                    )
+                }),
+            )
+            .route(
+                "/holidays.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/holidays.js"),
+                    )
+                }),
+            )
+            .route(
+                "/editor-layout.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/editor-layout.js"),
+                    )
+                }),
+            )
+            .route(
+                "/clock-health.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/clock-health.js"),
                     )
                 }),
             )

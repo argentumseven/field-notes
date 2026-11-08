@@ -39,7 +39,7 @@ class FieldNotesApplication : Application(), Configuration.Provider {
         scope.launch { try { model.initialize() } finally { initialized.complete(Unit) } }
         DefaultNetworkMonitor(this).start()
         scope.launch(Dispatchers.IO) {
-            try { AlarmAudio.restore(this@FieldNotesApplication) }catch(_:Exception){deliveryError.value="Previous alarm volume needs review. Open Android sound settings."}
+            try { AlarmAudio.restore(this@FieldNotesApplication);NotificationAudio.restore(this@FieldNotesApplication) }catch(_:Exception){deliveryError.value="Previous alarm volume needs review. Open Android sound settings."}
             try {
                 val previous=vault.readEffect("delivery-health")
                 if(previous!=null){try{if(deliveryError.value==null)deliveryError.value=previous.decodeToString().takeIf {it.isNotBlank()}}finally{previous.fill(0)}}

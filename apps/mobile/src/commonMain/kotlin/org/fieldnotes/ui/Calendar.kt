@@ -18,6 +18,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,7 +42,7 @@ import org.fieldnotes.domain.*
         DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { Button(shape=ControlShape,onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { SecondaryButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
     }
 }
-@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit) {
+@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit,federalHolidays:Boolean=false,holidayChange:(Boolean)->Unit={}) {
     val selected=LocalDate.parse(selectedDate);val records=rows.map { it.record }
     val month=LocalDate(selected.year,selected.monthNumber,1);val weekStart=selected.minus(selected.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY)
     Row(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -51,17 +53,21 @@ import org.fieldnotes.domain.*
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
         for(mode in listOf("Day","Week","Month","Agenda"))FilterChip(view==mode,{selectView(mode)},{Text(mode)})
     }
-    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){SecondaryButton(onClick={selectDate(today.toString())}){Text("Today")}}
+    var calendarOptions by rememberSaveable{mutableStateOf(false)}
+    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){SecondaryButton(onClick={calendarOptions=!calendarOptions}){Text("Calendar options "+if(calendarOptions)"▴"else"▾")};SecondaryButton(onClick={selectDate(today.toString())}){Text("Today")}}
+    if(calendarOptions)Row(verticalAlignment=Alignment.CenterVertically){Switch(federalHolidays,holidayChange,modifier=Modifier.semantics{contentDescription="Show US federal holidays"});Text("US federal holidays")}
+
     if(view=="Month") {
         val first=month.minus(month.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY);val border=MaterialTheme.colorScheme.outlineVariant
         Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
             Row { listOf("Sun","Mon","Tue","Wed","Thu","Fri","Sat").forEach { Box(Modifier.weight(1f).height(28.dp),contentAlignment=Alignment.Center){Text(it,style=MaterialTheme.typography.labelSmall)} } }
-            for(week in 0..5)Row {for(column in 0..6){
+            for(week in 0 until ((month.daysUntil(month.plus(1,DateTimeUnit.MONTH))+month.dayOfWeek.isoDayNumber%7+6)/7))Row {for(column in 0..6){
                 val day=first.plus(week*7+column,DateTimeUnit.DAY);val count=calendarEntries(records,day,zone).size
                 val active=day==selected;val outside=day.month!=month.month
-                Column(Modifier.weight(1f).height(54.dp).testTag("calendar-day-$day").background(if(active)MaterialTheme.colorScheme.primaryContainer else if(outside)MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface).drawBehind{drawLine(border,androidx.compose.ui.geometry.Offset(size.width,0f),androidx.compose.ui.geometry.Offset(size.width,size.height),1.dp.toPx());drawLine(border,androidx.compose.ui.geometry.Offset(0f,size.height),androidx.compose.ui.geometry.Offset(size.width,size.height),1.dp.toPx())}.clickable{selectDate(day.toString())}.padding(4.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-                    Text(day.dayOfMonth.toString(),fontWeight=if(day==today||active)FontWeight.Bold else FontWeight.Normal,color=if(outside)MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
-                    if(count>0)Text(if(count==1)"1 item" else "$count items",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary,maxLines=1)
+                Column(Modifier.weight(1f).height(54.dp).testTag("calendar-day-$day").background(if(active)MaterialTheme.colorScheme.primaryContainer else if(outside)MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface).drawBehind{drawLine(border,androidx.compose.ui.geometry.Offset(size.width,0f),androidx.compose.ui.geometry.Offset(size.width,size.height),1.dp.toPx());drawLine(border,androidx.compose.ui.geometry.Offset(0f,size.height),androidx.compose.ui.geometry.Offset(size.width,size.height),1.dp.toPx())}.then(if(!outside)Modifier.clickable{selectDate(day.toString())}else Modifier).padding(4.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+                    Text(if(outside)""else day.dayOfMonth.toString(),fontWeight=if(day==today||active)FontWeight.Bold else FontWeight.Normal,color=if(outside)MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                    if(!outside&&holidaysOn(day,federalHolidays).isNotEmpty())Text("◆",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelSmall)
+                    if(!outside&&count>0)Text(if(count==1)"1 item" else "$count items",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary,maxLines=1)
                 }
             }}
         }
@@ -73,6 +79,7 @@ import org.fieldnotes.domain.*
             }
         }}
     }
+    for(holiday in holidaysOn(selected,federalHolidays))Text(holiday,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
     val entries=calendarEntries(records,selected,zone)
     if(view=="Day") {
         val floating=entries.filter { it.startsAt==null || it.windowLabel!=null }
@@ -123,9 +130,12 @@ import org.fieldnotes.domain.*
         }
     }
 }
-@Composable internal fun EventEditor(model: Workspace, state: WorkspaceState, record: Record?, day: LocalDate, use24Hour: Boolean = false, preview:(AlertProfile)->Unit={}, initialTime:String?=null, close: () -> Unit) {
+@Composable internal fun EventEditor(model: Workspace, state: WorkspaceState, record: Record?, day: LocalDate, use24Hour: Boolean = false, preview:(AlertProfile)->Unit={}, initialTime:String?=null,copyLocation:(String)->Unit={},device:DeviceActions=DeviceActions(), close: () -> Unit) {
     val draft = record?.let { state.cache.drafts[it.id] }; val data = draft?.data ?: record?.data ?: obj()
     var title by rememberSaveable(record?.id) { mutableStateOf(data.text("title")) }; var notes by rememberSaveable(record?.id) { mutableStateOf(data.text("notes")) }
+    var location by rememberSaveable(record?.id){mutableStateOf(data.text("location"))}
+    var section by rememberSaveable(record?.id){mutableStateOf("Schedule")}
+    var timingTouched by rememberSaveable(record?.id){mutableStateOf(false)}
     val zone = remember(record?.id) {data["recurrence"]?.let {runCatching {WireJson.decodeFromJsonElement<EventRepeat>(it).zone}.getOrNull()}?.let {runCatching {TimeZone.of(it)}.getOrNull()} ?: TimeZone.currentSystemDefault()}
     val originalStart = data.number("starts_at"); val originalEnd = data.number("ends_at")
     val initialStart = if(originalStart > 0) Instant.fromEpochSeconds(originalStart).toLocalDateTime(zone) else LocalDateTime(day, LocalTime.parse(initialTime ?: "09:00"))
@@ -154,7 +164,8 @@ import org.fieldnotes.domain.*
         if (allDay) require(LocalDate.parse(endDate) >= LocalDate.parse(startDate)) { "The last day cannot be before the first day." } else if(hasEnd) require(end > start) { "Choose an end time after the start. For an overnight event, change the end date too." }
         require(title.isNotBlank()) { "Enter a title." }
         validateReminders(reminders)
-        val fields=obj("title" to title.j(), "notes" to notes.j(), "all_day" to JsonPrimitive(allDay), "start_date" to (if (allDay) startDate else "").j(), "end_date" to (if (allDay) LocalDate.parse(endDate).plus(1, DateTimeUnit.DAY).toString() else "").j(), "starts_at" to start.j(), "ends_at" to end.j())
+        val baseFields=obj("title" to title.j(), "notes" to notes.j(), "all_day" to JsonPrimitive(allDay), "start_date" to (if (allDay) startDate else "").j(), "end_date" to (if (allDay) LocalDate.parse(endDate).plus(1, DateTimeUnit.DAY).toString() else "").j(), "starts_at" to start.j(), "ends_at" to end.j())
+        val fields=if(state.cache.supportsPlannerDetails())JsonObject(baseFields+("location" to location.j()))else baseFields
         val result=if(remindersDirty)JsonObject(fields+("reminders" to reminderData(reminders))) else fields
         recurrence?.let(::validateRepeat)
         val modern=if(state.cache.supportsPlannerV3())JsonObject(result+mapOf("recurrence" to repeatData(recurrence),"category" to category.j())) else result
@@ -165,9 +176,9 @@ import org.fieldnotes.domain.*
     }
     EditorDialog(onDismissRequest = close, title = { Text(if(record == null) "New calendar event" else "Calendar event") }, text = { ScrollableColumn( verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title, { title = it.take(240) }, label = { Text("Title") }, enabled = writable)
-        OutlinedTextField(notes, { notes = it.take(16384) }, label = { Text("Notes") }, minLines = 2, enabled = writable)
-        if(state.cache.supportsPlannerV3())CategoryPicker(category,writable){category=it}
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(allDay, { allDay = it }, enabled = writable); Text("All day") }
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){for(name in listOf("Schedule","Reminders","Details"))FilterChip(section==name,{section=name},{Text(name)})}
+        if(section=="Schedule"){
+        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(allDay, { allDay = it;if(it&&record==null&&!timingTouched&&state.cache.supportsReminderSchedule()){remindersJson=reminderData(ReminderSet(reminders.alerts.map{r->withReminderDayTime(r,0,"09:00",zone.id)},reminders.repeat,2)).toString();remindersDirty=true} }, enabled = writable); Text("All day") }
         DateField(if(allDay) "First day" else "Starts", startDate, writable, clearable=false) { next ->
             val distance = LocalDate.parse(startDate).daysUntil(LocalDate.parse(endDate)).coerceAtLeast(0)
             startDate = next; endDate = LocalDate.parse(next).plus(distance, DateTimeUnit.DAY).toString()
@@ -190,7 +201,18 @@ import org.fieldnotes.domain.*
         }
         if(state.cache.supportsPlannerV3())RecurrenceEditor(recurrence,LocalDate.parse(startDate),writable){repeatJson=repeatData(it).toString()}
         if(record!=null&&recurrence!=null)Text("Editing the entire series. Use Skip dates to remove individual occurrences.",style=MaterialTheme.typography.bodySmall)
-        if(writable)ReminderEditor(reminders,LocalDate.parse(startDate),model::newId,use24Hour,preview,reminderEditorSettings(model,state,reminderOptions){optionsJson=reminderOptionsData(it).toString()}) { remindersJson=reminderData(it).toString();remindersDirty=true }
+        }
+        if(section=="Reminders"){
+            if(allDay)Text("All-day offsets use 9 AM. Choose Day & time for an explicit clock time.",style=MaterialTheme.typography.bodySmall)
+            if(writable)ReminderEditor(reminders,LocalDate.parse(startDate),model::newId,use24Hour,preview,reminderEditorSettings(model,state,reminderOptions,device=device){optionsJson=reminderOptionsData(it).toString()}.copy(flat=true)){remindersJson=reminderData(it).toString();remindersDirty=true;timingTouched=true}
+            else reminders.alerts.forEach{Text(reminderTimeLabel(it,use24Hour))}
+        }
+        if(section=="Details"){
+            if(state.cache.supportsPlannerDetails()||location.isNotBlank())OutlinedTextField(location,{location=it.take(2048)},label={Text("Location")},enabled=writable&&state.cache.supportsPlannerDetails(),modifier=Modifier.fillMaxWidth())
+            if(location.isNotBlank())SecondaryButton(onClick={copyLocation(location)}){Text("Copy location")}
+            OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Notes")},minLines=3,enabled=writable,modifier=Modifier.fillMaxWidth())
+            if(state.cache.supportsPlannerV3())CategoryPicker(category,writable){category=it}
+        }
         if(record!=null)Text(recordHistory(state.cache,record,zone),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if (record != null && revision != record.revision) { Text("Changed on another device. Your edits are kept. Close and reopen to load the latest event, or keep your edits for a new save.", color = MaterialTheme.colorScheme.error); SecondaryButton(onClick = { revision = record.revision }) { Text("Keep my edits") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

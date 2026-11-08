@@ -107,6 +107,12 @@ def main():
         # private manifest, subprocess stderr or arbitrary exception is logged.
         atomic_json(config['status'],{'version':1,'digest':None,'peers':[],'error':reason},0o640,config['gid'])
         raise ReconcileError('Peer reconciliation failed; no successful acknowledgement issued') from None
+    # Diagnostic failure must not revoke an already successful peer acknowledgement.
+    try:
+        from clock_health import collect,refresh_due
+        clock_path=pathlib.Path(config['status']).parent/'clock.json'
+        if refresh_due(clock_path):atomic_json(clock_path,collect(),0o640,config['gid'])
+    except (OSError,ValueError,subprocess.SubprocessError):pass
 
 if __name__=='__main__':
     try:main()

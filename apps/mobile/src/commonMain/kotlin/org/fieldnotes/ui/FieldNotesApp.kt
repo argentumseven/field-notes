@@ -200,7 +200,7 @@ import org.fieldnotes.domain.*
     DisposableEffect(selected) { registerBack(if (selected != null) ({ selected = null }) else null); onDispose { registerBack(null) } }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.error) { state.error?.let { snackbar.showSnackbar(it); model.clearError() } }
-    if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound) { selected = null }
+    if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound,copyLocation=copy,device=device) { selected = null }
     if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null},device)
     else if (selected != null && current?.record?.kind == "task") {
         val list=projects.find { it.record.id==current.record.data.text("project_id")&&it.record.kind=="list" }?.record
@@ -210,7 +210,7 @@ import org.fieldnotes.domain.*
     else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().plannerScroll().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Workspace",Modifier.padding(14.dp),style=MaterialTheme.typography.titleLarge)
         DrawerGroup("Plan",listOf("Calendar","Tasks","Focus","Later & reminders"),page,navigate={navigate(it)})
-        DrawerGroup("Library",listOf("Lists","Projects","Notes","History"),page,navigate={navigate(it)})
+        DrawerGroup("Library",listOf("Lists","Projects","Notes","Recipes","History"),page,navigate={navigate(it)})
         DrawerGroup("Task views",listOf("Inbox","My tasks","Assignments","Unassigned","Unscheduled","Waiting","Completed"),page,initiallyOpen=false,navigate={navigate(it)})
 
     } }}) { Scaffold(topBar = { TopAppBar(title = { Brand() }, navigationIcon={OutlinedIconButton(shape=ControlShape,onClick={uiScope.launch { drawer.open() }}){Icon(Icons.Outlined.Menu,"Browse workspace")}},actions = {
@@ -229,7 +229,7 @@ import org.fieldnotes.domain.*
         } }
     }) }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { NavigationBar(tonalElevation = 0.dp) {
         listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = page == label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
-    } }, floatingActionButton = { if (writable&&page!="History"&&!workClosed) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
+    } }, floatingActionButton = { if (writable&&page!="History"&&!workClosed&&(page!="Recipes"||state.cache.supportsPlannerDetails())) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders","Recipes"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Recipes" -> "New recipe"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(horizontal = 18.dp)) {
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             SyncStatusLine(state)
@@ -250,7 +250,7 @@ import org.fieldnotes.domain.*
             if(state.cache.recoveryPending!=null)SecondaryButton(onClick={settings=true}){Text("Recovery result needs review")}
             else if(state.cache.recoveryNotice.isNotBlank())Text(state.cache.recoveryNotice)
             if(device.update.available)SecondaryButton(onClick={settings=true}){Text("App update ${device.update.offered} available")}
-            if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it})
+            if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences(state.cache.preferences.copy(federalHolidays=on))}})
             else if(page=="History") HistoryScreen(model,state,device.use24Hour,historyTarget,historyTitle,{historyTarget=null;historyTitle=""}){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
             else if(page=="Assignments") {
                 OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(top=12.dp),label={Text("Find assigned work")},singleLine=true)
@@ -270,17 +270,17 @@ import org.fieldnotes.domain.*
             }
             else {
                 Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page in setOf("Notes","Later & reminders"))"Search notes" else "Search tasks") }, singleLine = true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
-                    if(page !in setOf("Notes","Later & reminders")) Box { OutlinedIconButton(shape=ControlShape,onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
+                    OutlinedTextField(query, { query = it }, Modifier.weight(1f), placeholder = { Text(if(page in setOf("Notes","Later & reminders","Recipes"))"Search notes" else "Search tasks") }, singleLine = true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
+                    if(page !in setOf("Notes","Later & reminders","Recipes")) Box { OutlinedIconButton(shape=ControlShape,onClick = { projectsMenu = true }) { Icon(Icons.Outlined.List, "Filter lists and projects") }; DropdownMenu(projectsMenu, { projectsMenu = false }) {
                         DropdownMenuItem(text = { Text("All tasks") }, onClick = { project = null; projectsMenu = false })
                         projects.forEach { p -> DropdownMenuItem(text = { Text(p.record.data.text("title")) }, onClick = { project = p.record.id; projectsMenu = false }) }
                     } }
                 }
                 if (page == "Focus") Text("Ranked by priority, time and effort. Tap a task for the calculation.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 10.dp))
                 val filters=TaskFilters(filterCategory,filterPerson,filterStatus,filterPriority,sortTasks)
-                if(page !in setOf("Notes","Later & reminders"))TaskFilterControls(state.cache,filters){filterCategory=it.category;filterPerson=it.person;filterStatus=it.status;filterPriority=it.priority;sortTasks=it.sort}
+                if(page !in setOf("Notes","Later & reminders","Recipes"))TaskFilterControls(state.cache,filters){filterCategory=it.category;filterPerson=it.person;filterStatus=it.status;filterPriority=it.priority;sortTasks=it.sort}
                 val filtered=filterTasks(workspaceTasks(state.cache,page,project,query,today,now.epochSeconds),filters)
-                if(page in setOf("Notes","Later & reminders"))NoteRows(state.cache,rows,query,page=="Later & reminders"){selected=it}
+                if(page in setOf("Notes","Later & reminders","Recipes"))NoteRows(state.cache,rows,query,page=="Later & reminders",page=="Recipes"){selected=it}
                 else                 VisibleLazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 90.dp)) {
                     if (filtered.isEmpty()) item { Text("No tasks in this view. Capture a task without creating a project first.", Modifier.padding(vertical = 24.dp)) }
                     items(filtered, key = { it.record.id }) { task -> TaskCard(task,state.cache) { focus.clearFocus();selected = task.record.id } }
@@ -293,13 +293,13 @@ import org.fieldnotes.domain.*
     projectList?.let{(parent,work)->CollectionDialog(model,state,null,"list",{projectList=null},parent,work){id->projectList=null;navigate("Tasks",id)}}
     if (addProject) CollectionDialog(model,state,null,"project",{addProject=false})
     if(addList)CollectionDialog(model,state,null,"list",{addList=false})
-    if(addNote)NewNoteDialog(model,state,page=="Later & reminders",device){addNote=false;query=""}
+    if(addNote)NewNoteDialog(model,state,page=="Later & reminders",device,recipe=page=="Recipes"){addNote=false;query=""}
     if(addTask) {
         val list=projects.find { it.record.id==project&&it.record.kind=="list" }?.record
         if(list!=null&&!list.flag("items_are_tasks"))ListItemDialog(model,state,list,null,device,initialStore=activeStore.takeUnless{it=="*"}.orEmpty(),close={addTask=false}) else NewTaskDialog(model,state,taskContainer ?: project,page=="My tasks",device,onCreated={id,_->selected=id}){addTask=false}
     }
     editingContainer?.let { c->CollectionDialog(model,state,c,c.kind,close={editingContainer=null}) }
-    if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock) { addEvent = false }
+    if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock,copyLocation=copy,device=device) { addEvent = false }
     if (endpoint) TextDialog("Server endpoint", "Host:UDP port", { endpoint = false }, confirmLabel = "Update", initial = state.cache.config?.text("endpoint") ?: "", maxLength = 260) { model.updateEndpoint(it); endpoint = false; model.launch { model.sync() } }
     if (changes) ChangesSheet(model, state, { changes = false }, copy)
     if (settings) ModalBottomSheet(onDismissRequest = { settings = false }) {
@@ -327,7 +327,8 @@ import org.fieldnotes.domain.*
                 SecondaryButton(onClick=device.recheckDelivery,modifier=Modifier.fillMaxWidth()){Text("Check reminder delivery again")}
                 Text("Loud alarm reminders",style=MaterialTheme.typography.titleMedium)
                 SettingSwitch("Allow temporary alarm-volume control","For alarm reminders, raise and restore this phone's alarm volume. Manual changes take priority. Stop the alarm before force-stop or direct uninstall; Android cannot run restoration afterward.",state.cache.preferences.allowAlarmVolumeOverride){val p=state.cache.preferences.copy(allowAlarmVolumeOverride=it);model.launch{model.preferences(p)}}
-                SecondaryButton(onClick=device.testLoudAlarm,modifier=Modifier.fillMaxWidth(),enabled=state.cache.preferences.allowAlarmVolumeOverride){Text("Test a loud alarm (10 s)")}
+                SettingSwitch("Allow temporary notification-volume control","Only for a reminder that requests it. Restores the previous level and respects Silent, Vibrate and DND.",state.cache.preferences.allowNotificationVolumeOverride){val p=state.cache.preferences.copy(allowNotificationVolumeOverride=it);model.launch{model.preferences(p)}}
+                SecondaryButton(onClick=device.testLoudAlarm,modifier=Modifier.fillMaxWidth(),enabled=state.cache.preferences.allowAlarmVolumeOverride){Text("Test a loud alarm (5 s)")}
                 SecondaryButton(onClick=device.stopAlarm,modifier=Modifier.fillMaxWidth()){Text("Stop alarm and restore volume")}
                 SecondaryButton(onClick=device.soundSettings,modifier=Modifier.fillMaxWidth()){Text("Android alarm volume")}
                 SecondaryButton(onClick=device.dndSettings,modifier=Modifier.fillMaxWidth()){Text("Do Not Disturb exceptions")}

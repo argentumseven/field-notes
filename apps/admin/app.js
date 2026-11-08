@@ -100,6 +100,8 @@ async function api(path, body, method, live = () => true) {
     h["Content-Type"] = "application/json";
     h["X-Field-CSRF"] = state.csrf;
   }
+  const clockStart = Date.now(),
+    clockTick = performance.now();
   let r;
   try {
     r = await fetch("/api" + path, {
@@ -133,6 +135,13 @@ async function api(path, body, method, live = () => true) {
     throw e;
   }
   state.online = true;
+  if (path === "/head")
+    FieldClock.accept(
+      data,
+      clockStart,
+      Date.now(),
+      performance.now() - clockTick,
+    );
   return data;
 }
 function records(kind) {
@@ -490,6 +499,7 @@ function renderWorkspace(viewKey) {
         ["lists", "Lists"],
         ["projects", "Projects"],
         ["notes", "Notes"],
+        ["recipes", "Recipes"],
         ["history", "History"],
       ],
       true,
@@ -637,6 +647,7 @@ function renderWorkspace(viewKey) {
         : {
             inbox: "Inbox",
             notes: "Notes",
+            recipes: "Recipes",
             later: "Later & reminders",
             collections: "Collections",
             waiting: "Waiting",
@@ -661,6 +672,7 @@ function renderWorkspace(viewKey) {
       {
         inbox: "Capture tasks before choosing where they belong.",
         notes: "References and ideas, without a task attached.",
+        recipes: "Ingredients and cooking instructions, kept together.",
         collections: "Lists for ongoing things. Projects for outcomes.",
         waiting: "Blocked tasks and work claimed by someone else.",
         completed: "Finished tasks, kept for reference.",
@@ -719,7 +731,11 @@ function renderWorkspace(viewKey) {
     if (state.selected) renderDetail();
     return;
   }
-  if (["notes", "later"].includes(state.page)) {
+  const clockNotice = el("p", "error", state.clockWarning || "");
+  clockNotice.id = "clock-warning";
+  clockNotice.hidden = !state.clockWarning;
+  main.append(clockNotice);
+  if (["notes", "later", "recipes"].includes(state.page)) {
     renderNotes(main);
     if (state.selected) renderDetail();
     return;

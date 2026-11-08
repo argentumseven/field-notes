@@ -99,6 +99,29 @@ async function renderAdmin() {
   // Build off-screen, including async APK metadata, so polling never collapses
   // the visible management page while the response is being assembled.
   const root = el("div", "admin-grid");
+  const clockPanel = el("section", "panel"),
+    clockResult = el("p", "muted");
+  clockPanel.append(
+    el("h2", "", "Server time"),
+    clockResult,
+    button("Check time again", checkClock),
+  );
+  root.append(clockPanel);
+  async function checkClock() {
+    try {
+      const head = await api("/head");
+      clockResult.textContent =
+        (state.clockWarning || "Server and browser time agree.") +
+        " Host: " +
+        (head.clock_health?.source || "unavailable") +
+        " · " +
+        (head.clock_health?.status || "unknown") +
+        ". Checks read the host's existing time service; Field Notes does not change it.";
+    } catch (e) {
+      clockResult.textContent = e.message;
+    }
+  }
+  await checkClock();
   const people = el("section", "panel"),
     ph = el("div", "admin-title");
   ph.append(
