@@ -30,8 +30,8 @@ The actual container integration suite also passes all **10 cases**, including
 pinned direct TLS, private WireGuard enrollment, bounded authenticated APK
 updates, source-bound phone access, denial of management/LAN/peer routes, real
 app-UID egress/DNS drop counters, retained keys and scoped cleanup. Launcher
-transitions, clean-tag public publication and the matching ordinary server
-bundle remain pending. The native JNI → WireGuard → TLS → Rust check passes
+lifecycle verification remains pending; publication and ordinary bundle
+verification are recorded below. The native JNI → WireGuard → TLS → Rust check passes
 both runtime/manifest cases, including stop/reconnect with the same identity.
 A cold
 software-emulated Android System UI stalled during one discarded gallery run;
@@ -51,6 +51,28 @@ unrelated edits preserve them. Both regressions failed before the foundation
 fix and pass afterward. New-format validation and older-client edit fences,
 restart persistence, duplicate-safe transfer and checkpoint rollback/forward
 are covered against the actual Rust server.
+
+Delivery verified: [v0.11.0](https://github.com/argentumseven/field-notes/releases/tag/v0.11.0)
+publishes clean tagged source `e3f272241a6332cfc32e59cdcffc88452a982dac`, Android
+code 19, using the unchanged public signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+All four public assets match the local build byte-for-byte. Actual APK signature,
+package, ARM64 ABI and source checks pass, and latest-download metadata points
+to this release. Public APK SHA-256:
+`b905af9757f60e57e1d58aafebbf6634468668230fe6fc6a01270c35d22a0826`.
+
+The ordinary Linux x86_64 build fetched these same public bytes without APK or
+download-directory overrides. All **15** packaged host helpers, including the
+clock helper, match source; both pinned images exist; archive/image/binary
+checksums pass; the outer archive contains no private-key files. Its executable
+reports 0.11.0. An isolated synthetic runtime check verifies all three new
+capabilities, clock diagnostics, recipe partial edits, explicit day/time and
+appointment location persistence across restart, and an authenticated update
+offer/chunk containing the exact public APK. Complete local bundle SHA-256:
+`f8f2bb314a7473baf1906c657c3a65e4bc350726ad736e277e6b0cce439f0c23`.
+The GitHub release publishes four Android assets; the Linux bundle is built and
+verified locally. Nothing here establishes deployment to the home Debian VM or
+physical GrapheneOS profile forwarding, background delivery or camera behavior.
 
 ## 0.10.0 contextual categories and reminder time units — 2026-11-07
 
