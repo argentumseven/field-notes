@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -22,9 +23,10 @@ import androidx.compose.ui.window.DialogProperties
     title:(@Composable ()->Unit)?=null,
     text:(@Composable ()->Unit)?=null,
 ) {
-    val keyboard=LocalSoftwareKeyboardController.current
-    val keyboardOpen=WindowInsets.ime.getBottom(LocalDensity.current)>0
     Dialog(onDismissRequest=onDismissRequest,properties=DialogProperties(usePlatformDefaultWidth=false)) {
+        val keyboard=LocalSoftwareKeyboardController.current
+        val focus=LocalFocusManager.current
+        val keyboardOpen=WindowInsets.ime.getBottom(LocalDensity.current)>0
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding(),contentAlignment=Alignment.Center) {
             Surface(modifier.padding(16.dp).widthIn(max=640.dp).fillMaxWidth().heightIn(max=(maxHeight-32.dp).coerceAtLeast(120.dp)),shape=MaterialTheme.shapes.large,tonalElevation=6.dp) {
                 Column {
@@ -32,7 +34,7 @@ import androidx.compose.ui.window.DialogProperties
                     if(text!=null)Box(Modifier.fillMaxWidth().weight(1f,fill=false).padding(horizontal=20.dp)){text()}
                     HorizontalDivider(Modifier.padding(top=12.dp))
                     FlowRow(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp,Alignment.End),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                        if(keyboardOpen)SecondaryButton(onClick={keyboard?.hide()}){Text("Done typing")}
+                        if(keyboardOpen)SecondaryButton(onClick={focus.clearFocus();keyboard?.hide()}){Text("Done typing")}
                         dismissButton?.invoke();confirmButton()
                     }
                 }

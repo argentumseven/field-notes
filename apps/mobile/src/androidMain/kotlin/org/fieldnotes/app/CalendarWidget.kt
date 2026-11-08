@@ -104,7 +104,7 @@ open class CalendarWidget : AppWidgetProvider() {
             val ids=widgetIds(context)
             if(ids.isEmpty())return
             val state=(context.applicationContext as FieldNotesApplication).model.state.value
-            val unlocked=context.getSystemService(UserManager::class.java).isUserUnlocked&&!context.getSystemService(KeyguardManager::class.java).isDeviceLocked
+            val unlocked=WidgetVisibility.unlocked(context)
             val zone=TimeZone.currentSystemDefault();val today=Clock.System.now().toLocalDateTime(zone).date
             val weekly=manager.getAppWidgetIds(ComponentName(context,WeekCalendarWidget::class.java)).toSet()
             for(id in ids)manager.updateAppWidget(id,if(id in weekly)WeekCalendarWidget.views(context,state.cache,unlocked,!state.needsLogin,id,displayWeek(context,id,today),today,zone) else views(context,state.cache,unlocked,!state.needsLogin,id,displayMonth(context,id,today),today,zone))
@@ -181,13 +181,13 @@ open class CalendarWidget : AppWidgetProvider() {
             val height=options.getInt(if(context.resources.configuration.orientation==Configuration.ORIENTATION_PORTRAIT)AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,480)
             view.setViewVisibility(R.id.calendar_agenda,if(height<430)View.GONE else View.VISIBLE)
             val agenda=if(reveal)calendarEntries(records,today,zone) else emptyList()
-            view.setTextViewText(R.id.calendar_agenda,if(!reveal)"Choose Show schedule to enable details. The app lock is a separate setting." else agenda.take(2).joinToString("\n") { "${calendarEntryLabel(it,zone)}  ${it.record.data.text("title").take(80)}" }.ifBlank { "Today · No scheduled items" })
+            view.setTextViewText(R.id.calendar_agenda,if(!reveal)widgetHiddenLabel(cache,unlocked,authenticated)+". Visibility is separate from encrypted sync and the app lock." else agenda.take(2).joinToString("\n") { "${calendarEntryLabel(it,zone)}  ${it.record.data.text("title").take(80)}" }.ifBlank { "Today · No scheduled items" })
             if(interactive)view.setOnClickPendingIntent(R.id.calendar_agenda,open(context,today))
             val state=(context.applicationContext as FieldNotesApplication).model.state.value
             view.setTextViewText(R.id.calendar_refresh,when {
-                !interactive->"Schedule visibility settings";!reveal->widgetHiddenLabel(cache,unlocked,authenticated);widgetProblem(context)->"Needs attention · open settings";else->widgetSyncLabel(state,Clock.System.now().epochSeconds)
+                !interactive->"Schedule visibility settings";!reveal->widgetHiddenLabel(cache,unlocked,authenticated)+" · "+widgetSyncLabel(state,Clock.System.now().epochSeconds);widgetProblem(context)->"Sync now · needs attention";else->widgetSyncLabel(state,Clock.System.now().epochSeconds)
             })
-            if(interactive)view.setOnClickPendingIntent(R.id.calendar_refresh,if(!reveal||widgetProblem(context))widgetSettings(context) else if(state.connectionPaused)open(context,today) else PendingIntent.getBroadcast(context,43,Intent(context,WidgetRefreshReceiver::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            if(interactive)view.setOnClickPendingIntent(R.id.calendar_refresh,widgetRefreshIntent(context,cache,authenticated))
             return view
         }
         fun pin(context:Context):Boolean {

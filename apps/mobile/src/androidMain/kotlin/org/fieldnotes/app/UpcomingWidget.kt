@@ -24,7 +24,7 @@ class UpcomingWidget : AppWidgetProvider() {
             val ids=manager.getAppWidgetIds(ComponentName(context,UpcomingWidget::class.java))
             if(ids.isEmpty())return
             val state=(context.applicationContext as FieldNotesApplication).model.state.value
-            val unlocked=context.getSystemService(UserManager::class.java).isUserUnlocked&&!context.getSystemService(KeyguardManager::class.java).isDeviceLocked
+            val unlocked=WidgetVisibility.unlocked(context)
             for(id in ids){
                 val options=manager.getAppWidgetOptions(id)
                 // Launcher options describe both orientations. Portrait uses
@@ -60,8 +60,8 @@ class UpcomingWidget : AppWidgetProvider() {
                 view.setTextViewText(R.id.widget_tasks,content)
                 view.setInt(R.id.widget_tasks,"setMaxLines",rows*3)
             } else view.setTextViewText(R.id.widget_tasks,widgetHiddenLabel(cache,unlocked,authenticated)+"\nWidget visibility is independent of the optional app lock.")
-            view.setTextViewText(R.id.widget_footer,when{!show->"Schedule visibility settings";widgetProblem(context)->"Needs attention · open settings";else->"Cached locally · tap here to refresh"})
-            if(!show||widgetProblem(context))view.setOnClickPendingIntent(R.id.widget_footer,widgetSettings(context))
+            view.setTextViewText(R.id.widget_footer,when{!show->widgetHiddenLabel(cache,unlocked,authenticated)+" · "+widgetSyncLabel((context.applicationContext as FieldNotesApplication).model.state.value,now.epochSeconds);widgetProblem(context)->"Sync now · needs attention";else->"Cached locally · tap here to refresh"})
+            view.setOnClickPendingIntent(R.id.widget_footer,widgetRefreshIntent(context,cache,authenticated))
             return view
         }
         fun pin(context:Context):Boolean {
@@ -85,15 +85,23 @@ class WidgetRefreshReceiver:BroadcastReceiver(){
 class WidgetRefreshWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params){
     override suspend fun doWork():Result {
         val app=applicationContext as FieldNotesApplication
-        app.initialized.await()
+        if(withTimeoutOrNull(30_000){app.initialized.await();true}!=true||!app.model.state.value.ready){app.deliveryError.value=STORAGE_WAIT;return Result.retry()}
         val state=app.model.state.value
-        if(state.ready&&!state.needsLogin&&!state.connectionPaused&&(!inputData.getBoolean("automatic",false)||backgroundUpdateMode(state.cache.preferences)!="manual"))app.model.sync()
+        var retry=false
+        if(!state.needsLogin&&!state.connectionPaused&&(!inputData.getBoolean("automatic",false)||backgroundUpdateMode(state.cache.preferences)!="manual")){
+            if(withTimeoutOrNull(30_000){app.model.sync();true}!=true){app.deliveryError.value=SYNC_TIMEOUT;return Result.retry()}
+            val after=app.model.state.value
+            if(after.online){app.deliveryError.compareAndSet(SYNC_TIMEOUT,null);app.deliveryError.compareAndSet(STORAGE_WAIT,null)}
+            retry=!after.online&&!after.needsLogin&&!after.connectionPaused&&after.cache.compatibility?.blocked!=true
+        }
         PlannerWidget.refresh(applicationContext);UpcomingWidget.refresh(applicationContext);CalendarWidget.refresh(applicationContext)
-        return Result.success()
+        return if(retry)Result.retry()else Result.success()
     }
     companion object {
+        private const val STORAGE_WAIT="Widget sync is waiting for app storage. Open Field Notes; saved work is kept."
+        private const val SYNC_TIMEOUT="Widget sync timed out. Tap to retry; saved work and pending edits are kept."
         fun enqueue(context:Context,automatic:Boolean) {
-            WorkManager.getInstance(context).enqueueUniqueWork(if(automatic)"field-notes-widget-auto-refresh" else "field-notes-widget-refresh",ExistingWorkPolicy.KEEP,OneTimeWorkRequestBuilder<WidgetRefreshWorker>().setInputData(workDataOf("automatic" to automatic)).build())
+            WorkManager.getInstance(context).enqueueUniqueWork(if(automatic)"field-notes-widget-auto-refresh" else "field-notes-widget-refresh",if(automatic)ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE,OneTimeWorkRequestBuilder<WidgetRefreshWorker>().setInputData(workDataOf("automatic" to automatic)).build())
         }
     }
 }

@@ -33,3 +33,9 @@ internal fun blendWidgetColor(from:Int,to:Int,ratio:Double):Int {
     fun channel(shift:Int)=((((from shr shift) and 255)*(1-t)+((to shr shift) and 255)*t).toInt() and 255) shl shift
     return 0xFF000000.toInt() or channel(16) or channel(8) or channel(0)
 }
+
+/** Disclosure preferences do not decide whether an authenticated phone can sync. */
+internal fun widgetRefreshIntent(context:Context,cache:Cache,authenticated:Boolean=true):PendingIntent =
+    if(cache.token==null||cache.snapshot==null||!authenticated)widgetSettings(context)
+    else if(cache.preferences.connectionPaused)PendingIntent.getActivity(context,745,Intent(context,MainActivity::class.java).putExtra("open_page","Calendar"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    else PendingIntent.getBroadcast(context,43,Intent(context,WidgetRefreshReceiver::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

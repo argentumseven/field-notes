@@ -1,5 +1,20 @@
 # Implementation and validation record
 
+## Pending 0.11: widget and queue continuity
+
+Widget visibility no longer redirects an authenticated Refresh action to privacy
+settings. Screen-on/unlock/resume reconcile OS lock state through background
+probes; app credential locking does not gate synchronization. Manual widget
+refresh replaces its own retry and reports bounded storage/network failures.
+Editor dialogs use their own focus/keyboard controller for Done typing.
+
+The local queue persists and publishes a write as one cancellation-safe unit.
+A pending reminder replacement removes obsolete server projections immediately;
+unrelated edits preserve them. Both regressions failed on the prior code and
+pass with the fix. The complete Kotlin host suite passes **118 tests** and the
+x86_64 app/instrumentation APKs compile and verify. Launcher/keyboard runtime
+checks and final signed release delivery remain pending.
+
 ## 0.10.0 contextual categories and reminder time units — 2026-11-07
 
 Optional item categories follow the containing list's template and subject.

@@ -137,6 +137,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         app.updates.installerReturned()
+        WidgetVisibility.transition(this)
         lifecycleScope.launch { val status=withContext(Dispatchers.IO){DeliverySettings.summary(this@MainActivity) to DeliverySettings.problem(this@MainActivity)};deliveryStatus=status.first;deliveryWarning=status.second }
         app.scope.launch { try{LocalAlarms.reconcile(this@MainActivity,true)}catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention."} }
         lifecycleScope.launch {

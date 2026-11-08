@@ -30,8 +30,9 @@ class Workspace(
         // A disposable read cache must never displace queued edits or drafts.
         if(next.history!=null&&WireJson.encodeToString(next).encodeToByteArray().size>32*1024*1024)next=next.copy(history=null)
         require(WireJson.encodeToString(next).encodeToByteArray().size <= 32 * 1024 * 1024) { "Local encrypted cache is full. Sync or resolve pending images before adding more." }
-        vault.save(next) // Failure never publishes an unpersisted command as saved.
-        _state.update { it.copy(cache = next) }
+        // Persist and publish as one short write unit. Cancellation after persistence
+        // must not leave the next edit working from an older in-memory queue.
+        withContext(NonCancellable){vault.save(next);_state.update { it.copy(cache = next) }}
     }
     suspend fun initialize() = connection.withLock {
         try {
@@ -613,7 +614,8 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
                 "task.release", "task.reopen" -> obj("status" to "todo".j(), "claimant" to JsonNull)
                 else -> obj()
             }
-            rows[c.target] = VisibleRecord(current.record.copy(data = JsonObject(d + change)), true)
+            val base=if(change.containsKey("reminders"))JsonObject(d-setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules"))else d
+            rows[c.target] = VisibleRecord(current.record.copy(data = JsonObject(base + change)), true)
         }
     }
     return rows.values.toList()

@@ -57,10 +57,10 @@ class FieldNotesApplication : Application(), Configuration.Provider {
             }
         }
         ContextCompat.registerReceiver(this, object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) { if (::model.isInitialized){PlannerWidget.refresh(context);UpcomingWidget.refresh(context);CalendarWidget.refresh(context)} }
-        }, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_USER_UNLOCKED) }, ContextCompat.RECEIVER_NOT_EXPORTED)
+            override fun onReceive(context: Context, intent: Intent) { if (::model.isInitialized)WidgetVisibility.transition(context,intent.action) }
+        }, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF);addAction(Intent.ACTION_SCREEN_ON);addAction(Intent.ACTION_USER_PRESENT);addAction(Intent.ACTION_USER_UNLOCKED);addAction(Intent.ACTION_USER_FOREGROUND) }, ContextCompat.RECEIVER_NOT_EXPORTED)
         // StateFlow conflates new states while this work completes. Do not cancel
         // reconciliation between saving its intent and installing the OS alarms.
-        scope.launch { initialized.await(); model.state.map{it.cache}.distinctUntilChanged().collect { delay(600); PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication);try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
+        scope.launch { initialized.await(); model.state.map{it.cache}.distinctUntilChanged().collect { delay(600); withContext(Dispatchers.IO){PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication)};try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
     }
 }

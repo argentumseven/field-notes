@@ -29,7 +29,7 @@ class PlannerWidget : AppWidgetProvider() {
             val app = context.applicationContext as FieldNotesApplication
             val state = app.model.state.value
             val cache = state.cache
-            val unlocked = context.getSystemService(UserManager::class.java).isUserUnlocked && !context.getSystemService(KeyguardManager::class.java).isDeviceLocked
+            val unlocked = WidgetVisibility.unlocked(context)
             manager.updateAppWidget(ids, views(context, cache, unlocked, !state.needsLogin))
         }
         fun views(context: Context, cache: Cache, unlocked: Boolean, authenticated: Boolean = true): RemoteViews {
@@ -42,14 +42,15 @@ class PlannerWidget : AppWidgetProvider() {
                 val tasks = focusTasks(cache, today, now.epochSeconds).take(4)
                 view.setTextViewText(R.id.widget_title, "Focus · ${tasks.size} next")
                 view.setTextViewText(R.id.widget_tasks, tasks.joinToString("\n\n") { "${priorityName(it.first.record.data.number("priority", 3).toInt())} · ${it.first.record.data.text("title").take(120)}" }.ifBlank { "No available tasks" })
-                view.setTextViewText(R.id.widget_footer, if(widgetProblem(context))"Needs attention · open settings" else "Cached locally · tap to open and sync")
+                view.setTextViewText(R.id.widget_footer, if(widgetProblem(context))"Sync now · needs attention" else "Cached locally · tap to sync")
                 if(widgetProblem(context))view.setOnClickPendingIntent(R.id.widget_footer,widgetSettings(context))
             } else {
                 view.setTextViewText(R.id.widget_title, "Focus")
                 view.setTextViewText(R.id.widget_tasks, widgetHiddenLabel(cache,unlocked,authenticated))
-                view.setTextViewText(R.id.widget_footer, "Schedule visibility settings")
+                view.setTextViewText(R.id.widget_footer, "Cached locally · tap to sync")
                 view.setOnClickPendingIntent(R.id.widget_footer,widgetSettings(context))
             }
+            view.setOnClickPendingIntent(R.id.widget_footer,widgetRefreshIntent(context,cache,authenticated))
             return view
         }
     }

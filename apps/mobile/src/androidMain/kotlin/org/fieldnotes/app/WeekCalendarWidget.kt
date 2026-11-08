@@ -57,13 +57,13 @@ class WeekCalendarWidget:CalendarWidget() {
                 root.addView(R.id.week_days,row)
             }
             val state=(context.applicationContext as FieldNotesApplication).model.state.value
-            root.setTextViewText(R.id.calendar_refresh,when{!reveal->widgetHiddenLabel(cache,unlocked,authenticated);widgetProblem(context)->"Needs attention · open settings";else->widgetSyncLabel(state,Clock.System.now().epochSeconds)})
+            root.setTextViewText(R.id.calendar_refresh,when{!reveal->widgetHiddenLabel(cache,unlocked,authenticated)+" · "+widgetSyncLabel(state,Clock.System.now().epochSeconds);widgetProblem(context)->"Sync now · needs attention";else->widgetSyncLabel(state,Clock.System.now().epochSeconds)})
             if(interactive) {
                 for((control,delta) in listOf(R.id.calendar_previous to -1,R.id.calendar_next to 1,R.id.calendar_today to 0)) {
                     val move=Intent(context,WeekCalendarWidget::class.java).setAction(CalendarWidget.WEEK_MOVE).setData(Uri.parse("fieldnotes-widget://week/$id/$delta")).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id).putExtra("delta",delta)
                     root.setOnClickPendingIntent(control,PendingIntent.getBroadcast(context,0,move,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
                 }
-                root.setOnClickPendingIntent(R.id.calendar_refresh,if(!reveal||widgetProblem(context))widgetSettings(context) else if(state.connectionPaused)CalendarWidget.open(context,today) else PendingIntent.getBroadcast(context,43,Intent(context,WidgetRefreshReceiver::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                root.setOnClickPendingIntent(R.id.calendar_refresh,widgetRefreshIntent(context,cache,authenticated))
             }
             return root
         }
