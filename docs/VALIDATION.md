@@ -1,6 +1,6 @@
 # Implementation and validation record
 
-## 0.11 preparation — 2026-11-08
+## 0.11.0 planner and widget continuity — 2026-11-08
 
 Implemented explicit day/time reminders, week/day presets, optional federal
 holidays, recipes and appointment locations, focused event sections, separate
@@ -38,7 +38,12 @@ software-emulated Android System UI stalled during one discarded gallery run;
 its keyboard/system UI were warmed before the repeat. Another discarded run
 revealed a fixture race: sync() intentionally yields to an existing sync, and
 the test paused before it finished. The recipe remained queued; the corrected
-fixture waits for acknowledgement before pausing. No failed gallery is published.
+fixture waits for acknowledgement before pausing. No failed gallery is published. Repeated launcher attempts hit AOSP
+job-stop timeouts (`No response to onStopJob`) during cold software-emulated
+startup; their lifecycle assertions have not been counted as passing. The
+final launcher rerun uses the documented phone viewport, cleared fixture jobs
+and a restarted framework with an emulator-only timeout multiplier of 10.
+Production timeout policy and test assertions are unchanged.
 
 The local queue persists and publishes a write as one cancellation-safe unit.
 A pending reminder replacement removes obsolete server projections immediately;

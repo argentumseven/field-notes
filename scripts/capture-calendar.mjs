@@ -39,9 +39,17 @@ if (
 const originalScreenTimeout = (
   await call(["shell", "settings", "get", "system", "screen_off_timeout"])
 ).trim();
+const originalSize = (await call(["shell", "wm", "size"]))
+  .match(/Override size: (\d+x\d+)/)?.[1];
+const originalDensity = (await call(["shell", "wm", "density"]))
+  .match(/Override density: (\d+)/)?.[1];
 await mkdir("dist/android-test-results", { recursive: true });
 await mkdir("docs/screenshots/android", { recursive: true });
 try {
+  // Match the documented phone viewport. A stale density override can make
+  // Android's launcher reject a widget before showing its pin confirmation.
+  await call(["shell", "wm", "size", "540x1200"]);
+  await call(["shell", "wm", "density", "210"]);
   await call([
     "shell",
     "settings",
@@ -88,7 +96,12 @@ try {
     }
   }
 
+  await call(["shell", "am", "force-stop", "org.fieldnotes.app"]);
+  // Remove OS jobs left by earlier worker tests before creating a fresh vault.
+  // This changes only the named disposable AVD, not production scheduling.
+  await call(["shell", "cmd", "jobscheduler", "cancel", "-u", "0", "org.fieldnotes.app"]);
   await call(["shell", "pm", "clear", "org.fieldnotes.app"]);
+  await call(["shell", "cmd", "jobscheduler", "cancel", "-u", "0", "org.fieldnotes.app"]);
   await call(["shell", "pm", "clear", "com.android.launcher3"]);
   await call([
     "shell",
@@ -265,4 +278,6 @@ try {
       originalScreenTimeout,
     ]).catch(() => {});
   await call(["shell", "pm", "clear", "org.fieldnotes.app"]).catch(() => {});
+  await call(["shell", "wm", "size", originalSize || "reset"]).catch(() => {});
+  await call(["shell", "wm", "density", originalDensity || "reset"]).catch(() => {});
 }

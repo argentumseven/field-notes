@@ -36,9 +36,10 @@ class CalendarWidgetHostDeviceTest {
         app.deliveryError.value=null
         fun root(window:android.view.accessibility.AccessibilityWindowInfo)=if(android.os.Build.VERSION.SDK_INT>=33)window.getRoot(0)else window.root
         fun child(node:AccessibilityNodeInfo,index:Int)=if(android.os.Build.VERSION.SDK_INT>=33)node.getChild(index,0)else node.getChild(index)
-        fun search(text:String,description:Boolean=false):List<AccessibilityNodeInfo> {
+        fun search(text:String,description:Boolean=false,targetPackage:String=app.packageName):List<AccessibilityNodeInfo> {
             val windows=instrumentation.uiAutomation.windows
             for(window in windows){val r=root(window)?:continue
+                if(r.packageName?.toString()!=targetPackage)continue
                 if(r.packageName?.toString()=="com.android.launcher3"){
                     if(!description){
                         val matches=r.findAccessibilityNodeInfosByText(text).filter{it.isVisibleToUser}
@@ -62,8 +63,8 @@ class CalendarWidgetHostDeviceTest {
         }
         fun shell(command:String){instrumentation.uiAutomation.executeShellCommand(command).use{fd->android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).readBytes()}}
         fun nodes(text:String)=search(text)
-        fun launcher(text:String)=search(text)
-        fun described(value:String)=search(value,true)
+        fun launcher(text:String)=search(text,targetPackage="com.android.launcher3")
+        fun described(value:String)=search(value,true,"com.android.launcher3")
         fun picture(name:String) {
             File(app.filesDir,"calendar-gallery").mkdirs()
             instrumentation.uiAutomation.takeScreenshot().also { bitmap -> File(app.filesDir,"calendar-gallery/$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle() }
@@ -91,6 +92,13 @@ class CalendarWidgetHostDeviceTest {
             instrumentation.runOnMainSync {
                 activity!!.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 activity!!.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+            // RESUMED precedes the first focused window. A real pin button can
+            // only be used after that window is ready; observe the same boundary.
+            waitFor("focused app window") {
+                var focused=false
+                instrumentation.runOnMainSync { focused=activity!!.window.decorView.hasWindowFocus() }
+                focused
             }
             // Pin from the actual resumed activity. The selected-date assertion
             // below proves navigation without walking the full Compose tree first.
@@ -121,7 +129,7 @@ class CalendarWidgetHostDeviceTest {
             waitFor("automatic offline repaint") { described(friendlyDate(tomorrow)).any { it.contentDescription?.contains("1 scheduled")==true } }
             if(!weekly)assertTrue(described("Monday").isNotEmpty())
             assertTrue(described(if(weekly)"Next week" else "Next month").isNotEmpty())
-            if(weekly)assertTrue(nodes("Updated check-in").isNotEmpty())
+            if(weekly)assertTrue(launcher("Updated check-in").isNotEmpty())
             val beforeSequence=app.model.state.value.cache.snapshot!!.sequence
 
             shell("input keyevent KEYCODE_SLEEP")
@@ -138,7 +146,7 @@ class CalendarWidgetHostDeviceTest {
             }
             // The timeline hint can be outside a short viewport; the navigation
             // controls identify Day rather than the previous Month view.
-            waitFor("day view after widget link") {described("Next day").isNotEmpty()}
+            waitFor("day view after widget link") {search("Next day",true).isNotEmpty()}
             picture(if(weekly)"74-week-widget-day-link" else "73-calendar-widget-day-link")
             instrumentation.runOnMainSync {
                 val current=ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().single()
