@@ -28,6 +28,8 @@ verifies disclosure refresh without a new server snapshot.
 | --- | --- |
 | [Month widget](screenshots/android/32-home-calendar.png) | An amended title, tomorrow's marker and today's occupied-time bar after offline edits |
 | [Tap a date](screenshots/android/73-calendar-widget-day-link.png) | The chosen next day, its start-only reminder and two retained queued changes |
+| [Week widget](screenshots/android/42-home-week.png) | All seven days, the amended title, a start-only event and occupied-time strips |
+| [Tap a week row](screenshots/android/74-week-widget-day-link.png) | The same exact-day navigation from the weekly home-screen widget |
 
 ## Focused planner controls — 0.11
 

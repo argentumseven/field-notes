@@ -312,3 +312,11 @@ cannot replace a newer schedule or audio configuration; the server returns an
 explanation and the phone retains the edit for review. Update both phones to
 use and deliver the new controls. Existing reminder times, alert identities,
 phone keys and queued work are not reset.
+
+### Widget continuity in 0.11.1
+
+Android code 20 retains the public signing certificate. The actual 19 → 20
+in-place upgrade preserved Keystore-backed keys, server/CA/PSK binding, privacy
+preferences and queued work. The widget fix changes disclosure refresh, without
+requiring a new pairing, cache reset or privacy preference reset. Both real
+launcher calendar views passed offline repaint, wake and exact-day navigation.
