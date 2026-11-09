@@ -33,6 +33,25 @@ Release delivery is recorded separately below. These use the dedicated AOSP AVD;
 physical GrapheneOS speaker loudness, DND and full-profile forwarding remain
 device checks. No unrelated full API, browser or container suite was rerun.
 
+Delivery verified: [v0.11.3](https://github.com/argentumseven/field-notes/releases/tag/v0.11.3)
+publishes source `da624136af1dc9cfe9085385e527e8e2a7329ea3`, Android code 22,
+with the unchanged signer
+`e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+All four public assets match the verified local release byte-for-byte; actual
+signature/package/ARM64 checks pass, and latest-download metadata matches.
+Public APK SHA-256:
+`dd3d8538c122e91e62dc4b7281cae08a7940ab2983a131c95a72a52482c4f2e9`.
+
+The ordinary Linux x86_64 build fetched that public APK without artifact-directory
+overrides. All **15** host helpers match source; both pinned Docker images exist;
+binary/image/archive checksums pass and the outer archive has no private-key
+entries. The isolated packaged-server check serves the distinct WAV assets and
+offers the exact public APK through the authenticated phone update/chunk routes.
+Complete local Linux bundle SHA-256:
+`e7d11e0947427d0c079140c2e627149d76e990064ff3f41b37b95a6dd81cfaef`.
+The GitHub release contains the four Android assets; the Linux bundle is locally
+built and verified. No home-server deployment was performed.
+
 ## 0.11.2 phone list viewport — 2026-11-08
 
 List indexes, opened lists, task views and project headers now share their page's
