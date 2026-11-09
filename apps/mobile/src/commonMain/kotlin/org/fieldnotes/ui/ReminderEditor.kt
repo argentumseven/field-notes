@@ -35,7 +35,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             Text("Choose a notification or a longer alarm for each reminder.",style=MaterialTheme.typography.bodySmall)
             value.alerts.forEach { rule -> Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                 val p=settings.options.playback[rule.id]?.applyTo(rule.profile) ?: rule.profile
-                Column { Text(reminderTimeLabel(rule,use24Hour));Text("${if(p.alarm)"Alarm" else "Notification · "+p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
+                Column { Text(reminderTimeLabel(rule,use24Hour));Text("${if(p.alarm)"Alarm" else "Notification · "+p.importance} · ${reminderTones[p.sound] ?: p.sound} · ${if(p.alarm&&p.duration>0)"${p.duration} s" else "once"} · ${p.volume}%",style=MaterialTheme.typography.labelSmall) }
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 SecondaryButton(onClick={editingTime=rule;newTime=false}){Text("Time")}
                 SecondaryButton(onClick={soundFor=rule.id}){Text("Sound")}
