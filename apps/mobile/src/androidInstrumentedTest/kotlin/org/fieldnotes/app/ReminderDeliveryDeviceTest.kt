@@ -74,7 +74,7 @@ class ReminderDeliveryDeviceTest {
         // Attach the fixture to a visible normal task before opening System UI,
         // just as a person would when reviewing their reminder settings.
         android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("cmd statusbar collapse")).use {it.readBytes()}
-        app.startActivity(android.content.Intent(app,MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        app.startActivity(android.content.Intent(app,MainActivity::class.java).putExtra("open_page","Tasks").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK))
         val appDeadline=System.currentTimeMillis()+90_000
         while(System.currentTimeMillis()<appDeadline&&instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString()!=app.packageName)Thread.sleep(250)
         assertEquals(app.packageName,instrumentation.uiAutomation.rootInActiveWindow?.packageName?.toString())

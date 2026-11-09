@@ -17,6 +17,18 @@ codes are decoded with offline ZXing at desktop and narrow widths. The IME test
 checks the name, trust and request controls above its visible boundary; physical
 GrapheneOS optics and VPN policy remain separate phone checks.
 
+## Alarm and notification delivery — 0.11.3
+
+[The refreshed Android notification shade](screenshots/android/43-detailed-notifications.png)
+shows the actual maintenance reminder, schedule, recipient, location, notes and
+activity. The native check verifies the underlying posted fields and then expands
+the real System UI card. Synthetic data only.
+
+Notifications now have brief, one-shot cues; alarms have a separate sound set,
+bounded ringing, item-specific playback details and a Stop action. The phone
+checks cover temporary-volume restoration and persisted, stale-safe dismissal
+of delivery warnings. [Sound modes and controls](REMINDERS.md).
+
 ## Phone lists: the whole page scrolls — 0.11.2
 
 These fresh native captures use a small **360×640 dp** Android viewport, a

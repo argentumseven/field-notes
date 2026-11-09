@@ -20,8 +20,18 @@ case** passes mode-specific choices/defaults, distinct served WAVs and returning
 from Quiet without stale alarm controls. The **two new Android runtime cases**
 pass actual resource/channel separation, alarm payload/Stop, automatic stale-warning
 clearance, persisted notification dismissal and fencing of a newer failure.
-The existing volume-restoration and notification-shade checks are finishing.
-Release delivery is recorded after success.
+All **four existing Android audio cases** pass volume restoration/refusal,
+replacement leases, later manual changes, notification-stream isolation and
+service Stop. The **native notification-shade case** passes populated title,
+person, schedule, location, notes, Open item, hidden lock-screen contents,
+independent channels, durable receipts/refill and non-replay. Its fresh capture
+is [43-detailed-notifications.png](screenshots/android/43-detailed-notifications.png).
+The capture driver opens Tasks directly to avoid the software emulator's cold
+calendar render; the initial failure occurred in capture setup after payload
+assertions had passed. There are **seven passing focused Android runtime cases**.
+Release delivery is recorded separately below. These use the dedicated AOSP AVD;
+physical GrapheneOS speaker loudness, DND and full-profile forwarding remain
+device checks. No unrelated full API, browser or container suite was rerun.
 
 ## 0.11.2 phone list viewport — 2026-11-08
 
