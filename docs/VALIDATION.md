@@ -1,6 +1,6 @@
 # Implementation and validation record
 
-## 0.11.3 reminder audio and issue handling — 2026-11-08
+## 0.11.3 reminder audio and issue handling — 2026-11-09
 
 Notification cues and sustained alarm phrases use distinct bundled audio and
 separate mode-specific choices on phone and web. Existing tone identifiers and
@@ -13,8 +13,15 @@ persisted and matched to its displayed warning so it cannot hide a newer failure
 Volume preference changes use an atomic update of the current saved preferences.
 No protocol/schema/content format or pairing change is introduced.
 
-Focused sound resource, mode/policy, actual Android playback/notification and web
-picker checks are being completed; release delivery is recorded after success.
+Current checks pass: **130 Kotlin host tests**, Android debug/release builds,
+lint and ARM64 signature/alignment/package checks; **one focused Rust test**
+checks all 64 WAV assets and rejects unknown paths. The **focused web picker
+case** passes mode-specific choices/defaults, distinct served WAVs and returning
+from Quiet without stale alarm controls. The **two new Android runtime cases**
+pass actual resource/channel separation, alarm payload/Stop, automatic stale-warning
+clearance, persisted notification dismissal and fencing of a newer failure.
+The existing volume-restoration and notification-shade checks are finishing.
+Release delivery is recorded after success.
 
 ## 0.11.2 phone list viewport — 2026-11-08
 

@@ -179,6 +179,7 @@
       let alarmSection = null,
         alarmControl = null,
         unmuteControl = null;
+      let syncModeControls = () => {};
       const profileSummary = container.querySelector(":scope > summary");
       const updateSummary = () => {
         if (profileSummary)
@@ -255,7 +256,7 @@
             extra.alarm = false;
             extra.unmute = false;
             extra.notification_unmute = false;
-            if (alarmControl) alarmControl.checked = false;
+            if (alarmControl) alarmControl.value = "notification";
             if (unmuteControl) unmuteControl.checked = false;
           }
           extension.value.playback[r.id] = extra;
@@ -265,6 +266,7 @@
           volume.disabled =
           vib.disabled =
             r.importance === "quiet";
+        syncModeControls();
         updateSummary();
         notify();
       };
@@ -309,6 +311,7 @@
             extra.alarm ? "alarm" : "notification",
           ),
         );
+        alarmControl = mode;
         const length = addField(
           alarmSection,
           select(
@@ -396,6 +399,13 @@
           length.onchange =
           level.onchange =
             updateMode;
+        syncModeControls = () => {
+          mode.value = extra.alarm ? "alarm" : "notification";
+          alarmRaise.checked = !!extra.unmute;
+          notificationRaise.checked = !!extra.notification_unmute;
+          refreshSoundChoices();
+          configureMode();
+        };
         configureMode();
         alarmSection.append(
           el(

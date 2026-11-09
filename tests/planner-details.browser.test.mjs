@@ -74,6 +74,11 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
     assert.deepEqual(await sound.locator("option").evaluateAll(nodes=>nodes.map(n=>n.value)),["chime","bell","pulse","marimba"]);
     assert.equal(await sound.inputValue(),"chime");
     await page.getByLabel("Reminder 1 delivery mode",{exact:true}).selectOption("alarm");
+    await page.getByLabel("Reminder 1 importance",{exact:true}).selectOption("quiet");
+    await page.getByLabel("Reminder 1 importance",{exact:true}).selectOption("normal");
+    assert.equal(await page.getByLabel("Reminder 1 delivery mode",{exact:true}).inputValue(),"notification");
+    assert.equal(await page.getByLabel("Reminder 1 alarm duration",{exact:true}).isVisible(),false);
+    await page.getByLabel("Reminder 1 delivery mode",{exact:true}).selectOption("alarm");
     await shot(page, "110-all-day-reminder");
     await page
       .getByLabel("Reminder 1 alarm duration", { exact: true })
