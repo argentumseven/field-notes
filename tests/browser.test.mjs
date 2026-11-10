@@ -248,7 +248,7 @@ test("web workflow: sign in, project, task details, comment, board, admin and mo
       })
       .click();
     await page
-      .getByLabel("Keep in", { exact: true })
+      .getByLabel("Project or list", { exact: true })
       .selectOption({ label: "Groceries · list" });
     await page
       .getByRole("button", { name: "Save details", exact: true })

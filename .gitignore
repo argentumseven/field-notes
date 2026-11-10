@@ -20,3 +20,5 @@ __pycache__/
 /apps/mobile/build/
 /apps/mobile/local.properties
 /apps/mobile/src/androidMain/jniLibs/
+
+/work/

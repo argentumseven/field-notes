@@ -132,7 +132,7 @@ test("project work rolls up across task lists, keeps reference items separate an
     await page.getByLabel("Find a task", { exact: true }).fill("");
     await page.getByRole("button", { name: "New task", exact: true }).click();
     assert.equal(
-      await page.getByLabel("Keep in", { exact: true }).inputValue(),
+      await page.getByLabel("Project or list", { exact: true }).inputValue(),
       s.work.id,
     );
     assert.equal(

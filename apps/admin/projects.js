@@ -220,6 +220,7 @@ function renderProjectContext(root, project) {
     }
     if (project.data.status !== "archived")
       actions.append(
+        button("Add existing task", () => addExistingTask(project)),
         button("New task list", () =>
           newCollection("list", {
             project_id: project.id,

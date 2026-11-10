@@ -1,5 +1,35 @@
 # Implementation and validation record
 
+## Unreleased project membership workflow — 2026-11-10
+
+The project workspace now exposes **Add existing task** on web and Android.
+Task and existing-list-item editors use **Project or list**, including an
+explicit **No project or list (Inbox)** choice. New tasks retain the selected
+project; the main Tasks view defaults to no parent. Membership-only moves keep
+the task's content, identity, comments, attachments, category and assignment.
+Captured revisions and workspace fences reject stale moves, and the picker
+refuses to bypass unsaved task drafts or pending Android task changes.
+
+The audio-start failure path now updates the original notification identity and
+channel instead of posting a second reminder. A null Android service-start
+result is treated as a delivery failure. Current main's persisted
+`SharedAdditions` delivery remains in place; an older generic change observer
+is not reintroduced alongside it.
+
+Ported onto the 0.11.3 source with its project workspaces, reference/task-list
+distinction, category inheritance and notification/alarm sound policy retained.
+**23 focused API/browser checks and 132 Kotlin host checks passed**, including
+the task membership workflow, parentless Tasks creation, stale-edit rejection,
+project rollups/claims, list editor/refresh behavior, recipient projection and
+offline persistence/restart. Android application/test compilation and lint also
+passed. The new notification runtime fixture compiles but
+has not run on a device: the earlier software AVD attempt failed during system
+boot without KVM. Physical GrapheneOS checks remain unrun.
+
+This is an unreleased source change. Release version 0.11.3/code 22, public APK
+assets, signing identity and updater version fences are unchanged. A newer
+verified signed release is required before normal server/phone installation.
+
 ## 0.11.3 reminder audio and issue handling — 2026-11-09
 
 Notification cues and sustained alarm phrases use distinct bundled audio and

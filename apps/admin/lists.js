@@ -902,6 +902,17 @@ async function editListItem(list, record, initialStore = "") {
         ? [{ ...categoryField({ data: d }), value: d.category || "general" }]
         : []),
     ];
+  if (record)
+    fields.push({
+      key: "project_id",
+      label: "Project or list",
+      required: false,
+      value: d.project_id || "",
+      options: [
+        ["", "No project or list (Inbox)"],
+        ...containers().map((c) => [c.id, FieldProjects.graph().path(c.id)]),
+      ],
+    });
   for (const key of schema) {
     if (key === "images") continue;
     if (key === "assignee") {

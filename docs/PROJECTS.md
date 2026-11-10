@@ -58,6 +58,20 @@ and task history follow the original record. Deleting a nonempty collection is
 refused; move or explicitly delete its contents first. A task cannot steal
 another person's working claim by moving it.
 
+Inside an open project, **Add existing task** moves an existing task or list item
+into that project as direct work. The picker shows its current location; Android
+also offers title search. A new task created there starts with that project
+selected. From the main Tasks view, new tasks start without a parent.
+
+Task and existing-list-item editors expose **Project or list**. Select another
+destination and save to move the item, or select **No project or list (Inbox)**
+and save to remove its parent completely. To move a whole list and its children,
+use **List settings** instead. The existing-task picker changes membership only;
+save or discard unsaved task drafts first. Android asks you to synchronize any
+pending changes to that task before using the picker. Moves keep captured
+revisions and workspace fences, so a concurrent edit is retained for review
+rather than overwritten.
+
 **Project history** scopes the unified item history to its work, reference lists
 and their changes. New history records preserve both sides of moves. Older
 history can use current membership but cannot reconstruct project moves that

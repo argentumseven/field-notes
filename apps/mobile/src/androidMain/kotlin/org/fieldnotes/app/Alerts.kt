@@ -196,9 +196,11 @@ object LocalAlarms {
             val keys=group.map { it.key }.sorted()
             val notice=reminderNotice(cache,group,TimeZone.currentSystemDefault())
             val channel=profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS
-            if(Alerts.post(context,channel,"$binding:"+keys.joinToString("|"),notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true,profile?.let{it.alarm||it.notificationUnmute}==true)) {
+            // Playback failure updates this same card; it cannot create a second alert.
+            val notificationKey="$binding:"+keys.joinToString("|")
+            if(Alerts.post(context,channel,notificationKey,notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true,profile?.let{it.alarm||it.notificationUnmute}==true)) {
                 posted+=keys
-                if(profile?.let{it.alarm||it.notificationUnmute}==true&&!AlarmPlaybackService.start(context,keys))Alerts.post(context,Alerts.REMINDERS,"alarm-fallback:"+keys.joinToString("|"),notice.title,"Alarm playback needs attention · ${notice.summary}",notice.target,notice.details)
+                if(profile?.let{it.alarm||it.notificationUnmute}==true&&!AlarmPlaybackService.start(context,keys))Alerts.post(context,channel,notificationKey,notice.title,"Audio playback needs attention · ${notice.summary}",notice.target,notice.details,notice.whenAt,false,false)
             } else app.deliveryError.value="A reminder channel or notification permission is blocked. Open Android notification settings."
         }
         if(posted.isNotEmpty()) {

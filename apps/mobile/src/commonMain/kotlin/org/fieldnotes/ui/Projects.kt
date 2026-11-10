@@ -15,6 +15,8 @@ import org.fieldnotes.domain.*
 internal data class ProjectView(val query:String="",val group:String="",val show:String="open",val context:Boolean=false,val groupsOpen:Boolean=false,val filters:TaskFilters=TaskFilters(sort="smart"))
 
 @Composable internal fun ColumnScope.ProjectWorkspace(model:Workspace,state:WorkspaceState,project:Record,open:(String)->Unit,openList:(String)->Unit,edit:()->Unit,newList:(Boolean)->Unit,history:()->Unit,newTask:(String)->Unit,initialView:ProjectView=ProjectView(),saveView:(ProjectView)->Unit={},groupChanged:(String)->Unit={},header:@Composable ()->Unit={}) {
+    var addExisting by remember(project.id) {mutableStateOf(false)}
+    if(addExisting)AddExistingTaskDialog(model,state,project){addExisting=false}
     val graph=remember(state.cache){state.cache.projectGraph()};val today=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString();val stats=graph.rollup(project,today)
     val writable=state.cache.snapshot?.actor?.role!="viewer";val archived=project.data.text("status")=="archived"
     var query by rememberSaveable(project.id){mutableStateOf(initialView.query)};var group by rememberSaveable(project.id){mutableStateOf(initialView.group)};var show by rememberSaveable(project.id){mutableStateOf(initialView.show)}
@@ -54,6 +56,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
             TaskFilterControls(state.cache,filters,includeStatus=false){category=it.category;person=it.person;priority=it.priority;sort=it.sort}
             if(writable&&!archived)FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 Button(shape=ControlShape,onClick={newTask(group.takeIf{it.isNotBlank()&&it!="__direct"} ?: project.id)}){Text("New task")}
+                SecondaryButton(onClick={addExisting=true}){Text("Add existing task")}
                 SecondaryButton(onClick={newList(true)}){Text("New task list")};SecondaryButton(onClick={newList(false)}){Text("New reference list")}
             }
             if(groups.isNotEmpty()) {

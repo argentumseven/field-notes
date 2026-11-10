@@ -1357,15 +1357,18 @@ function renderDetail() {
   const container = addField(
     detail,
     select(
-      "Keep in",
+      "Project or list",
       [
-        ["", "Inbox"],
+        ["", "No project or list (Inbox)"],
         ...containers().map((c) => [c.id, c.data.title + " · " + c.kind]),
       ],
       draft.project_id || "",
     ),
   );
   container.disabled = !mayWrite();
+  detail.append(
+    el("p", "muted", "Choose another project to move this task, or No project or list to unbundle it. Save details to apply."),
+  );
   container.addEventListener("input", () => dirty());
   const dirty = () =>
     state.drafts.set(task.id, {

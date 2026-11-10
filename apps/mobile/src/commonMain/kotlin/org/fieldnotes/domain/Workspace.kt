@@ -382,6 +382,22 @@ class Workspace(
             c.copy(outbox=c.outbox+Pending(command,predecessor),drafts=c.drafts-item.id)
         }
     }
+    /** Membership-only change, preserving unsaved drafts and server revision fences. */
+    suspend fun moveTask(target:String, destination:String, revision:Long, basis:Basis) {
+        update { c ->
+            val snap=c.snapshot ?: error("Synchronize first.")
+            check(snap.actor.role!="viewer") { "Your role is read-only." }
+            check(snap.basis==basis) { "The workspace changed. Reopen the project." }
+            check(target !in c.drafts) { "Save or discard this task's draft before moving it." }
+            check(c.outbox.none { it.command.target==target }) { "Synchronize this task's pending changes before moving it." }
+            val task=snap.records.firstOrNull { it.id==target&&it.kind=="task" } ?: error("Task is unavailable.")
+            check(task.revision==revision) { "This task changed. Reopen the task picker." }
+            check(destination.isEmpty() || snap.records.any { it.id==destination&&it.kind in setOf("list","project") }) { "Project or list is unavailable." }
+            check(c.outbox.size+c.conflicts.size<500) { "Resolve pending changes before moving tasks." }
+            val command=Command(newId(),basis.epoch,basis.generation,"task.update",target,revision,obj("project_id" to destination.j()))
+            c.copy(outbox=c.outbox+Pending(command))
+        }
+    }
     /** Freeze the exact checked rows in one durable local write. Existing per-task
      * dependency/revision handling protects a concurrent remote reopen or edit. */
     suspend fun clearChecked(listId:String) {

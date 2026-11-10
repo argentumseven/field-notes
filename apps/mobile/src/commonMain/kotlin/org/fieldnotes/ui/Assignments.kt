@@ -53,7 +53,6 @@ import org.fieldnotes.domain.*
     var optionsJson by rememberSaveable {mutableStateOf(reminderOptionsData(ReminderOptions()).toString())}
     val options=SyncJson.decodeFromString<ReminderOptions>(optionsJson)
     var personMenu by remember { mutableStateOf(false) }
-    var collectionMenu by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -74,17 +73,7 @@ import org.fieldnotes.domain.*
                         }
                     }
                 }
-                Box {
-                    SecondaryButton(onClick = { collectionMenu = true }, enabled = !busy) {
-                        Text("Keep in: " + (workspaceContainers(state.cache).firstOrNull { it.record.id == keepIn }?.record?.data?.text("title") ?: "Inbox"))
-                    }
-                    DropdownMenu(collectionMenu, { collectionMenu = false }) {
-                        DropdownMenuItem(text = { Text("Inbox") }, onClick = { keepIn = ""; collectionMenu = false })
-                        workspaceContainers(state.cache).filter{it.record.kind=="project"||it.record.flag("items_are_tasks")}.forEach { row ->
-                            DropdownMenuItem(text = { Text(row.record.data.text("title")) }, onClick = { keepIn = row.record.id;if(!ownCategory)category=row.record.data.text("category","general"); collectionMenu = false })
-                        }
-                    }
-                }
+                MembershipField(state.cache,keepIn,!busy,workOnly=true){keepIn=it;if(it.isNotBlank()&&!ownCategory)category=state.cache.projectGraph().byId[it]?.data?.text("category","general") ?: "general"}
                 val categoryParent=state.cache.projectGraph().byId[keepIn]
                 val categoryContext=itemContext(obj("category" to category.j()),categoryParent)
                 if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))CategoryPicker(category,!busy){category=it;ownCategory=true}

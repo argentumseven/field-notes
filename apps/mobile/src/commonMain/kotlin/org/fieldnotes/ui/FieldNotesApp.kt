@@ -419,7 +419,7 @@ import org.fieldnotes.domain.*
     var due by remember(task.id) { mutableStateOf(draft?.data?.text("due") ?: task.data.text("due")) }
     var category by remember(task.id){mutableStateOf((draft?.data?:task.data).text("category","general"))}
     var itemCategory by remember(task.id){mutableStateOf((draft?.data?:task.data).text("item_category"))}
-    var container by remember(task.id) { mutableStateOf((draft?.data?:task.data).text("project_id")) };var containerMenu by remember { mutableStateOf(false) }
+    var container by remember(task.id) { mutableStateOf((draft?.data?:task.data).text("project_id")) }
     var priority by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("priority", 3).toInt()) }
     var planned by remember(task.id) { mutableStateOf((draft?.data ?: task.data).text("planned_for")) }
     var effort by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("estimate_minutes").toString()) }
@@ -465,7 +465,7 @@ import org.fieldnotes.domain.*
               if(state.cache.people.isEmpty())Text("Update the server to enable assignments.",style=MaterialTheme.typography.bodySmall) }
             item { OutlinedTextField(notes, { if (it.length <= 16384) { notes = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Notes") }, minLines = 5, enabled = writable && !saving && !staleWorkspace) }
             if(openContainer!=null)state.cache.projectGraph().project(task)?.let {root->item {SecondaryButton(onClick={openContainer(root.id)}){Text("Open project · "+root.data.text("title"))}}}
-            item { Box { SecondaryButton(onClick={containerMenu=true},enabled=writable&&!staleWorkspace){Text("Keep in: "+state.cache.projectGraph().path(container))};DropdownMenu(containerMenu,{containerMenu=false}){DropdownMenuItem(text={Text("Inbox")},onClick={container="";containerMenu=false;retain()});workspaceContainers(state.cache).forEach { c->DropdownMenuItem(text={Text(c.record.data.text("title")+" · "+c.record.kind)},onClick={container=c.record.id;containerMenu=false;retain()})}} } }
+            item { MembershipField(state.cache,container,writable&&!saving&&!staleWorkspace){container=it;retain()} }
             val categoryParent=state.cache.projectGraph().byId[container]
             val categoryContext=itemContext(obj("category" to category.j()),categoryParent)
             if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))item{CategoryPicker(category,writable&&!saving&&!staleWorkspace){category=it;retain()}}

@@ -5,7 +5,6 @@ import android.content.*
 import android.media.*
 import android.os.*
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -134,7 +133,7 @@ class AlarmPlaybackService:Service() {
         }
         private fun startIntent(context:Context,intent:Intent):Boolean=try {
             check(Alerts.permissionAllowed(context)){"Allow notifications before playing alarm reminders."}
-            ContextCompat.startForegroundService(context,intent);true
+            check(context.startForegroundService(intent)!=null){"Android could not start audio playback. The reminder card remains available."};true
         }catch(e:Exception){(context.applicationContext as FieldNotesApplication).deliveryError.value=e.message ?: "Android blocked alarm playback. Allow notifications and precise alarms, then use the sound test.";false}
         fun stop(context:Context){context.stopService(Intent(context,AlarmPlaybackService::class.java))}
     }

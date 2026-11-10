@@ -219,7 +219,7 @@ import org.fieldnotes.domain.*
     removing?.let{selection->RemoveItemDialog(model,selection,{removing=null},{removing=null})}
 }
 
-private val itemKeys=setOf("title","notes","quantity","store","category","item_category","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
+private val itemKeys=setOf("project_id","title","notes","quantity","store","category","item_category","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
 private fun itemEditingData(data:JsonObject):JsonObject {
     val fields=data.filterKeys { it in itemKeys }
     return if(data.containsKey("reminder_timing_rules")||data.containsKey("reminder_rules"))JsonObject((fields-"reminders")+listOfNotNull((data["reminder_timing_rules"] ?: data["reminder_rules"])?.takeUnless { it==JsonNull }?.let { "reminders" to it }).toMap()) else JsonObject(fields)
@@ -239,6 +239,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         Text(list.data.text("title"),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
         SyncStatusLine(state)
         OutlinedTextField(data.text("title"),{set("title",it.take(240).j())},label={Text("Item name")},enabled=writable,modifier=Modifier.fillMaxWidth())
+        if(record!=null)MembershipField(state.cache,data.text("project_id",record.data.text("project_id")),writable&&!busy){set("project_id",it.j())}
         val context=itemContext(data,list)
         if(state.cache.supportsPlannerV3()&&!context.scoped)CategoryPicker(data.text("category","general"),writable){set("category",it.j())}
         if(state.cache.supportsItemContexts()||data.containsKey("item_category"))ItemCategoryPicker(context,data.text("item_category"),writable&&state.cache.supportsItemContexts()){set("item_category",it.j())}

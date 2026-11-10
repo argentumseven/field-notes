@@ -5,6 +5,59 @@ function containers() {
     a.data.title.localeCompare(b.data.title),
   );
 }
+async function addExistingTask(project) {
+  if (project.data.status === "archived")
+    throw Error("Reopen the project before adding work.");
+  const basis = {
+    epoch: state.snapshot.epoch,
+    generation: state.snapshot.generation,
+  };
+  // Capture revisions when opening the form so a concurrent edit cannot be
+  // silently overwritten. Only membership is changed; task content is kept.
+  const tasks = records("task")
+    .filter((t) => t.data.project_id !== project.id)
+    .sort((a, b) => a.data.title.localeCompare(b.data.title));
+  if (!tasks.length) {
+    notice("No tasks outside this project. Create a new task here first.");
+    return;
+  }
+  await formDialog(
+    "Add existing task",
+    "Move a task into " +
+      project.data.title +
+      ". Its notes, dates, comments and images stay with it.",
+    [
+      {
+        key: "task",
+        label: "Task to move",
+        options: tasks.map((t) => [
+          t.id,
+          t.data.title + " · " + projectName(t.data.project_id),
+        ]),
+        value: tasks[0].id,
+      },
+    ],
+    async ({ task }) => {
+      if (
+        basis.epoch !== state.snapshot.epoch ||
+        basis.generation !== state.snapshot.generation
+      )
+        throw new Error("The workspace changed. Reopen the project.");
+      const chosen = tasks.find((t) => t.id === task);
+      if (state.drafts.has(task))
+        throw new Error("Save or discard this task's draft before moving it.");
+      await mutate(
+        "task.update",
+        task,
+        { project_id: project.id },
+        chosen.revision,
+      );
+      render();
+      notice("Task moved to " + project.data.title + ".");
+    },
+    "Move task",
+  );
+}
 async function newStandaloneTask() {
   const initialParent = byId(
     state.projectGroup && state.projectGroup !== "__direct"
@@ -31,9 +84,9 @@ async function newStandaloneTask() {
       },
       {
         key: "project_id",
-        label: "Keep in",
+        label: "Project or list",
         options: [
-          ["", "Inbox"],
+          ["", "No project or list (Inbox)"],
           ...containers()
             .filter(
               (c) => c.kind === "project" || c.data.items_are_tasks === true,

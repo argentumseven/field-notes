@@ -67,6 +67,41 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun projectMovesPersistOnlyMembershipAndSurviveOfflineRestart()=runTest {
+        val a=Record("a","project",1,obj("title" to "Kitchen".j()))
+        val b=a.copy(id="b")
+        val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(task,a,b))))
+        val t=FakeTransport(v.value.snapshot!!);val m=model(v,t,backgroundScope);m.initialize()
+        val basis=v.value.snapshot!!.basis
+        m.moveTask(task.id,a.id,1,basis)
+        assertEquals(obj("project_id" to a.id.j()),v.value.outbox.single().command.data)
+        var next=0
+        val restarted=Workspace(t,v,{"restarted-${next++}"},backgroundScope);restarted.initialize()
+        assertEquals(a.id,projectRecords(restarted.state.value.cache).first {it.record.id==task.id}.record.data.text("project_id"))
+        restarted.sync()
+        restarted.moveTask(task.id,b.id,2,basis);restarted.sync()
+        restarted.moveTask(task.id,"",3,basis);restarted.sync()
+        val result=v.value.snapshot!!.records.first {it.id==task.id}
+        assertEquals("",result.data.text("project_id"));assertEquals(task.data.text("notes"),result.data.text("notes"));assertEquals(task.data.text("due"),result.data.text("due"))
+        assertEquals(4L,result.revision)
+    }
+    @Test fun projectMovesKeepDraftsAndRefuseStaleOrInvalidMoves()=runTest {
+        val project=Record("project","project",1,obj("title" to "Kitchen".j()))
+        val v=MemoryVault(initial().copy(snapshot=initial().snapshot!!.copy(records=listOf(task,project))))
+        val m=model(v,FakeTransport(v.value.snapshot!!),backgroundScope);m.initialize();val basis=v.value.snapshot!!.basis
+        m.saveDraft(task.id,1,obj("notes" to "Unsaved measurements".j()))
+        assertFails {m.moveTask(task.id,project.id,1,basis)}
+        assertEquals("Unsaved measurements",v.value.drafts[task.id]!!.data.text("notes"));assertTrue(v.value.outbox.isEmpty())
+        m.discardDraft(task.id)
+        assertFails {m.moveTask(task.id,project.id,0,basis)}
+        assertFails {m.moveTask(task.id,"missing",1,basis)}
+        assertFails {m.moveTask(task.id,project.id,1,Basis("restored",1))}
+        v.failing=true;assertFails {m.moveTask(task.id,project.id,1,basis)};assertTrue(m.state.value.cache.outbox.isEmpty());v.failing=false
+        m.enqueue("task.update",task.id,obj("notes" to "Queued measurements".j()),1)
+        assertFails {m.moveTask(task.id,project.id,1,basis)}
+        assertEquals(1,v.value.outbox.size)
+    }
+
     @Test fun newerReminderTimingIsRetainedIntactWhenTheServerIsOlder() = runTest {
         val vault=MemoryVault();val transport=FakeTransport();val workspace=model(vault,transport,this);workspace.initialize()
         val rules=ReminderSet(listOf(ReminderAlert("annual",0,lead_time=ReminderLead(1,"years","UTC"))),timing_version=1)

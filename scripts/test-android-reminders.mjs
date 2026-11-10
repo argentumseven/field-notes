@@ -7,12 +7,13 @@ import {createHash} from 'node:crypto';
 const run=promisify(execFile),tools=process.env.FIELD_NOTES_TOOLS||'/workspace/.cache/field-notes';
 const adb=join(tools,'android-sdk/platform-tools/adb'),serial=process.env.FIELD_NOTES_EMULATOR||'emulator-5554';
 const call=async(args,timeout=180000)=>(await run(adb,['-s',serial,...args],{timeout,maxBuffer:8*1024*1024})).stdout;
+const dedupeOnly=process.argv.includes('--dedupe-only');
 const editorOnly=process.argv.includes('--editor-only');
 const coreOnly=process.argv.includes('--core-only');
 const notificationOnly=process.argv.includes('--notification-only');
-const calendarOnly=notificationOnly||editorOnly||process.argv.includes('--calendar-only');
+const calendarOnly=dedupeOnly||notificationOnly||editorOnly||process.argv.includes('--calendar-only');
 if(!serial.startsWith('emulator-')||(await call(['shell','getprop','ro.boot.qemu.avd_name'])).trim()!=='field-notes-test')throw Error('Only the disposable field-notes-test AVD may run these fixtures.');
-if(calendarOnly&&!/OK \(9 tests\)/.test(await readFile('dist/android-test-results/alarm-updates-details.txt','utf8')))throw Error('Run the alarm/update checks successfully before continuing just the calendar captures.');
+if(calendarOnly&&!dedupeOnly&&!/OK \(9 tests\)/.test(await readFile('dist/android-test-results/alarm-updates-details.txt','utf8')))throw Error('Run the alarm/update checks successfully before continuing just the calendar captures.');
 if(editorOnly&&!/OK \(1 test\)/.test(await readFile('dist/android-test-results/week-launcher.txt','utf8')))throw Error('Run the launcher check before continuing just the editor capture.');
 await mkdir('dist/android-test-results',{recursive:true});await mkdir('docs/screenshots/android',{recursive:true});
 const screenTimeout=(await call(['shell','settings','get','system','screen_off_timeout'])).trim();
@@ -35,18 +36,19 @@ try{
  await call(['shell','input','keyevent','KEYCODE_HOME']);
  await installCurrent('dist/android-emulator/FieldNotes-debug.apk','org.fieldnotes.app');
  await installCurrent('dist/android-emulator/FieldNotes-debug-androidTest.apk','org.fieldnotes.app.test');
- if(!calendarOnly||notificationOnly)await call(['shell','pm','clear','org.fieldnotes.app']);
+ if(dedupeOnly||!calendarOnly||notificationOnly)await call(['shell','pm','clear','org.fieldnotes.app']);
  await call(['shell','pm','grant','org.fieldnotes.app','android.permission.POST_NOTIFICATIONS']);
  await call(['shell','appops','set','org.fieldnotes.app','SCHEDULE_EXACT_ALARM','allow']);
  console.log('Preparing the dedicated AVD packages for device checks.');
  for(const pkg of ['org.fieldnotes.app','org.fieldnotes.app.test'])await call(['shell','cmd','package','compile','-m','speed',pkg],360000);
- if(notificationOnly)await instrument(['ReminderDeliveryDeviceTest'],'detailed-notification-shade');
+ if(dedupeOnly)await instrument(['NotificationDeduplicationDeviceTest'],'notification-deduplication');
+ else if(notificationOnly)await instrument(['ReminderDeliveryDeviceTest'],'detailed-notification-shade');
  else if(!calendarOnly)await instrument(['AlarmExperienceDeviceTest','UpdateDeviceTest','ReminderDeliveryDeviceTest','WidgetDeviceTest'],'alarm-updates-details');
- if(!coreOnly&&!notificationOnly){
+ if(!dedupeOnly&&!coreOnly&&!notificationOnly){
   if(!editorOnly){await call(['shell','pm','clear','com.android.launcher3']);await instrument(['CalendarWidgetHostDeviceTest#weekIsHostedRepaintsOfflineAndOpensTheChosenDate'],'week-launcher');}
   await instrument(['CalendarExperienceDeviceTest'],'calendar-visibility');
  }
- for(const name of coreOnly||notificationOnly?['43-detailed-notifications']:['42-home-week','43-detailed-notifications','44-long-alarm-controls','45-independent-visibility']){
+ for(const name of dedupeOnly?[]:coreOnly||notificationOnly?['43-detailed-notifications']:['42-home-week','43-detailed-notifications','44-long-alarm-controls','45-independent-visibility']){
   const {stdout}=await run(adb,['-s',serial,'exec-out','run-as','org.fieldnotes.app','cat','files/calendar-gallery/'+name+'.png'],{encoding:'buffer',maxBuffer:8*1024*1024});
   await writeFile('docs/screenshots/android/'+name+'.png',stdout);
  }
