@@ -67,6 +67,21 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun queuedListUnbundleProjectsReleasedTasksWithoutChangingTheSavedSnapshot() {
+        val list=Record("list","list",1,obj("title" to "Build".j(),"items_are_tasks" to JsonPrimitive(true)))
+        val direct=Record("direct","task",1,obj("title" to "Measure".j(),"project_id" to list.id.j()))
+        val comment=Record("comment","comment",1,obj("task_id" to direct.id.j(),"body" to "Keep".j()))
+        val snapshot=initial().snapshot!!.copy(records=listOf(list,direct,comment))
+        val command=Command("op","epoch",1,"list.unbundle",list.id,1,obj("contents" to JsonArray(emptyList())))
+        val cache=initial().copy(snapshot=snapshot,outbox=listOf(Pending(command)))
+        val visible=projectRecords(cache).associateBy{it.record.id}
+        assertEquals("",visible.getValue(direct.id).record.data.text("project_id"))
+        assertEquals(list.id,snapshot.records.first{it.id==direct.id}.data.text("project_id"))
+        assertEquals("Keep",visible.getValue(comment.id).record.data.text("body"))
+        assertTrue(visible.getValue(direct.id).pending)
+        assertEquals(list.id,visible.getValue(list.id).record.id)
+    }
+
     @Test fun projectMovesPersistOnlyMembershipAndSurviveOfflineRestart()=runTest {
         val a=Record("a","project",1,obj("title" to "Kitchen".j()))
         val b=a.copy(id="b")
