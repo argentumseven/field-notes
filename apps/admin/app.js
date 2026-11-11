@@ -900,7 +900,7 @@ function drawTasks() {
   if (filters.expanded) {
     choose("Category", "category", [
       ["*", "All categories"],
-      ...allCategoryChoices(),
+      ...categoryFilterChoices(),
     ]);
     choose("Person", "person", [
       ["*", "Everyone"],
