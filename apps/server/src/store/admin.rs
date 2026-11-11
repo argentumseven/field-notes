@@ -31,6 +31,7 @@ impl Store {
         let target = b["target"].as_str().unwrap_or("");
         match action.as_str() {
             "recovery.policy" | "recovery.purge" => return self.recovery_admin(&a, &b),
+            "category.create" | "category.rename" | "category.archive" | "category.reopen" | "category.delete" | "category.merge" => return self.category_admin(token,&a,&b),
             "user.create" => {
                 fields(&b, &["action", "name", "password", "role"])?;
                 let role = text(&b, "role", 20)?;
@@ -155,6 +156,7 @@ impl Store {
                 }
                 self.transfer_schema()?;
                 self.recovery_clear()?;
+                self.db.execute("DELETE FROM household_categories",[])?;
                 let counts = self
                     .db
                     .prepare("SELECT kind,COUNT(*) FROM objects WHERE deleted=0 GROUP BY kind")?
