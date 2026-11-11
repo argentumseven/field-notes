@@ -239,7 +239,7 @@ impl Store {
             }));
         }
         let next_before = entries.last()
-            .and_then(|row| row["id"].as_str()).unwrap_or(before);
+            .and_then(|row| row["id"].as_str()).unwrap_or(before).to_owned();
         Ok(json!({
             "entries": entries,
             "more": more,
