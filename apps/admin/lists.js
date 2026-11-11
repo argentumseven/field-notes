@@ -50,7 +50,7 @@ async function editCollection(record) {
 }
 // Delete is independent of finishing. Capture linked records and revisions
 // so concurrent changes cannot silently expand a confirmed deletion.
-async function deleteCollection(record) {
+function collectionContents(record) {
   const children = [];
   const visited = new Set([record.id]);
   const pending = [record.id];
@@ -65,24 +65,18 @@ async function deleteCollection(record) {
       pending.push(item.id);
     }
   }
+  return children;
+}
+async function deleteCollection(record) {
+  const children = collectionContents(record);
   const populated = children.length > 0;
   const fields = [
-    ...(populated
-      ? [{
-          key: "mode",
-          label: "What should happen to its contents?",
-          options: record.kind === "project"
-            ? [["detach", "Keep tasks and lists (move out of project)"],
-               ["cascade", "Delete project, tasks, lists and attachments"]]
-            : [["cascade", "Delete list and all its items"]],
-        }]
-      : []),
     { key: "confirmation", label: "Type DELETE to confirm" },
   ];
   await formDialog(
     "Delete " + record.kind + ": " + record.data.title,
     populated
-      ? children.length + " linked records, including nested content. Keeping contents moves direct tasks to Inbox and lists to standalone. Deleting contents also removes active attachments. Saved history and backups follow retention settings."
+      ? children.length + " linked records, including nested content, will be removed from active data. To keep them, cancel and use Unbundle on the project instead. Saved history and backups follow retention settings."
       : "This empty collection will be removed from the active workspace. Saved history and backups follow retention settings.",
     fields,
     async (v) => {
@@ -91,7 +85,7 @@ async function deleteCollection(record) {
         record.kind + ".delete",
         record.id,
         populated
-          ? { mode: v.mode, contents: children.map((item) => ({ id: item.id, revision: item.revision })) }
+          ? { mode: "cascade", contents: children.map((item) => ({ id: item.id, revision: item.revision })) }
           : {},
         record.revision,
       );
