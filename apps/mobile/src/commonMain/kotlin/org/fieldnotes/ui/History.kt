@@ -72,7 +72,7 @@ import org.fieldnotes.domain.*
                 if(cache.supportsRecovery()){
                     RecoveryPendingCard(model,state)
                     FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        SecondaryButton(onClick={trashOpen=true}){Text("Trash · deleted items")}
+                        if(cache.supportsTrash())SecondaryButton(onClick={trashOpen=true}){Text("Trash · deleted items")}
                         SecondaryButton(onClick={recoveryTarget="";recoveryTitle="Content checkpoints"}){Text("Content checkpoints")}
                     }
                 }
