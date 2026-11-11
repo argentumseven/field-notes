@@ -634,7 +634,32 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
         } else {
             val current = rows[c.target] ?: continue
             val d = current.record.data
-            if (c.action.endsWith(".delete")) { rows.remove(c.target); rows.entries.removeAll { it.value.record.data.text("task_id") == c.target }; continue }
+            if (c.action=="project.unbundle") {
+                // Optimistic membership release only. The existing commands,
+                // revision fences and retained conflicts remain authoritative.
+                for((key,row) in rows.toMap()){
+                    if(row.record.kind in setOf("task","list")&&row.record.data.text("project_id")==c.target)
+                        rows[key]=VisibleRecord(row.record.copy(data=JsonObject(row.record.data+("project_id" to "".j()))),true)
+                }
+                rows[c.target]=VisibleRecord(current.record,true)
+                continue
+            }
+            if (c.action.endsWith(".delete")) {
+                if (c.action in setOf("project.delete","list.delete")&&c.data.text("mode")=="cascade") {
+                    val removed=mutableSetOf(c.target)
+                    var grew:Boolean
+                    do {
+                        val before=removed.size
+                        for(row in rows.values)if(row.record.data.text("project_id") in removed||row.record.data.text("task_id") in removed)removed.add(row.record.id)
+                        grew=removed.size>before
+                    } while(grew)
+                    rows.keys.removeAll(removed)
+                } else {
+                    rows.remove(c.target)
+                    rows.entries.removeAll { it.value.record.data.text("task_id") == c.target }
+                }
+                continue
+            }
             val change = when (c.action) {
                 "task.update", "event.update", "note.update", "project.update", "list.update" -> c.data
                 "task.start" -> obj("status" to "in_progress".j(), "claimant" to (cache.snapshot?.actor?.user_id ?: "").j())
