@@ -191,7 +191,7 @@ import org.fieldnotes.domain.*
                     val attached=rows.filter{v->direct.any{it.id==v.record.data.text("task_id")}}.map{it.record}
                     unbundleContents=direct+attached
                     unbundleRevision=list.revision
-                }){Text("Unbundle tasks ("+all.size+")")}
+                },enabled=state.cache.outbox.isEmpty()&&all.none{it.pending}){Text("Unbundle tasks ("+all.size+")")}
                 if(history!=null)SecondaryButton(onClick=history){Text("List history")}
                 if(writable) {
                     if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"},enabled=checked.isNotEmpty()){Text("Reuse checked (${checked.size})")}
