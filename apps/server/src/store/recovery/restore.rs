@@ -373,10 +373,25 @@ impl Store {
                     r.record.kind == deleted.record.kind && r.parent == deleted.parent
                 }) {
                     let digest = if candidate.record.kind == "image" {
-                        match state.content.blobs.get(id) {
-                            Some(value) => Some(value.clone()),
-                            None => continue,
+                        let Some(digest) = state.content.blobs.get(id) else {
+                            continue;
+                        };
+                        // Check the retained ciphertext and digest in the
+                        // preview, not only after the user confirms a restore.
+                        let encrypted: Option<Vec<u8>> = self.db.query_row(
+                            "SELECT bytes FROM recovery_blobs WHERE digest=?",
+                            [digest], |r| r.get(0),
+                        ).optional()?;
+                        let Some(encrypted) = encrypted else {
+                            continue;
+                        };
+                        let plain = self.vault.open(
+                            &format!("recovery-blob:{digest}"), &encrypted
+                        )?;
+                        if crypto::digest(&plain) != *digest {
+                            return fail(409, "A saved image failed its integrity check. No content was changed");
                         }
+                        Some(digest.clone())
                     } else {
                         None
                     };
