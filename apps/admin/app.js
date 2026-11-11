@@ -900,7 +900,7 @@ function drawTasks() {
   if (filters.expanded) {
     choose("Category", "category", [
       ["*", "All categories"],
-      ...Object.entries(recordCategories),
+      ...allCategoryChoices(),
     ]);
     choose("Person", "person", [
       ["*", "Everyone"],
