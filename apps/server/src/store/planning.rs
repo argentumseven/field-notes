@@ -64,6 +64,7 @@ impl Store {
                 "reminders",
                 "reminder_options",
                 "category",
+                "category_override",
                 "recurrence",
             ],
         )?;
