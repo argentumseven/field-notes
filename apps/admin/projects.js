@@ -230,7 +230,7 @@ function renderProjectContext(root, project) {
     );
   }
   if (mayWrite()) {
-    actions.append(button("Project settings / delete", () => editCollection(project)));
+    actions.append(button("Project settings", () => editCollection(project)));
     const attached = collectionContents(project);
     if (attached.length) {
       actions.append(button("Unbundle project", unbundle));
