@@ -76,7 +76,7 @@ import org.fieldnotes.domain.*
                 MembershipField(state.cache,keepIn,!busy,workOnly=true){keepIn=it;if(it.isNotBlank()&&!ownCategory)category=state.cache.projectGraph().byId[it]?.data?.text("category","general") ?: "general"}
                 val categoryParent=state.cache.projectGraph().byId[keepIn]
                 val categoryContext=itemContext(obj("category" to category.j()),categoryParent)
-                if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))CategoryPicker(category,!busy){category=it;ownCategory=true}
+                if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))CategoryPicker(category,!busy,cache=state.cache){category=it;ownCategory=true}
                 if(state.cache.supportsItemContexts())ItemCategoryPicker(categoryContext,itemCategory,!busy){itemCategory=it}
                 OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Notes")},minLines=2,enabled=!busy,modifier=Modifier.fillMaxWidth())
                 Text("Priority",style=MaterialTheme.typography.labelLarge)
