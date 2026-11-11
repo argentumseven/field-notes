@@ -4,6 +4,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 const val RECOVERY_FEATURE="content-recovery-v1"
+const val TRASH_FEATURE="content-trash-v1"
+fun Cache.supportsTrash()=compatibility?.let{!it.blocked&&TRASH_FEATURE in it.features}==true
 fun Cache.supportsRecovery()=compatibility?.let { !it.blocked&&RECOVERY_FEATURE in it.features }==true
 @Serializable data class RecoveryIntent(val actor:String,val session:String,val request:JsonObject,val error:String="")
 @Serializable data class RecoveryVersion(val id:String,val index:Long,val record_revision:Long=0,val at:Long,val actor_name:String,val action:String,val title:String,val kind:String?=null,val deleted:Boolean=false,val records:Int=0,val images:Int=0,val can_restore:Boolean=false,val can_delete:Boolean=false,val problem:String="")
