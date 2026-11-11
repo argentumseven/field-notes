@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap,BTreeSet};
 
 impl Store {
     pub fn command(&mut self, token: &str, c: Command) -> Result<Value> {
@@ -395,6 +395,39 @@ impl Store {
                     return fail(400, "Expected a calendar event");
                 }
                 self.calendar_event(&c.data, &mut record, &actor)?;
+            }
+            "list.unbundle" => {
+                if record.kind!="list" || record.data["items_are_tasks"]!=true {
+                    return fail(409,"Only a work-task list can be unbundled. Make a reference list standalone to preserve its checklist");
+                }
+                fields(&c.data,&["contents"])?;
+                let direct=self.history_removed_children(&c.target)?;
+                if direct.is_empty() {return fail(409,"This work-task list is already empty");}
+                let mut descendants=Vec::new();
+                for task in &direct {
+                    if task.kind!="task" {return fail(409,"List has unexpected content");}
+                    descendants.push(task.clone());
+                    descendants.extend(self.history_removed_children(&task.id)?);
+                }
+                let proposed=c.data["contents"].as_array().ok_or(Fault(400,"Review the exact list contents".into()))?;
+                let mut confirmed=BTreeMap::<String,i64>::new();
+                for v in proposed {
+                    let id=v["id"].as_str().ok_or(Fault(400,"Invalid linked item ID".into()))?;
+                    valid_id(id)?;
+                    let revision=v["revision"].as_i64().ok_or(Fault(400,"Invalid linked revision".into()))?;
+                    if confirmed.insert(id.into(),revision).is_some(){return fail(400,"Duplicate linked ID");}
+                }
+                if confirmed.len()!=descendants.len()||
+                    descendants.iter().any(|item| confirmed.get(&item.id)!=Some(&item.revision)) {
+                    return fail(409,"List contents changed. Review unbundling again");
+                }
+                for task in direct {
+                    self.command_inner(token,&Command{
+                        operation_id:id(),epoch:c.epoch.clone(),generation:c.generation,
+                        action:"task.update".into(),target:task.id,expected_revision:Some(task.revision),
+                        data:json!({"project_id":""})
+                    },importing)?;
+                }
             }
             "project.delete" | "list.delete" | "note.delete" | "task.delete" | "comment.delete"
             | "image.delete" | "event.delete" => {
