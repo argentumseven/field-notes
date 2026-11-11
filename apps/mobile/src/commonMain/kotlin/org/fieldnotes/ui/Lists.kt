@@ -42,7 +42,7 @@ import org.fieldnotes.domain.*
             }else if(record.data.text("project_id").isNotBlank())Text("In "+(cache.projectGraph().project(record)?.data?.text("title") ?: "Project"),style=MaterialTheme.typography.labelMedium)
             if(record.data.text("notes").isNotBlank())Text(record.data.text("notes"),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis)
             Text(recordHistory(cache,record,TimeZone.currentSystemDefault(),compact=true),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(writable)SecondaryButton(onClick=edit){Text(if(record.kind=="list")"List settings" else "Project settings")}
+            if(writable)SecondaryButton(onClick=edit){Text(if(record.kind=="list")"List settings / delete" else "Project settings / delete")}
         }
     }
 }
