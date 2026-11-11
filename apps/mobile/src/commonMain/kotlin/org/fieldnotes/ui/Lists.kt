@@ -101,7 +101,7 @@ import org.fieldnotes.domain.*
         }
         if(record?.flag("items_are_tasks")==true&&!workItems)require(projectRecords(state.cache).none{it.record.data.text("project_id")==record.id&&it.record.data.text("status")=="in_progress"}){"Release or finish active work before converting this task list to a reference checklist."}
         val reminderSetting=if(template=="groceries")record?.data?.get("item_reminders") ?: JsonPrimitive(false) else JsonPrimitive(itemReminders)
-        val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to reminderSetting) else emptyMap()) else emptyMap()
+        val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record.data.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to reminderSetting) else emptyMap()) else emptyMap()
         val projectExtra=if(state.cache.supportsProjects())if(kind=="project")mapOf("status" to projectStatus.j(),"due" to targetDay.j(),"assignee" to coordinator.j()) else mapOf("project_id" to parent.j(),"items_are_tasks" to JsonPrimitive(workItems)) else emptyMap()
         val fields=JsonObject(mapOf("title" to title.j(),"notes" to notes.j())+(if(kind=="list")listConfiguration(template,choices,perpetual) else emptyMap())+extra+projectExtra)
         val id=record?.id ?: model.newId()
@@ -145,6 +145,9 @@ import org.fieldnotes.domain.*
     val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
     var removing by remember {mutableStateOf<Pair<Basis,Record>?>(null)}
     var checkedSelection by remember { mutableStateOf<Pair<Basis,List<Record>>?>(null) }
+    var unbundleContents by remember(list.id){mutableStateOf<List<Record>?>(null)}
+    var unbundleRevision by remember(list.id){mutableStateOf(0L)}
+    val canUnbundle=state.cache.compatibility?.features?.contains("list-unbundle-v1")==true
     LaunchedEffect(fields,store){storeChanged(if("store" in fields&&store!="*")store else "");if("store" !in fields){store="*"};if(sort !in setOf("title","added","updated","item_category")+fields.filter{it !in setOf("notes","images","store","link_url")})sort="title"}
     val stores=all.map { storeName(it.record) }.distinct().sortedWith(compareBy { it.lowercase() })
     val matching=all.filter { row->val d=row.record.data;itemCategoryMatches(d.text("item_category"),itemCategoryFilter)&&("store" !in fields||store=="*"||storeName(row.record)==store)&&(listOf(d.text("title"),d.text("notes"),d.text("store"),d.text("quantity"),d.text("link_url"),d.text("price"),d.text("item_category")).joinToString(" ").contains(query,true)) }
@@ -175,6 +178,12 @@ import org.fieldnotes.domain.*
                 ViewChoice("Item category",itemCategoryFilter,itemCategoryFilters(all.map{it.record},itemCategoryFilter)){itemCategoryFilter=it}
                 ViewChoice("Sort",sort,listOf("title" to "Name A–Z","added" to "Recently added","updated" to "Recently changed","item_category" to "Item category")+fields.filter { it !in setOf("notes","images","store","link_url") }.map { it to listFieldLabels.getValue(it) }){sort=it}
                 if(writable)SecondaryButton(onClick=edit){Text("List settings")}
+                if(writable&&canUnbundle&&list.flag("items_are_tasks")&&all.isNotEmpty())SecondaryButton(onClick={
+                    val direct=all.map{it.record}
+                    val attached=rows.filter{v->direct.any{it.id==v.record.data.text("task_id")}}.map{it.record}
+                    unbundleContents=direct+attached
+                    unbundleRevision=list.revision
+                }){Text("Unbundle tasks ("+all.size+")")}
                 if(history!=null)SecondaryButton(onClick=history){Text("List history")}
                 if(writable) {
                     if(!finished&&list.data["perpetual"]!=JsonPrimitive(false))SecondaryButton(onClick={checkedSelection=state.cache.snapshot!!.basis to checked.map{it.record};confirmAction="reuse"},enabled=checked.isNotEmpty()){Text("Reuse checked (${checked.size})")}
@@ -206,6 +215,14 @@ import org.fieldnotes.domain.*
                 } }
             }
         }
+    }
+    unbundleContents?.let {selection->
+        EditorDialog(onDismissRequest={unbundleContents=null},title={Text("Unbundle work list?")},text={
+            Text("Release ${selection.count{it.kind=="task"}} tasks to Inbox. Their notes, attachments, categories, dates, checked states and history stay intact. The original list remains empty and can be deleted separately. Changes to selected records abort this release.")
+        },confirmButton={Button(shape=ControlShape,onClick={
+            model.enqueueAsync("list.unbundle",list.id,obj("contents" to JsonArray(selection.map{obj("id" to it.id.j(),"revision" to it.revision.j())})),unbundleRevision)
+            unbundleContents=null
+        }){Text("Release tasks")}},dismissButton={SecondaryButton(onClick={unbundleContents=null}){Text("Keep list as is")}})
     }
     if(confirmAction!=null) {
         val reuse=confirmAction=="reuse"
