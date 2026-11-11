@@ -34,7 +34,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
     VisibleLazyColumn(Modifier.weight(1f).testTag("project-workspace"),contentPadding=PaddingValues(top=8.dp,bottom=110.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item("workspace-header"){Column {header()}}
         item {OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            RecordBadges(project);Text(if(archived)"Finished project · kept in history" else "Project state: "+projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
+            RecordBadges(project);Text(if(archived)"Finished project · retained" else "Project state: "+projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
             Text(if(stats.total==0)"No work tasks yet" else "${stats.done} of ${stats.total} tasks complete",style=MaterialTheme.typography.titleLarge)
             LinearProgressIndicator(progress={if(stats.total>0)stats.done.toFloat()/stats.total else 0f},modifier=Modifier.fillMaxWidth())
             Text("${stats.ready} ready · ${stats.working} in progress · ${stats.waiting} waiting · ${stats.later} planned later · ${stats.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
@@ -44,7 +44,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
             if(queued>0)Text("Includes $queued queued changes. Final progress follows the server.",style=MaterialTheme.typography.labelMedium)
             if(project.data.text("notes").isNotBlank()){SecondaryButton(onClick={context=!context}){Text(if(context)"Hide goal & context" else "Goal & context")};if(context)Text(project.data.text("notes"))}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                if(writable){SecondaryButton(onClick=edit){Text("Project settings")};if(project.data.text("status")!="active"&&project.data.text("status").isNotBlank())SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "active".j()),project.revision)}){Text("Reopen project")}else SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "on_hold".j()),project.revision)},enabled=stats.working==0){Text("Put on hold")};if(!archived)SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "archived".j()),project.revision)},enabled=stats.open==0){Text("Finish project")}}
+                if(writable){SecondaryButton(onClick=edit){Text("Project settings / delete")};if(project.data.text("status")!="active"&&project.data.text("status").isNotBlank())SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "active".j()),project.revision)}){Text("Reopen project")}else SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "on_hold".j()),project.revision)},enabled=stats.working==0){Text("Put on hold")};if(!archived)SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "archived".j()),project.revision)},enabled=stats.open==0){Text("Finish project")}}
                 SecondaryButton(onClick=history){Text("Project history")}
             }
         }}}
