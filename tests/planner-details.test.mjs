@@ -479,7 +479,8 @@ test("whole-content rollback and roll forward retain new recipe, location and re
       const out = await recover("apply", {
         preview_id: p.data.preview_id,
         operation_id: randomUUID(),
-        confirmation: "RESTORE CONTENT",
+        confirmation: p.data.confirmation_phrase,
+        reviewed: true,
       });
       assert.equal(out.status, 200, JSON.stringify(out.data));
       return out.data;

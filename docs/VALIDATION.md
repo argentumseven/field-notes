@@ -1,5 +1,37 @@
 # Implementation and validation record
 
+## 0.11.5 checkpoint deletion and deliberate restores — 2026-11-11
+
+Web and Android expose **Delete checkpoint** per saved household checkpoint,
+including damaged copies. Only administrators with recent password proof may
+delete. The request binds the selected ID/index, workspace basis and history
+revision, requires the exact deletion phrase, commits atomically with an audit
+entry and durable receipt, and invalidates earlier restore previews. Shared
+retained image bytes are freed only after their final reference; live images,
+content and other retained states are preserved. Indices are never reused.
+
+Every restore now has a separate confirmation screen with source name/index,
+restored/changed/removed counts, an explicit review acknowledgement, an empty
+phrase field specific to that source, and a password field. The final button
+stays disabled until complete. Enter in website fields cannot submit the restore.
+The server requires recent password proof, the exact phrase and reviewed=true;
+older automatic-confirmation clients fail closed while core sync remains usable.
+The existing ten-minute session-bound preview, content/people/retention fences,
+automatic safety checkpoint, attachment checks and idempotent retry path remain.
+The updated Android client also refuses unsafe restore previews from older
+servers and keeps deleted-checkpoint requests durable across interrupted replies.
+
+Automated checks passed: 115 API/integration tests, 135 Kotlin host tests,
+18 Rust tests, four Chromium recovery workflows (including a narrow viewport),
+and 53 Python delivery checks (25 upgrade, seven publication, ten APK-artifact,
+11 container tests). Rust formatting/clippy, JavaScript formatting, Android
+release lint, signed ARM64 packaging, actual APK manifest inspection and 16 KiB
+alignment checks passed. Tests include source-specific phrase and review checks,
+password rejection, cancellation, concurrent deletion, rollback on audit failure,
+receipt persistence across restart, and preservation of shared/live attachments.
+Physical GrapheneOS interaction and the user's home server are not exercised by
+these automated checks.
+
 ## 0.11.4 project membership and upgrade delivery — 2026-11-11
 
 The project workspace now exposes **Add existing task** on web and Android.

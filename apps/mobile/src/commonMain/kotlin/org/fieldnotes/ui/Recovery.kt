@@ -2,6 +2,8 @@
 package org.fieldnotes.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9,6 +11,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -19,7 +23,7 @@ import org.fieldnotes.domain.*
 @Composable internal fun RecoveryPendingCard(model:Workspace,state:WorkspaceState) {
     val pending=state.cache.recoveryPending ?: return
     val scope=rememberCoroutineScope();var busy by remember {mutableStateOf(false)};var message by remember {mutableStateOf("")};var dismiss by remember {mutableStateOf(false)}
-    fun run(action:suspend()->Unit){scope.launch {busy=true;message="";try{action()}catch(e:Exception){if(e is CancellationException)throw e;message=e.message ?: "Recovery status could not be checked."}finally{busy=false}}}
+    fun run(action:suspend()->Unit){if(busy)return;scope.launch {busy=true;message="";try{action()}catch(e:Exception){if(e is CancellationException)throw e;message=e.message ?: "Recovery status could not be checked."}finally{busy=false}}}
     OutlinedCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text("Recovery result needs review",style=MaterialTheme.typography.titleSmall)
         Text("A request may have reached the server. The exact request is saved on this phone; it is never retried automatically.",style=MaterialTheme.typography.bodySmall)
@@ -39,13 +43,13 @@ import org.fieldnotes.domain.*
     val scope=rememberCoroutineScope();val zone=TimeZone.currentSystemDefault();val basis=state.cache.snapshot?.basis;val revision=state.cache.snapshot?.history_revision;val actor=state.cache.snapshot?.actor
     var entries by remember(target,basis,revision){mutableStateOf<List<RecoveryVersion>>(emptyList())};var page by remember(target,basis,revision){mutableStateOf<RecoveryPage?>(null)}
     var preview by remember(target,basis,revision){mutableStateOf<RecoveryPreview?>(null)};var busy by remember {mutableStateOf(false)};var problem by remember {mutableStateOf("")};var loaded by remember {mutableStateOf(false)}
-    var name by rememberSaveable {mutableStateOf("")};var password by remember {mutableStateOf("")};var done by remember {mutableStateOf("")}
+    var name by rememberSaveable {mutableStateOf("")};var confirming by remember(preview?.preview_id){mutableStateOf(false)};var deleting by remember(target,basis,revision){mutableStateOf<RecoveryVersion?>(null)};var done by remember {mutableStateOf("")}
     suspend fun load(more:Boolean=false) {
         val fields=buildMap<String,JsonElement>{target?.let{put("target",it.j())};if(more)page?.next_before?.let{put("before",it.j())}}
         val next=SyncJson.decodeFromJsonElement<RecoveryPage>(model.recovery(if(target==null)"checkpoints" else "versions",JsonObject(fields)))
         entries=if(more) (entries+next.entries).distinctBy {it.id} else next.entries;page=next;loaded=true
     }
-    fun run(action:suspend()->Unit){scope.launch {busy=true;problem="";try{action()}catch(e:Exception){if(e is CancellationException)throw e;problem=e.message ?: "Recovery could not complete. Current content is kept."}finally{busy=false}}}
+    fun run(action:suspend()->Unit){if(busy)return;scope.launch {busy=true;problem="";try{action()}catch(e:Exception){if(e is CancellationException)throw e;problem=e.message ?: "Recovery could not complete. Current content is kept."}finally{busy=false}}}
     LaunchedEffect(target,basis,revision){busy=true;problem="";try{load()}catch(e:Exception){if(e is CancellationException)throw e;problem=e.message ?: "Saved states could not load."}finally{busy=false}}
     ModalBottomSheet(onDismissRequest={if(!busy)close()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         Column(Modifier.fillMaxWidth().heightIn(max=760.dp).imePadding()) {
@@ -78,12 +82,12 @@ import org.fieldnotes.domain.*
                     }
                     if(plan.preview_limited)item {Text("Showing the first 50 of ${plan.change_count} affected items. The entire checkpoint is applied atomically.")}
                     item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                        if(plan.reauth_required)OutlinedTextField(password,{password=it},label={Text("Your account password")},modifier=Modifier.fillMaxWidth(),singleLine=true,visualTransformation=PasswordVisualTransformation())
-                        Button(shape=ControlShape,onClick={run {
-                            if(plan.reauth_required){model.reauthenticate(password);password=""}
-                            model.applyRecovery(plan);done="Recovery completed. Current content has been refreshed.";preview=null;load()
-                        }},enabled=!busy&&state.cache.recoveryPending==null&&(!plan.reauth_required||password.isNotBlank()),modifier=Modifier.fillMaxWidth()){Text(if(plan.checkpoint)"Restore content checkpoint" else "Restore item version")}
-                        SecondaryButton(onClick={preview=null;password=""},enabled=!busy){Text("Back to saved states")}
+                        Text("Selected: #${plan.source_index} · ${plan.title}")
+                        Text("Preview expires ${historyMoment(plan.expires_at,zone,use24Hour)}. Any intervening changes require a fresh review.",style=MaterialTheme.typography.bodySmall)
+                        if(plan.confirmation_phrase.isBlank())Text("Update the paired server to use the required restore confirmation safeguards.",color=MaterialTheme.colorScheme.error)
+                        if(plan.change_count==0)Text("Content already matches this saved state.")
+                        Button(shape=ControlShape,onClick={problem="";confirming=true},enabled=!busy&&state.cache.recoveryPending==null&&plan.change_count>0&&plan.confirmation_phrase.isNotBlank(),modifier=Modifier.fillMaxWidth()){Text("Continue to restore confirmation")}
+                        SecondaryButton(onClick={preview=null},enabled=!busy){Text("Back to saved states")}
                     }}
                 }else {
                     item {Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -101,6 +105,7 @@ import org.fieldnotes.domain.*
                         Text(if(target==null)"${entry.records} items · ${entry.images} images" else "Complete item state",style=MaterialTheme.typography.labelMedium)
                         if(entry.problem.isNotBlank())Text(entry.problem,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
                         if(entry.can_restore)SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text("Preview restore")}
+                        if(target==null&&entry.can_delete)SecondaryButton(onClick={problem="";deleting=entry},enabled=!busy&&state.cache.recoveryPending==null){Text("Delete checkpoint")}
                     }}}
                     if(page?.more==true)item {SecondaryButton(onClick={run{load(true)}},enabled=!busy){Text("Load older versions")}}
                     item {Text("Saved states expire under the server's age, count and storage limits. Administrators manage retention and purging in web Management.",style=MaterialTheme.typography.bodySmall)}
@@ -108,6 +113,41 @@ import org.fieldnotes.domain.*
             }
         }
     }
+    val plan=preview
+    if(confirming&&plan!=null)RecoveryConfirmDialog(
+        title=if(plan.checkpoint)"Restore content checkpoint" else "Restore item version",
+        description="Restore #${plan.source_index} · ${plan.title}: ${plan.restored} restored, ${plan.changed} changed, ${plan.removed} removed. "+(if(plan.checkpoint)"This replaces household content and affects everyone. " else "This replaces the complete item state, comments and attachments. ")+"Current state is saved first. Working claims are cleared.",
+        phrase=plan.confirmation_phrase,acknowledgement="I reviewed the selected state and restore impact, including removals.",busy=busy,problem=problem,
+        enabled=state.cache.recoveryPending==null,onDismiss={if(!busy)confirming=false},
+        onConfirm={confirmation,password->run {
+            model.reauthenticate(password)
+            model.applyRecovery(plan,confirmation,true)
+            confirming=false;preview=null;done="Recovery completed. Current content has been refreshed.";load()
+        }})
+    deleting?.let {entry->RecoveryConfirmDialog(
+        title="Delete content checkpoint",
+        description="Permanently delete #${entry.index} · ${entry.title}, saved by ${entry.actor_name} on ${historyMoment(entry.at,zone,use24Hour)}? This recovery copy cannot be restored after deletion. Current household content and other saved states are kept.",
+        phrase="DELETE CHECKPOINT #${entry.index}",acknowledgement="I understand this permanently removes this saved checkpoint.",busy=busy,problem=problem,
+        enabled=state.cache.recoveryPending==null,onDismiss={if(!busy)deleting=null},
+        onConfirm={confirmation,password->val expectedPage=page;run {
+            checkNotNull(expectedPage){"Refresh saved states first."}
+            model.reauthenticate(password)
+            model.deleteCheckpoint(entry,expectedPage,confirmation)
+            deleting=null;done="Content checkpoint deleted. Current content is unchanged.";load()
+        }})}
+
+}
+
+@Composable private fun RecoveryConfirmDialog(title:String,description:String,phrase:String,acknowledgement:String,busy:Boolean,problem:String,enabled:Boolean,onDismiss:()->Unit,onConfirm:(String,String)->Unit) {
+    var confirmation by remember(phrase){mutableStateOf("")};var reviewed by remember(phrase){mutableStateOf(false)};var password by remember(phrase){mutableStateOf("")}
+    EditorDialog(onDismissRequest=onDismiss,title={Text(title)},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text(description)
+        OutlinedTextField(confirmation,{confirmation=it},label={Text("Type $phrase to confirm")},singleLine=true,enabled=!busy,modifier=Modifier.fillMaxWidth())
+        Row(Modifier.toggleable(value=reviewed,enabled=!busy,role=Role.Checkbox,onValueChange={reviewed=it}),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {Checkbox(reviewed,null,enabled=!busy);Text(acknowledgement,Modifier.weight(1f))}
+        OutlinedTextField(password,{password=it},label={Text("Your account password")},singleLine=true,enabled=!busy,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password,autoCorrectEnabled=false),visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+        if(problem.isNotBlank())Text(problem,color=MaterialTheme.colorScheme.error)
+        if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+    }},confirmButton={Button(shape=ControlShape,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error),enabled=enabled&&!busy&&phrase.isNotBlank()&&confirmation==phrase&&reviewed&&password.isNotBlank(),onClick={val secret=password;password="";onConfirm(confirmation,secret)}){Text(title)}},dismissButton={SecondaryButton(onClick=onDismiss,enabled=!busy){Text("Cancel")}})
 }
 
 @Composable private fun ItemStatePanel(pair:ItemStatePair,index:Long,zone:TimeZone,use24Hour:Boolean) {

@@ -286,12 +286,14 @@ test("nested groups export/import without duplicates, keep task history, and res
     await s.ok("task.delete", task.id, {}, task.revision);
     await s.ok("list.delete", list.id, {}, list.revision);
     await s.ok("project.delete", p.id, {}, p.revision + 1);
+    await s.f.request("/api/reauth", { token: s.token, body: { password } });
     const preview = await rec("preview", { source: source.id });
     assert.equal(preview.status, 200, JSON.stringify(preview.data));
     const restored = await rec("apply", {
       preview_id: preview.data.preview_id,
       operation_id: randomUUID(),
-      confirmation: "RESTORE ITEM",
+      confirmation: preview.data.confirmation_phrase,
+      reviewed: true,
     });
     assert.equal(restored.status, 200, JSON.stringify(restored.data));
     const snapshot = await s.snap();
@@ -519,12 +521,14 @@ test("restoring unfinished task state cannot reopen a finished project implicitl
       "archived",
     );
     p = await s.ok("project.update", p.id, { status: "active" }, p.revision);
+    await s.f.request("/api/reauth", { token: s.token, body: { password } });
     const preview = await rec("preview", { source: todo.id });
     assert.equal(preview.status, 200, JSON.stringify(preview.data));
     const applied = await rec("apply", {
       preview_id: preview.data.preview_id,
       operation_id: randomUUID(),
-      confirmation: "RESTORE ITEM",
+      confirmation: preview.data.confirmation_phrase,
+      reviewed: true,
     });
     assert.equal(applied.status, 200, JSON.stringify(applied.data));
     snapshot = await s.snap();

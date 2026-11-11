@@ -17,9 +17,26 @@ claims; a previously in-progress task returns to To do. An unavailable assignee
 is cleared. The preview shows those changes.
 
 **Content checkpoints** saves a named copy of tasks, lists, projects, notes,
-events, comments and images. Only administrators can create/restore checkpoints.
-A full restore requires recent password confirmation. It automatically saves a
-Before restoring checkpoint, so you can recover the content you replaced, subject
+events, comments and images. Only administrators can create, restore or delete
+checkpoints. Each checkpoint has **Delete checkpoint** on web and Android. Deletion
+shows its name, index, author and saved time, requires its exact
+`DELETE CHECKPOINT #…` phrase, an acknowledgement and your password. It permanently
+removes that recovery copy; current content and other saved states are preserved.
+Unreadable checkpoints can also be deleted. Deletion invalidates open restore
+previews and frees image bytes only after their final retained reference is gone.
+
+Every item or checkpoint restore requires a separate confirmation step after
+preview: review the affected counts (including removals), acknowledge the impact,
+type the exact `RESTORE ITEM #…` or `RESTORE CHECKPOINT #…` phrase, and verify your
+account password. The final action stays disabled until all fields are complete;
+Enter in the website's fields does not submit a restore. Nothing is prefilled.
+The server enforces the phrase, review acknowledgement and recent password proof.
+Older clients with automatic confirmation cannot restore until updated. Normal
+sync and pairing are preserved. A preview from an older server without these
+safeguards cannot be applied by the updated client.
+
+A full restore automatically saves a **Before restoring** checkpoint, so you
+can recover the content you replaced, subject
 to retention limits. Accounts, password hashes, roles, device pairing, master/CA
 keys, ports and other security/host settings are never rolled back by content
 checkpoints. Use encrypted server backups for disaster recovery.

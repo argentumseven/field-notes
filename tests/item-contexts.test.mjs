@@ -382,7 +382,8 @@ test("portable content and retained whole-item versions preserve labels without 
       action: "apply",
       preview_id: preview.data.preview_id,
       operation_id: randomUUID(),
-      confirmation: "RESTORE ITEM",
+      confirmation: preview.data.confirmation_phrase,
+      reviewed: true,
     });
     assert.equal(restored.status, 200, JSON.stringify(restored.data));
     assert.equal(

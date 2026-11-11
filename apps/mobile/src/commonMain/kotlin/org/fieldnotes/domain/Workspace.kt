@@ -250,7 +250,12 @@ class Workspace(
         val status=recovery("status");val snap=checkNotNull(cache.snapshot)
         return executeRecovery(obj("action" to "checkpoint.create".j(),"epoch" to snap.epoch.j(),"generation" to snap.generation.j(),"operation_id" to newId().j(),"name" to name.trim().j(),"history_revision" to status.number("history_revision").j()))
     }
-    suspend fun applyRecovery(preview:RecoveryPreview):JsonObject=executeRecovery(preview.applyRequest(newId()))
+    suspend fun applyRecovery(preview:RecoveryPreview,confirmation:String,reviewed:Boolean):JsonObject=executeRecovery(preview.applyRequest(newId(),confirmation,reviewed))
+    suspend fun deleteCheckpoint(entry:RecoveryVersion,page:RecoveryPage,confirmation:String):JsonObject {
+        val snap=checkNotNull(cache.snapshot)
+        check(snap.actor.role in setOf("owner","admin")){"An administrator must delete checkpoints."}
+        return executeRecovery(entry.deleteRequest(page.epoch,page.generation,page.history_revision,newId(),confirmation))
+    }
     private suspend fun executeRecovery(body:JsonObject):JsonObject {
         val expected=checkNotNull(cache.snapshot){"Synchronize first."}
         return connection.withLock {
@@ -259,7 +264,7 @@ class Workspace(
             check(body.text("epoch")==current.epoch&&body.number("generation")==current.generation){"This recovery preview belongs to an earlier workspace. Review it again."}
             check(cache.supportsRecovery()&&current.actor.role!="viewer"){"Your current account cannot restore content."}
             check(cache.recoveryPending==null){"Review the previous recovery action before starting another."}
-            check(body.text("action") in setOf("apply","checkpoint.create")&&WireJson.encodeToString(body).length<=4096){"Invalid recovery request."}
+            check(body.text("action") in setOf("apply","checkpoint.create","checkpoint.delete")&&WireJson.encodeToString(body).length<=4096){"Invalid recovery request."}
             // Persist the exact idempotent request before any network write.
             update { it.copy(recoveryPending=RecoveryIntent(current.actor.user_id,current.actor.session_id,body)) }
             sendPendingRecovery()

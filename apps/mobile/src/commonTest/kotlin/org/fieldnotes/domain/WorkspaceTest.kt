@@ -228,12 +228,12 @@ class WorkspaceTest {
 
     @Test fun recoveryIntentIsDurableBeforeSendingAndLostRepliesCanBeConfirmedAfterRestart()=runTest {
         val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
-        val preview=RecoveryPreview("preview",9999999999,"epoch",1,"version",1,"Saved state",false,change_count=1,changes=emptyList())
+        val preview=RecoveryPreview("preview",9999999999,"epoch",1,"version",1,"Saved state",false,change_count=1,changes=emptyList(),confirmation_phrase="RESTORE ITEM #1")
         // Use the real fixture basis rather than inventing a second workspace.
         val plan=preview.copy(epoch=v.value.snapshot!!.epoch,generation=v.value.snapshot!!.generation)
         assertFailsWith<IllegalArgumentException>{m.recovery("apply")}
         val saved=v.value;v.failing=true
-        assertFailsWith<IllegalStateException>{m.applyRecovery(plan)};assertTrue(t.requests.isEmpty());v.failing=false
+        assertFailsWith<IllegalStateException>{m.applyRecovery(plan,"RESTORE ITEM #1",true)};assertTrue(t.requests.isEmpty());v.failing=false
         var applied=0;var reply:JsonObject?=null
         t.recoveryReply={body->
             when(body.text("action")){
@@ -242,16 +242,30 @@ class WorkspaceTest {
                 else->error("Unexpected recovery request")
             }
         }
-        assertFailsWith<IllegalStateException>{m.applyRecovery(plan)};assertNotNull(v.value.recoveryPending);assertEquals(1,applied)
+        assertFailsWith<IllegalStateException>{m.applyRecovery(plan,"RESTORE ITEM #1",true)};assertNotNull(v.value.recoveryPending);assertEquals(1,applied)
         val restarted=model(v,t,backgroundScope);restarted.initialize();assertNotNull(restarted.state.value.cache.recoveryPending)
         assertFailsWith<IllegalStateException>{restarted.resetConnection()};assertFailsWith<IllegalStateException>{restarted.logout()};assertFailsWith<IllegalStateException>{restarted.removeInstallation()}
         assertNotNull(restarted.checkRecoveryResult());assertNull(v.value.recoveryPending);assertEquals(2,v.value.snapshot!!.generation);assertEquals(saved.keys,v.value.keys);assertEquals(saved.config,v.value.config);assertEquals(saved.token,v.value.token);assertEquals(1,applied)
     }
+    @Test fun checkpointDeletionRetainsItsOriginalBasisAndDurableRequestAfterALostReply()=runTest {
+        val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        val snap=v.value.snapshot!!;val entry=RecoveryVersion("checkpoint",4,at=123,actor_name="Owner",action="checkpoint.create",title="Old copy",can_delete=true)
+        val page=RecoveryPage(snap.epoch,snap.generation,"lineage",listOf(entry),false,4,17)
+        assertFailsWith<IllegalStateException>{m.deleteCheckpoint(entry,page.copy(generation=page.generation+1),"DELETE CHECKPOINT #4")}
+        assertTrue(t.requests.isEmpty());assertNull(v.value.recoveryPending)
+        var sent:JsonObject?=null
+        t.recoveryReply={body->sent=body;assertNotNull(v.value.recoveryPending);error("Delete reply lost")}
+        assertFailsWith<IllegalStateException>{m.deleteCheckpoint(entry,page,"DELETE CHECKPOINT #4")}
+        assertEquals("checkpoint.delete",sent!!.text("action"));assertEquals(17,sent!!.number("history_revision"));assertEquals(sent,v.value.recoveryPending!!.request)
+        val restarted=model(v,t,backgroundScope);restarted.initialize()
+        t.recoveryReply={body->assertEquals(sent,body);Reply(200,obj("ok" to JsonPrimitive(true)).toString())}
+        restarted.retryRecovery();assertNull(v.value.recoveryPending)
+    }
     @Test fun aCommittedRestoreKeepsItsPendingReceiptIfSavingTheConfirmationFails()=runTest {
         val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
-        val basis=v.value.snapshot!!.basis;val plan=RecoveryPreview("preview",9999999999,basis.epoch,basis.generation,"version",1,"Saved state",false,change_count=1,changes=emptyList())
+        val basis=v.value.snapshot!!.basis;val plan=RecoveryPreview("preview",9999999999,basis.epoch,basis.generation,"version",1,"Saved state",false,change_count=1,changes=emptyList(),confirmation_phrase="RESTORE ITEM #1")
         t.recoveryReply={v.failing=true;Reply(200,obj("ok" to JsonPrimitive(true)).toString())}
-        val failure=assertFailsWith<IllegalStateException>{m.applyRecovery(plan)}
+        val failure=assertFailsWith<IllegalStateException>{m.applyRecovery(plan,"RESTORE ITEM #1",true)}
         assertContains(failure.message.orEmpty(),"confirmed recovery");assertNotNull(v.value.recoveryPending)
         v.failing=false;t.recoveryReply={Reply(200,obj("known" to JsonPrimitive(true),"result" to obj("ok" to JsonPrimitive(true))).toString())}
         assertNotNull(m.checkRecoveryResult());assertNull(v.value.recoveryPending)

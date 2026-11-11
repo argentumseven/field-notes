@@ -145,7 +145,10 @@ impl Store {
             tx.commit()?;
             return Ok(result);
         }
-        if matches!(body["action"].as_str(), Some("apply" | "checkpoint.create")) {
+        if matches!(
+            body["action"].as_str(),
+            Some("apply" | "checkpoint.create" | "checkpoint.delete")
+        ) {
             let operation = text(&body, "operation_id", 36)?;
             valid_id(&operation)?;
             let digest = crypto::digest(
@@ -168,6 +171,7 @@ impl Store {
             }
             "versions" | "checkpoints" => self.recovery_list(&actor, &body)?,
             "checkpoint.create" => self.recovery_create_checkpoint(&actor, &body)?,
+            "checkpoint.delete" => self.recovery_delete_checkpoint(&actor, &body)?,
             "preview" => self.recovery_preview(&actor, &body)?,
             "apply" => self.recovery_apply(&actor, &body)?,
             _ => return fail(400, "Unknown recovery action"),
@@ -233,7 +237,7 @@ impl Store {
             let saved = match self.recovery_decode(&sid, &bytes) {
                 Ok(saved) => saved,
                 Err(_) => {
-                    entries.push(json!({"id":sid,"index":index,"record_revision":revision,"at":at,"actor_name":person,"action":action,"title":"Unreadable saved state","kind":null,"deleted":false,"records":0,"images":0,"can_restore":false,"problem":"This saved state failed its integrity check. Other retained states remain available."}));
+                    entries.push(json!({"id":sid,"index":index,"record_revision":revision,"at":at,"actor_name":person,"action":action,"title":"Unreadable saved state","kind":null,"deleted":false,"records":0,"images":0,"can_restore":false,"can_delete":checkpoint&&actor.admin(),"problem":"This saved state failed its integrity check. Other retained states remain available."}));
                     continue;
                 }
             };
@@ -246,7 +250,7 @@ impl Store {
                 !matches!(r.record.kind.as_str(), "event" | "image" | "comment")
                     || r.record.data["author_id"] == actor.user_id
             });
-            entries.push(json!({"id":sid,"index":index,"record_revision":revision,"at":at,"actor_name":person,"action":action,"title":saved.name,"kind":root.map(|r|r.record.kind.as_str()),"deleted":root.is_some_and(|r|r.deleted),"records":saved.content.records.iter().filter(|r|!r.deleted).count(),"images":saved.content.blobs.len(),"can_restore":actor.role!="viewer"&&(!checkpoint||actor.admin())&&(actor.admin()||own)}));
+            entries.push(json!({"id":sid,"index":index,"record_revision":revision,"at":at,"actor_name":person,"action":action,"title":saved.name,"kind":root.map(|r|r.record.kind.as_str()),"deleted":root.is_some_and(|r|r.deleted),"records":saved.content.records.iter().filter(|r|!r.deleted).count(),"images":saved.content.blobs.len(),"can_delete":checkpoint&&actor.admin(),"can_restore":actor.role!="viewer"&&(!checkpoint||actor.admin())&&(actor.admin()||own)}));
         }
         let next = entries
             .last()

@@ -556,15 +556,12 @@ impl Store {
             Ok(json!({"current":self.recovery_item_view(&current,target)?,"saved":self.recovery_item_view(&desired,target)?}))
         }).transpose()?;
         let count = changes.len();
-        let overrides_work = current.records.iter().any(|r| {
-            !r.deleted
-                && r.record.kind == "task"
-                && r.record.data["claimant"]
-                    .as_str()
-                    .is_some_and(|id| !id.is_empty() && id != actor.user_id)
-        });
+        let confirmation = format!(
+            "RESTORE {} #{index}",
+            if checkpoint { "CHECKPOINT" } else { "ITEM" }
+        );
         Ok(
-            json!({"preview_id":preview,"expires_at":expires,"epoch":plan.epoch,"generation":plan.generation,"source":sid,"source_index":index,"title":saved.name,"checkpoint":checkpoint,"reauth_required":(checkpoint||overrides_work)&&!actor.elevated,"change_count":count,"restored":changes.iter().filter(|c|c["action"]=="restore").count(),"removed":changes.iter().filter(|c|c["action"]=="remove").count(),"changed":changes.iter().filter(|c|c["action"]=="change").count(),"changes":changes.into_iter().take(50).collect::<Vec<_>>(),"preview_limited":count>50,"saves_current_state":true,"clears_claims":true,"fences_offline_writes":checkpoint,"item_state":item_state}),
+            json!({"preview_id":preview,"expires_at":expires,"epoch":plan.epoch,"generation":plan.generation,"source":sid,"source_index":index,"title":saved.name,"checkpoint":checkpoint,"reauth_required":true,"confirmation_phrase":confirmation,"change_count":count,"restored":changes.iter().filter(|c|c["action"]=="restore").count(),"removed":changes.iter().filter(|c|c["action"]=="remove").count(),"changed":changes.iter().filter(|c|c["action"]=="change").count(),"changes":changes.into_iter().take(50).collect::<Vec<_>>(),"preview_limited":count>50,"saves_current_state":true,"clears_claims":true,"fences_offline_writes":checkpoint,"item_state":item_state}),
         )
     }
     pub(super) fn recovery_receipt(
@@ -653,6 +650,7 @@ impl Store {
                 "preview_id",
                 "operation_id",
                 "confirmation",
+                "reviewed",
             ],
         )?;
         let operation = text(body, "operation_id", 36)?;
@@ -706,41 +704,32 @@ impl Store {
                 "Workspace or recovery settings changed; make a new preview",
             );
         }
-        if body["confirmation"]
-            != if plan.checkpoint {
-                "RESTORE CONTENT"
-            } else {
-                "RESTORE ITEM"
-            }
-        {
-            return fail(400, "Confirm the reviewed recovery scope");
-        }
-        if plan.checkpoint && (!actor.admin() || !actor.elevated) {
+        if !actor.elevated {
             return fail(
                 403,
-                "Administrator and recent reauthentication required to restore all content",
+                "Recent password verification required before restoring content",
             );
         }
+        if plan.checkpoint && !actor.admin() {
+            return fail(403, "Administrator required to restore all content");
+        }
         let (_, source_digest, index, saved) = self.recovery_source(&plan.source)?;
+        let confirmation = format!(
+            "RESTORE {} #{index}",
+            if plan.checkpoint {
+                "CHECKPOINT"
+            } else {
+                "ITEM"
+            }
+        );
+        if body["confirmation"] != confirmation || body["reviewed"] != true {
+            return fail(400, "Review the changes and type the exact confirmation phrase from this preview. Update Field Notes if the confirmation step is unavailable");
+        }
         if source_digest != plan.source_digest {
             return fail(409, "Saved source changed; make a new preview");
         }
         let current = self.recovery_current(plan.target.as_deref())?;
         self.recovery_authorize(actor, plan.checkpoint, &saved.content, &current)?;
-        if !actor.elevated
-            && current.records.iter().any(|r| {
-                !r.deleted
-                    && r.record.kind == "task"
-                    && r.record.data["claimant"]
-                        .as_str()
-                        .is_some_and(|id| !id.is_empty() && id != actor.user_id)
-            })
-        {
-            return fail(
-                403,
-                "Recent reauthentication is required to override another person's active work",
-            );
-        }
         if Self::recovery_state_digest(&current)? != plan.current_digest
             || self.recovery_directory_digest()? != plan.directory_digest
         {

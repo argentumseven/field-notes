@@ -68,6 +68,38 @@ async function shot(page, name) {
   });
 }
 
+async function restoreConfirmation(
+  page,
+  preview,
+  phrase,
+  title = "Restore item version",
+) {
+  await preview
+    .getByRole("button", {
+      name: "Continue to restore confirmation",
+      exact: true,
+    })
+    .click();
+  const dialog = page
+    .locator(".recovery-dialog")
+    .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+  const submit = dialog.getByRole("button", { name: title, exact: true });
+  assert.equal(await submit.isDisabled(), true);
+  const typed = dialog.getByLabel(`Type ${phrase} to confirm`, { exact: true });
+  await typed.fill("RESTORE");
+  await dialog.getByRole("checkbox").check();
+  await dialog
+    .getByLabel("Your account password", { exact: true })
+    .fill(password);
+  assert.equal(await submit.isDisabled(), true);
+  await typed.fill(phrase);
+  // Enter in a text field must not activate the final destructive action.
+  await typed.press("Enter");
+  assert.equal(await dialog.isVisible(), true);
+  assert.equal(await submit.isEnabled(), true);
+  return { dialog, submit };
+}
+
 test("web restores deleted and previous states with readable previews and keeps roll forward available", async () => {
   const s = await scene();
   try {
@@ -116,13 +148,37 @@ test("web restores deleted and previous states with readable previews and keeps 
       .locator(".recovery-dialog")
       .filter({ has: page.getByRole("heading", { name: /Restore preview/ }) });
     assert.match(await preview.innerText(), /Original household plan/);
-    assert.equal(await page.locator(".history-view > .history-timeline > .history-entry").count(),1);
-    await preview.getByRole("article",{name:"Selected item state"}).waitFor();
-    assert.equal(await preview.locator(".recovery-comparison").getAttribute("open"),null);
-    await preview.getByRole("button",{name:"Current state",exact:true}).click();
-    assert.match(await preview.getByRole("article",{name:"Current item state"}).innerText(),/not present/);
-    await preview.getByRole("button",{name:"Selected state #1",exact:true}).click();
-    assert.match(await preview.getByRole("article",{name:"Selected item state"}).innerText(),/Original household plan/);
+    assert.equal(
+      await page
+        .locator(".history-view > .history-timeline > .history-entry")
+        .count(),
+      1,
+    );
+    await preview
+      .getByRole("article", { name: "Selected item state" })
+      .waitFor();
+    assert.equal(
+      await preview.locator(".recovery-comparison").getAttribute("open"),
+      null,
+    );
+    await preview
+      .getByRole("button", { name: "Current state", exact: true })
+      .click();
+    assert.match(
+      await preview
+        .getByRole("article", { name: "Current item state" })
+        .innerText(),
+      /not present/,
+    );
+    await preview
+      .getByRole("button", { name: "Selected state #1", exact: true })
+      .click();
+    assert.match(
+      await preview
+        .getByRole("article", { name: "Selected item state" })
+        .innerText(),
+      /Original household plan/,
+    );
 
     assert.equal(
       await preview
@@ -131,9 +187,12 @@ test("web restores deleted and previous states with readable previews and keeps 
       "auto",
     );
     await shot(page, "70-item-restore-preview");
-    await preview
-      .getByRole("button", { name: "Restore item version", exact: true })
-      .click();
+    const confirmation = await restoreConfirmation(
+      page,
+      preview,
+      "RESTORE ITEM #1",
+    );
+    await confirmation.submit.click();
     await preview.waitFor({ state: "detached" });
     let snap = (await s.f.request("/api/snapshot", { token: s.token })).data;
     assert.equal(
@@ -236,13 +295,19 @@ test("a lost restore reply has a visible review path and status lookup does not 
     const preview = page
       .locator(".recovery-dialog")
       .filter({ has: page.getByRole("heading", { name: /Restore preview/ }) });
-    await preview
-      .getByRole("button", { name: "Restore item version", exact: true })
-      .click();
-    await preview
+    const confirmation = await restoreConfirmation(
+      page,
+      preview,
+      "RESTORE ITEM #1",
+    );
+    await confirmation.submit.click();
+    await confirmation.dialog
       .getByRole("alert")
       .filter({ hasText: "Result unconfirmed" })
       .waitFor();
+    await confirmation.dialog
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
     await preview.getByRole("button", { name: "Close", exact: true }).click();
     await page
       .locator(".recovery-dialog")
@@ -338,6 +403,152 @@ test("retention-only changes close stale recovery dialogs through normal backgro
         await s.f.request("/api/snapshot", { token: s.token })
       ).data.records.find((r) => r.id === id).data.body,
       "After",
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+test("checkpoint restore and individual deletion require deliberate confirmation; cancellation keeps content", async () => {
+  const s = await scene();
+  try {
+    const { page } = s,
+      task = randomUUID(),
+      later = randomUUID();
+    await s.send("task.create", task, {
+      title: "Original task",
+      notes: "Before",
+    });
+    let basis = (await s.f.request("/api/snapshot", { token: s.token })).data;
+    const rec = (action, extra = {}) =>
+      s.f.request("/api/recovery", {
+        token: s.token,
+        body: {
+          action,
+          epoch: basis.epoch,
+          generation: basis.generation,
+          ...extra,
+        },
+      });
+    const status = (await rec("status")).data;
+    const saved = await rec("checkpoint.create", {
+      operation_id: randomUUID(),
+      name: "Careful restore",
+      history_revision: status.history_revision,
+    });
+    assert.equal(saved.status, 200);
+    await s.send("task.update", task, { notes: "After" }, 1);
+    await s.send("note.create", later, {
+      title: "Later note",
+      body: "Removed by restore",
+    });
+    await page.getByRole("button", { name: "History", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Content checkpoints", exact: true })
+      .click();
+    let list = page.locator(".recovery-dialog").last();
+    await list
+      .getByRole("button", { name: "Delete checkpoint", exact: true })
+      .click();
+    let deletion = page.locator(".recovery-dialog").filter({
+      has: page.getByRole("heading", {
+        name: "Delete content checkpoint",
+        exact: true,
+      }),
+    });
+    assert.equal(
+      await deletion
+        .getByRole("button", { name: "Delete content checkpoint", exact: true })
+        .isDisabled(),
+      true,
+    );
+    await deletion.getByRole("button", { name: "Close", exact: true }).click();
+    assert.equal((await rec("checkpoints")).data.entries.length, 1);
+    await list
+      .getByRole("button", { name: "Preview restore", exact: true })
+      .click();
+    const preview = page.locator(".recovery-dialog").last();
+    assert.match(await preview.innerText(), /1 changed · 1 removed/);
+    let confirmation = await restoreConfirmation(
+      page,
+      preview,
+      "RESTORE CHECKPOINT #1",
+      "Restore content checkpoint",
+    );
+    await confirmation.dialog
+      .getByLabel("Your account password", { exact: true })
+      .fill("wrong-test-password");
+    const failed = page.waitForResponse((r) => r.url().endsWith("/api/reauth"));
+    await confirmation.submit.click();
+    assert.equal((await failed).status(), 401);
+    await confirmation.dialog
+      .getByRole("alert")
+      .filter({ hasText: /password|credentials/i })
+      .waitFor();
+    assert.equal(
+      (
+        await s.f.request("/api/snapshot", { token: s.token })
+      ).data.records.find((r) => r.id === task).data.notes,
+      "After",
+    );
+    await confirmation.dialog
+      .getByLabel("Your account password", { exact: true })
+      .fill(password);
+    await confirmation.submit.click();
+    await preview.waitFor({ state: "detached" });
+    basis = (await s.f.request("/api/snapshot", { token: s.token })).data;
+    assert.equal(basis.records.find((r) => r.id === task).data.notes, "Before");
+    assert.equal(
+      basis.records.some((r) => r.id === later),
+      false,
+    );
+    assert.equal(basis.generation, 2);
+    const before = basis.records;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page
+      .getByRole("button", { name: "Content checkpoints", exact: true })
+      .click();
+    list = page.locator(".recovery-dialog").last();
+    await list
+      .locator(".history-entry")
+      .filter({
+        has: page.getByRole("heading", {
+          name: "#1 · Careful restore",
+          exact: true,
+        }),
+      })
+      .getByRole("button", { name: "Delete checkpoint", exact: true })
+      .click();
+    deletion = page.locator(".recovery-dialog").filter({
+      has: page.getByRole("heading", {
+        name: "Delete content checkpoint",
+        exact: true,
+      }),
+    });
+    await deletion
+      .getByLabel("Type DELETE CHECKPOINT #1 to confirm", { exact: true })
+      .fill("DELETE CHECKPOINT #1");
+    await deletion.getByRole("checkbox").check();
+    await deletion
+      .getByLabel("Your account password", { exact: true })
+      .fill(password);
+    await deletion
+      .getByRole("button", { name: "Delete content checkpoint", exact: true })
+      .click();
+    await deletion.waitFor({ state: "detached" });
+    await page
+      .locator(".recovery-dialog")
+      .last()
+      .getByRole("heading", { name: /#2 · Before restoring/ })
+      .waitFor();
+    const remaining = (await rec("checkpoints")).data.entries;
+    assert.deepEqual(
+      remaining.map((e) => e.index),
+      [2],
+    );
+    assert.deepEqual(
+      (await s.f.request("/api/snapshot", { token: s.token })).data.records,
+      before,
     );
   } finally {
     await s.close();

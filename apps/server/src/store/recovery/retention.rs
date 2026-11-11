@@ -1,6 +1,69 @@
 use super::*;
 
 impl Store {
+    pub(super) fn recovery_delete_checkpoint(&self, actor: &Actor, body: &Value) -> Result<Value> {
+        fields(
+            body,
+            &[
+                "action",
+                "epoch",
+                "generation",
+                "source",
+                "history_revision",
+                "operation_id",
+                "confirmation",
+            ],
+        )?;
+        if !actor.admin() || !actor.elevated {
+            return fail(
+                403,
+                "Administrator and recent password verification required to delete a checkpoint",
+            );
+        }
+        let source = text(body, "source", 36)?;
+        valid_id(&source)?;
+        let operation = text(body, "operation_id", 36)?;
+        valid_id(&operation)?;
+        if body["history_revision"].as_i64() != Some(self.recovery_revision()?) {
+            return fail(
+                409,
+                "Recovery history changed; refresh before deleting a checkpoint",
+            );
+        }
+        // Do not decrypt the snapshot: administrators must also be able to
+        // remove a damaged copy. The stable ID, kind and lineage scope deletion.
+        let index: Option<i64> = self.db.query_row(
+            "SELECT version_index FROM recovery_snapshots WHERE id=? AND lineage=? AND kind='checkpoint'",
+            params![source, self.recovery_lineage()?], |r| r.get(0),
+        ).optional()?;
+        let index = index.ok_or(Fault(
+            410,
+            "That content checkpoint is no longer available".into(),
+        ))?;
+        if body["confirmation"] != format!("DELETE CHECKPOINT #{index}") {
+            return fail(
+                400,
+                "Type the exact confirmation phrase for the checkpoint being deleted",
+            );
+        }
+        let digest = crypto::digest(
+            &serde_json::to_vec(body)
+                .map_err(|_| Fault(400, "Invalid checkpoint request".into()))?,
+        );
+        self.db
+            .execute("DELETE FROM recovery_snapshots WHERE id=?", [&source])?;
+        // Existing previews and delayed creates are fenced by this revision.
+        // Preserve receipts so a lost delete reply can be checked or retried.
+        self.db.execute(
+            "UPDATE recovery_settings SET revision=revision+1 WHERE id=1",
+            [],
+        )?;
+        self.recovery_gc_blobs()?;
+        self.audit(actor, "checkpoint.delete", &source, &json!({"index":index}))?;
+        let result = json!({"ok":true,"deleted_checkpoint_id":source,"epoch":self.meta()?.0,"generation":self.meta()?.1,"history_revision":self.recovery_revision()?});
+        self.recovery_save_receipt(actor, &operation, &digest, &result)?;
+        Ok(result)
+    }
     pub(in crate::store) fn recovery_usage(&self) -> Result<Value> {
         let (versions,checkpoints,metadata):(i64,i64,i64)=self.db.query_row("SELECT COALESCE(SUM(kind='version'),0),COALESCE(SUM(kind='checkpoint'),0),COALESCE(SUM(length(data)),0) FROM recovery_snapshots",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
         let blob_bytes: i64 = self.db.query_row(

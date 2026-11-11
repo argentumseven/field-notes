@@ -42,9 +42,14 @@ function png(width = 1, height = 1, noise = false) {
     chunk("IEND", Buffer.alloc(0)),
   ]);
 }
-async function scene() {
+async function scene(elevated = true) {
   const f = await fixture();
   const token = await f.login();
+  if (elevated)
+    assert.equal(
+      (await f.request("/api/reauth", { token, body: { password } })).status,
+      200,
+    );
   let basis = (await f.request("/api/snapshot", { token })).data;
   const send = (action, target, data = {}, revision = null, extra = {}) =>
     f.request("/api/commands", {
@@ -95,7 +100,8 @@ async function scene() {
     generation: preview.generation,
     preview_id: preview.preview_id,
     operation_id: randomUUID(),
-    confirmation: preview.checkpoint ? "RESTORE CONTENT" : "RESTORE ITEM",
+    confirmation: preview.confirmation_phrase,
+    reviewed: true,
   });
   const apply = (body) => f.request("/api/recovery", { token, body });
   const reauth = () => f.request("/api/reauth", { token, body: { password } });
@@ -284,7 +290,11 @@ test("deleted tasks recover their images, comments and missing collection with t
       await s.f.request("/api/images/" + image, { token: s.token })
     ).data;
     const old = (await s.versions(task))[0];
-    assert.equal((await s.send("list.update", list, {title:"Later household label"}, 1)).status, 200);
+    assert.equal(
+      (await s.send("list.update", list, { title: "Later household label" }, 1))
+        .status,
+      200,
+    );
     assert.equal((await s.send("task.delete", task, {}, 1)).status, 200);
     assert.equal((await s.send("list.delete", list, {}, 2)).status, 200);
     assert.equal(
@@ -293,7 +303,11 @@ test("deleted tasks recover their images, comments and missing collection with t
     );
     const preview = await s.preview(old.id);
     assert.equal(preview.restored, 4);
-    assert.equal(preview.item_state.saved.fields.find(f=>f.field==="project_id").value,"Household repairs");
+    assert.equal(
+      preview.item_state.saved.fields.find((f) => f.field === "project_id")
+        .value,
+      "Household repairs",
+    );
     const restored = await s.apply(s.applyBody(preview));
     assert.equal(restored.status, 200, JSON.stringify(restored.data));
     const snapshot = await s.snapshot();
@@ -339,7 +353,7 @@ test("deleted tasks recover their images, comments and missing collection with t
 });
 
 test("whole-content checkpoints roll backward and forward, retain authentication and fence old queues", async () => {
-  const s = await scene();
+  const s = await scene(false);
   try {
     const task = randomUUID(),
       later = randomUUID();
@@ -908,6 +922,7 @@ test("encrypted backup and fresh-directory restore retain version indices, check
     );
     const checkpoints = (await rec("checkpoints")).data.entries;
     assert.ok(checkpoints.some((c) => c.id === cp.checkpoint_id));
+    await s.f.request("/api/reauth", { token: auth, body: { password } });
     const preview = (await rec("preview", { source: original.at(-1).id })).data;
     assert.equal((await rec("apply", { ...s.applyBody(preview) })).status, 200);
   } finally {
@@ -1107,20 +1122,316 @@ test("saved image bytes can repair a damaged live attachment even when its metad
 });
 
 test("item previews present complete selected/current states including unchanged fields and child content", async () => {
-  const s=await scene();
+  const s = await scene();
   try {
-    const task=randomUUID(),comment=randomUUID();
-    assert.equal((await s.send("task.create",task,{title:"Household plan",notes:"Unchanged reference notes",priority:2,store:"Local market"})).status,200);
-    assert.equal((await s.send("comment.create",comment,{task_id:task,body:"Keep this comment with the item"})).status,200);
-    const saved=(await s.versions(task))[0];
-    assert.equal((await s.send("task.update",task,{priority:1},1)).status,200);
-    const plan=await s.preview(saved.id), old=plan.item_state.saved, current=plan.item_state.current;
-    const field=(state,key)=>state.fields.find(f=>f.field===key)?.value;
-    assert.equal(old.title,"Household plan");assert.equal(field(old,"priority"),2);assert.equal(field(current,"priority"),1);
-    assert.equal(field(old,"notes"),"Unchanged reference notes");assert.equal(field(current,"notes"),"Unchanged reference notes");assert.equal(field(old,"store"),"Local market");
-    assert.equal(old.comments,1);assert.equal(old.children[0].body,"Keep this comment with the item");
-    assert.equal(old.fields.some(f=>f.field==="recovery_incarnation"),false);
-    assert.equal((await s.apply(s.applyBody(plan))).status,200);
-    const after=await s.snapshot();assert.equal(after.records.find(r=>r.id===task).data.priority,2);assert.equal(after.records.find(r=>r.id===comment).data.body,"Keep this comment with the item");
-  } finally {await s.f.close();}
+    const task = randomUUID(),
+      comment = randomUUID();
+    assert.equal(
+      (
+        await s.send("task.create", task, {
+          title: "Household plan",
+          notes: "Unchanged reference notes",
+          priority: 2,
+          store: "Local market",
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await s.send("comment.create", comment, {
+          task_id: task,
+          body: "Keep this comment with the item",
+        })
+      ).status,
+      200,
+    );
+    const saved = (await s.versions(task))[0];
+    assert.equal(
+      (await s.send("task.update", task, { priority: 1 }, 1)).status,
+      200,
+    );
+    const plan = await s.preview(saved.id),
+      old = plan.item_state.saved,
+      current = plan.item_state.current;
+    const field = (state, key) =>
+      state.fields.find((f) => f.field === key)?.value;
+    assert.equal(old.title, "Household plan");
+    assert.equal(field(old, "priority"), 2);
+    assert.equal(field(current, "priority"), 1);
+    assert.equal(field(old, "notes"), "Unchanged reference notes");
+    assert.equal(field(current, "notes"), "Unchanged reference notes");
+    assert.equal(field(old, "store"), "Local market");
+    assert.equal(old.comments, 1);
+    assert.equal(old.children[0].body, "Keep this comment with the item");
+    assert.equal(
+      old.fields.some((f) => f.field === "recovery_incarnation"),
+      false,
+    );
+    assert.equal((await s.apply(s.applyBody(plan))).status, 200);
+    const after = await s.snapshot();
+    assert.equal(after.records.find((r) => r.id === task).data.priority, 2);
+    assert.equal(
+      after.records.find((r) => r.id === comment).data.body,
+      "Keep this comment with the item",
+    );
+  } finally {
+    await s.f.close();
+  }
+});
+
+test("every restore requires password proof, a source-specific phrase and an explicit reviewed acknowledgement", async () => {
+  const s = await scene(false);
+  try {
+    const id = randomUUID();
+    await s.send("note.create", id, {
+      title: "Restore carefully",
+      body: "Before",
+    });
+    await s.send("note.update", id, { body: "After" }, 1);
+    const plan = await s.preview((await s.versions(id)).at(-1).id);
+    assert.equal(plan.reauth_required, true);
+    assert.equal(plan.confirmation_phrase, "RESTORE ITEM #1");
+    const body = s.applyBody(plan);
+    assert.equal((await s.apply(body)).status, 403);
+    await s.reauth();
+    for (const invalid of [
+      { ...body, confirmation: "RESTORE ITEM" },
+      { ...body, confirmation: "RESTORE ITEM #2" },
+      { ...body, reviewed: false },
+      { ...body, reviewed: undefined },
+    ])
+      assert.equal((await s.apply(invalid)).status, 400);
+    assert.equal(
+      (await s.snapshot()).records.find((r) => r.id === id).data.body,
+      "After",
+    );
+    assert.equal((await s.apply(body)).status, 200);
+    assert.equal(
+      (await s.snapshot()).records.find((r) => r.id === id).data.body,
+      "Before",
+    );
+  } finally {
+    await s.close();
+  }
+});
+
+test("individual checkpoint deletion is scoped, revision-fenced, replay-safe and retains shared and live images", async () => {
+  const s = await scene();
+  try {
+    const task = randomUUID(),
+      image = randomUUID();
+    await s.send("task.create", task, { title: "Image remains live" });
+    await s.send("image.create", image, {
+      task_id: task,
+      name: "Live.png",
+      bytes: png().toString("base64"),
+    });
+    const a = await s.checkpoint("First copy"),
+      b = await s.checkpoint("Second copy");
+    const page = (await s.recover("checkpoints")).data;
+    assert(page.entries.every((e) => e.can_delete));
+    const makeBody = (entry, revision = page.history_revision) => ({
+      action: "checkpoint.delete",
+      epoch: page.epoch,
+      generation: page.generation,
+      source: entry.id,
+      history_revision: revision,
+      operation_id: randomUUID(),
+      confirmation: `DELETE CHECKPOINT #${entry.index}`,
+    });
+    const first = page.entries.find((e) => e.id === a.checkpoint_id);
+    const second = page.entries.find((e) => e.id === b.checkpoint_id);
+    const preview = await s.preview(second.id);
+    const staleCreate = { ...a.body, operation_id: randomUUID() };
+    let body = makeBody(first);
+    assert.equal((await s.apply({ ...body, history_revision: 0 })).status, 409);
+    assert.equal(
+      (await s.apply({ ...body, confirmation: "DELETE CHECKPOINT #999" }))
+        .status,
+      400,
+    );
+    const version = (await s.versions(task))[0];
+    assert.equal((await s.apply({ ...body, source: version.id })).status, 410);
+    await s.admin({
+      action: "user.create",
+      name: "member",
+      role: "member",
+      password,
+    });
+    const member = await s.f.login("member");
+    await s.f.request("/api/reauth", { token: member, body: { password } });
+    assert(
+      (await s.recover("checkpoints", {}, member)).data.entries.every(
+        (e) => !e.can_delete,
+      ),
+    );
+    assert.equal(
+      (await s.f.request("/api/recovery", { token: member, body })).status,
+      403,
+    );
+    const unelevated = await s.f.login();
+    assert.equal(
+      (await s.f.request("/api/recovery", { token: unelevated, body })).status,
+      403,
+    );
+    const before = await s.snapshot();
+    const result = await s.apply(body);
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.deepEqual((await s.apply(body)).data, result.data);
+    assert.equal(
+      (await s.recover("result", { operation_id: body.operation_id })).data
+        .known,
+      true,
+    );
+    assert.equal((await s.apply(s.applyBody(preview))).status, 409);
+    assert.equal((await s.apply(staleCreate)).status, 409);
+    assert.deepEqual((await s.snapshot()).records, before.records);
+    assert.equal(
+      s
+        .sql(
+          "print(db.execute('SELECT COUNT(*) FROM recovery_blobs').fetchone()[0])",
+        )
+        .trim(),
+      "1",
+    );
+    // Remove other recovery references first; deleting the final checkpoint must
+    // free retained bytes without touching the separate live attachment store.
+    let status = await s.status();
+    await s.admin({
+      action: "recovery.purge",
+      scope: "versions",
+      revision: status.history_revision,
+      confirmation: "PURGE HISTORY",
+    });
+    status = await s.status();
+    body = makeBody(second, status.history_revision);
+    assert.equal((await s.apply(body)).status, 200);
+    assert.equal(
+      s
+        .sql(
+          "print(db.execute('SELECT COUNT(*) FROM recovery_blobs').fetchone()[0])",
+        )
+        .trim(),
+      "0",
+    );
+    assert.equal(
+      s
+        .sql("print(db.execute('SELECT COUNT(*) FROM blobs').fetchone()[0])")
+        .trim(),
+      "1",
+    );
+    assert.deepEqual((await s.snapshot()).records, before.records);
+    assert.equal((await s.recover("checkpoints")).data.entries.length, 0);
+    const next = await s.checkpoint("Next copy");
+    assert.equal((await s.recover("checkpoints")).data.entries[0].index, 3);
+    assert.notEqual(next.checkpoint_id, second.id);
+  } finally {
+    await s.close();
+  }
+});
+
+test("damaged checkpoints remain individually deletable without reading their encrypted contents", async () => {
+  const s = await scene();
+  try {
+    const cp = await s.checkpoint("Damaged test copy");
+    s.sql(
+      `db.execute("UPDATE recovery_snapshots SET data=x'00' WHERE id=?", ('${cp.checkpoint_id}',))`,
+    );
+    const page = (await s.recover("checkpoints")).data,
+      entry = page.entries[0];
+    assert.equal(entry.can_restore, false);
+    assert.equal(entry.can_delete, true);
+    const result = await s.recover("checkpoint.delete", {
+      source: entry.id,
+      history_revision: page.history_revision,
+      operation_id: randomUUID(),
+      confirmation: `DELETE CHECKPOINT #${entry.index}`,
+    });
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.equal((await s.recover("checkpoints")).data.entries.length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+test("parallel checkpoint deletes commit once and restart preserves the receipt and revision fence", async () => {
+  const s = await scene();
+  try {
+    await s.checkpoint("Concurrent delete");
+    const page = (await s.recover("checkpoints")).data,
+      entry = page.entries[0];
+    const body = {
+      action: "checkpoint.delete",
+      epoch: page.epoch,
+      generation: page.generation,
+      source: entry.id,
+      history_revision: page.history_revision,
+      operation_id: randomUUID(),
+      confirmation: `DELETE CHECKPOINT #${entry.index}`,
+    };
+    const [a, b] = await Promise.all([s.apply(body), s.apply(body)]);
+    assert.equal(a.status, 200);
+    assert.equal(b.status, 200);
+    assert.deepEqual(b.data, a.data);
+    assert.equal(
+      (await s.status()).history_revision,
+      page.history_revision + 1,
+    );
+    assert.equal(
+      (await s.apply({ ...body, operation_id: randomUUID() })).status,
+      409,
+    );
+    await s.f.stop();
+    await s.f.start();
+    assert.deepEqual((await s.apply(body)).data, a.data);
+    assert.equal((await s.recover("checkpoints")).data.entries.length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+test("a failed checkpoint-delete audit rolls back the copy, image references and revision before an exact retry", async () => {
+  const s = await scene();
+  try {
+    const task = randomUUID();
+    await s.send("task.create", task, { title: "Atomic delete" });
+    await s.send("image.create", randomUUID(), {
+      task_id: task,
+      name: "Retained.png",
+      bytes: png().toString("base64"),
+    });
+    await s.checkpoint("Keep if deletion fails");
+    const page = (await s.recover("checkpoints")).data,
+      entry = page.entries[0];
+    const body = {
+      action: "checkpoint.delete",
+      epoch: page.epoch,
+      generation: page.generation,
+      source: entry.id,
+      history_revision: page.history_revision,
+      operation_id: randomUUID(),
+      confirmation: `DELETE CHECKPOINT #${entry.index}`,
+    };
+    const usage = (await s.status()).usage;
+    s.sql(
+      "db.execute(\"CREATE TRIGGER fail_checkpoint_delete BEFORE INSERT ON audit WHEN NEW.action='checkpoint.delete' BEGIN SELECT RAISE(ABORT, 'injected test failure'); END\")",
+    );
+    assert.equal((await s.apply(body)).status, 500);
+    assert.deepEqual(
+      (await s.recover("checkpoints")).data.entries,
+      page.entries,
+    );
+    assert.equal((await s.status()).history_revision, page.history_revision);
+    assert.equal((await s.status()).usage.image_bytes, usage.image_bytes);
+    assert.equal(
+      (await s.recover("result", { operation_id: body.operation_id })).data
+        .known,
+      false,
+    );
+    s.sql("db.execute('DROP TRIGGER fail_checkpoint_delete')");
+    assert.equal((await s.apply(body)).status, 200);
+  } finally {
+    await s.close();
+  }
 });

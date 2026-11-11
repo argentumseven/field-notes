@@ -10,7 +10,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.11.4.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.11.5.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -58,7 +58,7 @@ services. iOS/native desktop packages are deferred.
   additions; grocery items have no scheduled reminder/recipient controls. Other
   list types can mute scheduled item reminders separately.
 - Encrypted content export/import works on phone and web, preserves offline changes and images, skips duplicates and retains conflicting alternatives without overwriting current work.
-- Indexed item versions and named content checkpoints support reviewed backward/forward restores, including deleted items and attachments, with configurable age, count and storage limits. Accounts and pairings stay current. [Recovery guide](docs/RECOVERY.md).
+- Indexed item versions and named content checkpoints support reviewed backward/forward restores, including deleted items and attachments, with typed confirmation and password verification. Administrators can delete individual checkpoints and configure age, count and storage limits. Accounts and pairings stay current. [Recovery guide](docs/RECOVERY.md).
 - History on web and phone lists each item once, with full saved-state inspection and restoration. It shows who added, changed or removed content, with server timestamps, Previous/Now field details, search and filters. Removed items stay identifiable; recent phone history is cached offline. [History and retention](docs/HISTORY.md).
 - Task notes, image attachments and comments; encrypted offline edits/outbox,
   replay-safe retries, server-arbitrated claims and retained conflicts.

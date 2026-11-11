@@ -49,6 +49,7 @@ const FieldRecovery = (() => {
     error.setAttribute("role", "alert");
     head.append(el("h2", "", title));
     let busy = false;
+    const disabledBefore = new WeakMap();
     const close = () => {
       if (!busy) {
         node.close();
@@ -72,9 +73,14 @@ const FieldRecovery = (() => {
       actions,
       close,
       setBusy(value) {
+        if (busy === value) return;
         busy = value;
         node.setAttribute("aria-busy", String(value));
-        for (const b of node.querySelectorAll("button")) b.disabled = value;
+        for (const b of node.querySelectorAll("button")) {
+          if (value) disabledBefore.set(b, b.disabled);
+          b.disabled = value || (disabledBefore.get(b) ?? false);
+        }
+        if (!value) node.dispatchEvent(new Event("recovery-idle"));
       },
       async run(fn) {
         this.setBusy(true);
@@ -88,6 +94,79 @@ const FieldRecovery = (() => {
         }
       },
     };
+  }
+  function confirmMutation({
+    title,
+    description,
+    phrase,
+    reviewLabel,
+    live,
+    action,
+    completed,
+  }) {
+    const d = modal(title);
+    d.body.append(el("p", "recovery-warning", description));
+    const confirmation = addField(
+      d.body,
+      input(`Type ${phrase} to confirm`, ""),
+    );
+    confirmation.autocomplete = "off";
+    confirmation.spellcheck = false;
+    const reviewed = el("input");
+    reviewed.type = "checkbox";
+    const label = el("label", "dialog-choice");
+    label.append(reviewed, document.createTextNode(reviewLabel));
+    d.body.append(label);
+    const password = addField(
+      d.body,
+      input("Your account password", "", "password"),
+    );
+    password.autocomplete = "current-password";
+    const apply = button(
+      title,
+      () =>
+        d.run(async () => {
+          if (!live())
+            throw Error(
+              "Workspace or recovery history changed. Close and review it again.",
+            );
+          if (
+            confirmation.value !== phrase ||
+            !reviewed.checked ||
+            !password.value
+          )
+            throw Error(
+              "Type the exact phrase, acknowledge the changes and enter your password.",
+            );
+          const secret = password.value;
+          password.value = "";
+          await api("/reauth", { password: secret });
+          if (!live()) throw Error("Workspace changed. Review a new preview.");
+          const result = await action(confirmation.value, reviewed.checked);
+          d.setBusy(false);
+          d.close();
+          await completed(result);
+        }),
+      "danger",
+    );
+    const validate = () => {
+      apply.disabled =
+        !phrase ||
+        confirmation.value !== phrase ||
+        !reviewed.checked ||
+        !password.value ||
+        !!pending;
+    };
+    for (const node of [confirmation, reviewed, password])
+      node.addEventListener("input", validate);
+    d.node.addEventListener("recovery-idle", validate);
+    d.node.addEventListener("close", () => {
+      password.value = "";
+    });
+    d.actions.prepend(apply);
+    validate();
+    // This is deliberately a button, not a form: Enter in a text field cannot restore.
+    d.actions.lastElementChild.focus();
   }
   async function send(body) {
     if (pending)
@@ -391,30 +470,64 @@ const FieldRecovery = (() => {
       );
     if (!plan.change_count)
       d.body.append(el("p", "", "Content already matches this saved state."));
+    d.body.prepend(
+      el("p", "", `Selected: #${plan.source_index} · ${plan.title}`),
+    );
+    d.body.append(
+      el(
+        "p",
+        "muted",
+        `Preview expires ${moment(plan.expires_at)}. Changes after preview require a fresh review.`,
+      ),
+    );
+    if (!plan.confirmation_phrase)
+      d.body.append(
+        el(
+          "p",
+          "error",
+          "Update the paired server to use the required restore confirmation safeguards.",
+        ),
+      );
     const apply = button(
-      plan.checkpoint ? "Restore content checkpoint" : "Restore item version",
-      () =>
-        d.run(async () => {
-          if (!live())
-            throw Error("Workspace changed. Close and review a new preview.");
-          if (plan.reauth_required) await reauthenticate();
-          const result = await send({
-            action: "apply",
-            epoch: plan.epoch,
-            generation: plan.generation,
-            preview_id: plan.preview_id,
-            operation_id: uuid(),
-            confirmation: plan.checkpoint ? "RESTORE CONTENT" : "RESTORE ITEM",
-          });
-          d.setBusy(false);
-          d.close();
-          await finish(result);
-        }),
+      "Continue to restore confirmation",
+      () => {
+        if (!live()) {
+          d.error.textContent =
+            "Workspace changed. Close and review a new preview.";
+          return;
+        }
+        confirmMutation({
+          title: plan.checkpoint
+            ? "Restore content checkpoint"
+            : "Restore item version",
+          description: `Restore #${plan.source_index} · ${plan.title}: ${plan.restored} restored, ${plan.changed} changed, ${plan.removed} removed. ${plan.checkpoint ? "This replaces household content and affects everyone." : "This replaces the complete item state, including its comments and attachments."} Current state is saved first. Working claims are cleared.`,
+          phrase: plan.confirmation_phrase,
+          reviewLabel:
+            "I reviewed the selected state and restore impact, including removals.",
+          live,
+          action: (confirmation, reviewed) =>
+            send({
+              action: "apply",
+              epoch: plan.epoch,
+              generation: plan.generation,
+              preview_id: plan.preview_id,
+              operation_id: uuid(),
+              confirmation,
+              reviewed,
+            }),
+          completed: async (result) => {
+            d.close();
+            await finish(result);
+          },
+        });
+      },
       "primary",
     );
-    apply.disabled = !!pending;
+    apply.disabled =
+      !!pending || !plan.change_count || !plan.confirmation_phrase;
     d.actions.prepend(apply);
   }
+
   async function versions(target, title = "Item") {
     const live = scope(),
       d = modal(target ? "Versions · " + title : "Content checkpoints");
@@ -471,6 +584,39 @@ const FieldRecovery = (() => {
           row.append(
             button("Preview restore", () =>
               preview(item.id, target ? title : item.title),
+            ),
+          );
+        if (!target && item.can_delete)
+          row.append(
+            button(
+              "Delete checkpoint",
+              () =>
+                confirmMutation({
+                  title: "Delete content checkpoint",
+                  description: `Permanently delete #${item.index} · ${item.title}, saved by ${item.actor_name} on ${moment(item.at)}? This recovery copy cannot be restored after deletion. Current household content and other retained states are kept.`,
+                  phrase: `DELETE CHECKPOINT #${item.index}`,
+                  reviewLabel:
+                    "I understand this permanently removes this saved checkpoint.",
+                  live,
+                  action: (confirmation) =>
+                    send({
+                      action: "checkpoint.delete",
+                      ...basis(),
+                      source: item.id,
+                      operation_id: uuid(),
+                      history_revision: page.history_revision,
+                      confirmation,
+                    }),
+                  completed: async (result) => {
+                    d.close();
+                    await finish(result);
+                    notice(
+                      "Content checkpoint deleted. Current content is unchanged.",
+                    );
+                    await versions(null);
+                  },
+                }),
+              "danger",
             ),
           );
         rows.append(row);
