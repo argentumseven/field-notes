@@ -109,7 +109,7 @@ import org.fieldnotes.domain.*
         }
         if(record?.flag("items_are_tasks")==true&&!workItems)require(projectRecords(state.cache).none{it.record.data.text("project_id")==record.id&&it.record.data.text("status")=="in_progress"}){"Release or finish active work before converting this task list to a reference checklist."}
         val reminderSetting=if(template=="groceries")record?.data?.get("item_reminders") ?: JsonPrimitive(false) else JsonPrimitive(itemReminders)
-        val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record.data.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to reminderSetting) else emptyMap()) else emptyMap()
+        val extra=if(state.cache.supportsPlannerV3())mapOf("category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record?.data?.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())+(if(kind=="list")mapOf("notify_additions" to JsonPrimitive(notifyItems),"item_reminders" to reminderSetting) else emptyMap()) else emptyMap()
         val projectExtra=if(state.cache.supportsProjects())if(kind=="project")mapOf("status" to projectStatus.j(),"due" to targetDay.j(),"assignee" to coordinator.j()) else mapOf("project_id" to parent.j(),"items_are_tasks" to JsonPrimitive(workItems)) else emptyMap()
         val fields=JsonObject(mapOf("title" to title.j(),"notes" to notes.j())+(if(kind=="list")listConfiguration(template,choices,perpetual) else emptyMap())+extra+projectExtra)
         val id=record?.id ?: model.newId()
