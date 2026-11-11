@@ -181,7 +181,7 @@ impl Store {
             "/../../release.json"
         )))
         .expect("valid release metadata");
-        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","content-trash-v1","project-workspaces-v1","collection-lifecycle-v2","item-context-v1","reminder-timing-v1","reminder-schedule-v2","reminder-audio-v2","planner-details-v1"]})
+        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","content-trash-v1","hierarchy-recovery-v1","project-workspaces-v1","collection-lifecycle-v2","item-context-v1","reminder-timing-v1","reminder-schedule-v2","reminder-audio-v2","planner-details-v1"]})
     }
 }
 
