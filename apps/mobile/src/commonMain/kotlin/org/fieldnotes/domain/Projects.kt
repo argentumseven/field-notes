@@ -3,6 +3,8 @@ package org.fieldnotes.domain
 import kotlinx.serialization.json.*
 
 const val PROJECTS_FEATURE="project-workspaces-v1"
+const val COLLECTION_ACTIONS_FEATURE="collection-lifecycle-v2"
+fun Cache.supportsCollectionActions()=compatibility?.let{!it.blocked&&COLLECTION_ACTIONS_FEATURE in it.features}==true
 fun Cache.supportsProjects()=compatibility?.let {!it.blocked&&PROJECTS_FEATURE in it.features}==true
 class ProjectGraph(val rows:List<Record>) {
     val byId=rows.associateBy {it.id}
