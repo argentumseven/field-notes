@@ -163,7 +163,12 @@ impl Store {
         if body["epoch"] != epoch || body["generation"] != generation {
             return fail(409, "Workspace changed; refresh recovery before continuing");
         }
-        self.recovery_trim(&BTreeSet::new())?;
+        // Trash is a pure listing: merely opening it must not age out saved
+        // versions, mutate the history revision, or collect shared image bytes.
+        let browsing_trash = body["action"] == "trash";
+        if !browsing_trash {
+            self.recovery_trim(&BTreeSet::new())?;
+        }
         let result = match body["action"].as_str().unwrap_or("") {
             "status" => {
                 fields(&body, &["action", "epoch", "generation"])?;
@@ -177,7 +182,9 @@ impl Store {
             "apply" => self.recovery_apply(&actor, &body)?,
             _ => return fail(400, "Unknown recovery action"),
         };
-        self.recovery_gc_blobs()?;
+        if !browsing_trash {
+            self.recovery_gc_blobs()?;
+        }
         tx.commit()?;
         Ok(result)
     }
