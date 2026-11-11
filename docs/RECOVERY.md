@@ -73,14 +73,26 @@ mutation envelope cannot be reused by the new session.
 existing deleted-record tombstones, without reactivating them. Newly deleted
 records include a server timestamp; older tombstones may lack that timestamp.
 The action **Review saved versions** opens the existing version preview and
-password-confirmed restore process. A project/list version restores its own
-settings, **not automatically every deleted child**. For coordinated recovery
-of an entire household hierarchy, use a suitable content checkpoint or a
-verified encrypted backup after reviewing the impact.
+password-confirmed restore process. A saved live project/list version offers
+two explicit modes: **Restore with existing bindings** restores its own details
+and retains currently linked tasks, lists, comments and attachments as they
+exist; deleted descendants remain deleted. **Restore missing contents** (admin
+only) additionally revives missing linked descendants under their *original IDs*,
+using complete retained versions and original parent bindings. Living descendants
+are never overwritten or duplicated, and no names are used as identities.
+Missing saved versions, different parent identities, unavailable images, stale
+preview revisions or invalid hierarchy structures fail visibly instead of
+silently rebuilding only part of the collection. A deliberately moved, now
+standalone item is not silently moved back into a project. Versions never
+promise to reconstruct information already expired under retention rules.
+For coordinated recovery of an entire household beyond the original links,
+use a suitable content checkpoint or a verified encrypted backup after
+reviewing the impact.
 
 Trash is **not yet a new 30-day guaranteed recovery bin** and does not silently
 turn on automatic cleanup. Recovery still depends on the configured age, count
 and capacity limits; a deleted record can outlive its recoverable versions.
+Trash browsing does not trigger version trimming or image garbage collection.
 Read-only Trash browsing does not permanently erase content. Existing encrypted
 server backups and independently exported files are unaffected by deletion
 or a purge of online recovery data. Do not assume permanent erasure of all copies
