@@ -1,5 +1,33 @@
 # Implementation and validation record
 
+## Custom categories and organization workflows — separate development branch
+
+Branch: `feature/category-and-organization-workflows-2026-11-11`
+(base: `main`). Separate from the earlier unmerged project deletion/recovery
+branch; no changes deployed.
+
+Scope: additive encrypted category table; snapshot category metadata;
+stable custom IDs; web create/rename/archive/unarchive/merge/delete-unused;
+Android selection and filters; old-client overwrite fences; transactional
+work-list unbundle; list-role conversion previews and typed confirmations.
+The database schema's user version remains 2. Existing records and category
+keys are unchanged at startup.
+
+Added integration cases cover stable category IDs, merge rollback on stale
+revisions, archive rules, delete-only-when-unused, old-client overwrite
+protection, list unbundle without deleting comments, and work/reference
+conversion restrictions. **Integration tests not run:** GitHub Actions is
+exhausted, and the current environment lacks the Rust compiler and complete
+Android build setup. JavaScript syntax tests alone cannot validate deployment.
+
+Pre-merge gates: Rust compile + Node integration suite; Android Kotlin build,
+unit tests and emulator; old/new server/client feature negotiation; copied
+encrypted database upgrade; offline conflicting category edits; backup and
+checkpoint recovery of custom definitions; portable export/import with
+custom category IDs; and conflict review against the earlier project
+lifecycle branch. Never run destructive fixtures against the live environment.
+
+
 ## 0.11.5 checkpoint deletion and deliberate restores — 2026-11-11
 
 Web and Android expose **Delete checkpoint** per saved household checkpoint,
