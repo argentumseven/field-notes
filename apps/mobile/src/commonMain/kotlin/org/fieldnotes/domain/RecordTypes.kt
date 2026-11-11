@@ -14,6 +14,8 @@ fun categoryChoices(cache:Cache,value:String):List<Pair<String,String>> {
         .map{("custom:"+it.id) to (it.name+if(it.archived)" · archived" else "")}
     return builtins+custom+(if(value.startsWith("custom:")&&custom.none{it.first==value})listOf(value to "Unavailable saved category")else emptyList())
 }
+fun categoryFilterChoices(cache:Cache):List<Pair<String,String>> = recordCategories.toList()+
+    (if(cache.supportsHouseholdCategories())cache.snapshot?.categories.orEmpty().map{("custom:"+it.id) to (it.name+if(it.archived)" · archived"else"")}else emptyList())
 fun categoryLabel(cache:Cache,record:Record):String=if(record.data.text("category").startsWith("custom:"))
     cache.snapshot?.categories.orEmpty().firstOrNull{"custom:"+it.id==record.data.text("category")}?.name ?: "Saved custom category"
     else categoryLabel(record)
@@ -27,7 +29,7 @@ fun recordTypeLabel(record:Record):String = when {
     record.kind=="project" -> "Project"
     else -> "Task"
 }
-fun categoryLabel(record:Record)=recordCategories[categoryKey(record.data.text("category","general"))] ?: "General"
+fun categoryLabel(record:Record)=recordCategories[categoryKey(record.data.text("category","general"))] ?: if(record.data.text("category").startsWith("custom:"))"Custom category" else "General"
 fun isChecklistItem(record:Record,records:List<Record>)=record.kind=="task"&&records.any { it.id==record.data.text("project_id")&&it.kind=="list"&&!it.flag("items_are_tasks") }
 fun plannerTasks(cache:Cache):List<VisibleRecord> {
     val rows=projectRecords(cache);val lists=rows.filter { it.record.kind=="list"&&!it.record.flag("items_are_tasks") }.map { it.record.id }.toSet()
