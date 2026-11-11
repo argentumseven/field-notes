@@ -1566,6 +1566,19 @@ recovery-version availability, and Android offline unbundle/cascade projections.
 6. Confirm new web controls preserve old clients and older offline phones.
    No forced pairing reset or background erasure is permitted.
 
+**Hierarchy restoration follow-up (unmerged):** Project/list item-version preview
+now includes a recorded `hierarchy_mode` choice. The default preserves live
+linked descendants and leaves missing ones deleted. The explicit administrator
+respawn option requires complete retained child states with matching original
+identity and parent, revives only deleted descendants, and does not overwrite
+live records. The encrypted preview stores source, current-state and desired-state
+fingerprints and rechecks them before an atomic restore. Android gates
+the new option on `hierarchy-recovery-v1`; its queued collection actions are
+retained for review after a server downgrade. The Trash query bypasses
+retention trimming and recovery-image garbage collection. Tests cover
+existing-binding preservation, nested tasks/comments/images, missing sources,
+ID uniqueness and stale previews; **the integration suite remains unexecuted**.
+
 **Deferred by design:** A guaranteed 30-day Trash policy, targeted permanent
 purge across snapshots/checkpoints/attachments, separate checkpoint lifetime,
 and independent backup disposal. These would change retention guarantees and
