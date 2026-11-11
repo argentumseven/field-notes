@@ -211,7 +211,7 @@ import org.fieldnotes.domain.*
             if(state.cache.supportsPlannerDetails()||location.isNotBlank())OutlinedTextField(location,{location=it.take(2048)},label={Text("Location")},enabled=writable&&state.cache.supportsPlannerDetails(),modifier=Modifier.fillMaxWidth())
             if(location.isNotBlank())SecondaryButton(onClick={copyLocation(location)}){Text("Copy location")}
             OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Notes")},minLines=3,enabled=writable,modifier=Modifier.fillMaxWidth())
-            if(state.cache.supportsPlannerV3())CategoryPicker(category,writable){category=it}
+            if(state.cache.supportsPlannerV3())CategoryPicker(category,writable,cache=state.cache){category=it}
         }
         if(record!=null)Text(recordHistory(state.cache,record,zone),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if (record != null && revision != record.revision) { Text("Changed on another device. Your edits are kept. Close and reopen to load the latest event, or keep your edits for a new save.", color = MaterialTheme.colorScheme.error); SecondaryButton(onClick = { revision = record.revision }) { Text("Keep my edits") } }
