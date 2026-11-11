@@ -1493,6 +1493,8 @@ test("project recovery preserves existing bindings and can explicitly respawn mi
     const missing=(await s.send("task.create",randomUUID(),{title:"Missing",notes:"Original attachment",project_id:list.id})).data.record;
     const comment=(await s.send("comment.create",randomUUID(),{task_id:missing.id,body:"Original comment"})).data.record;
     const image=(await s.send("image.create",randomUUID(),{task_id:missing.id,name:"Original image",bytes:png().toString("base64")})).data.record;
+    // Create a collection source after its linked members existed.
+    assert.equal((await s.send("project.update",project.id,{notes:"Organized before deletion"},project.revision)).status,200);
     const source=(await s.versions(project.id)).find(entry=>!entry.deleted);
     assert(source,"saved project state is available");
     const edited=(await s.send("task.update",existing.id,{notes:"Changed since the snapshot"},existing.revision)).data.record;
@@ -1528,15 +1530,16 @@ test("hierarchy restore rejects unreviewed membership edits and unavailable dele
   try {
     const project=(await s.send("project.create",randomUUID(),{title:"Protect latest edits"})).data.record;
     const active=(await s.send("task.create",randomUUID(),{title:"Active",notes:"Original",project_id:project.id})).data.record;
+    const missing=(await s.send("task.create",randomUUID(),{title:"Deleted without source",project_id:project.id})).data.record;
+    assert.equal((await s.send("project.update",project.id,{notes:"Source after member creation"},project.revision)).status,200);
     const source=(await s.versions(project.id)).find(e=>!e.deleted);
     const preview=await s.recover("preview",{source:source.id,hierarchy_mode:"bindings"});
     assert.equal(preview.status,200,JSON.stringify(preview.data));
-    assert.equal(preview.data.hierarchy.linked_existing,1);
+    assert.equal(preview.data.hierarchy.linked_existing,2);
     const changed=(await s.send("task.update",active.id,{notes:"New important edit"},active.revision)).data.record;
     const stale=await s.apply(s.applyBody(preview.data));
     assert.equal(stale.status,409);
     assert.equal((await s.snapshot()).records.find(r=>r.id===changed.id).data.notes,"New important edit");
-    const missing=(await s.send("task.create",randomUUID(),{title:"Deleted without source",project_id:project.id})).data.record;
     assert.equal((await s.send("task.delete",missing.id,{},missing.revision)).status,200);
     // Remove only this test fixture's optional item versions while retaining
     // the project source. A respawn cannot invent missing task details.
