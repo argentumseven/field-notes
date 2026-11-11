@@ -26,7 +26,7 @@ import org.fieldnotes.domain.*
     val filtered=rows.filter { val r=it.record;val at=r.data.number("remind_at");r.kind=="note"&&(!later||r.flag("on_radar"))&&(if(later)true else r.isRecipe()==recipes)&&r.noteSearchText().contains(query,true)&&(category.isBlank()||categoryKey(r.data.text("category","general"))==categoryKey(category))&&(!later||whenFilter=="all"||whenFilter=="undated"&&at==0L||whenFilter=="upcoming"&&at>now||whenFilter=="overdue"&&at in 1..now) }
     val notes=when(sort){"title"->filtered.sortedBy { it.record.data.text("title").lowercase() };"reminder"->filtered.sortedBy { it.record.data.number("remind_at").takeIf { it>0 } ?: Long.MAX_VALUE };"created"->filtered.sortedByDescending { it.record.data.number("created_at") };else->filtered.sortedWith(compareByDescending<VisibleRecord>{it.record.flag("pinned")}.thenByDescending{it.record.data.number("last_activity_at",it.record.data.number("updated_at"))}.thenBy{it.record.id})}
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        ViewChoice("Category",category,listOf("" to "All categories")+categoryChoices(cache,category)){category=it}
+        ViewChoice("Category",category,listOf("" to "All categories")+categoryFilterChoices(cache)){category=it}
         ViewChoice("Sort",sort,listOf("updated" to "Recently changed","title" to "Name A–Z","reminder" to "Reminder time","created" to "Recently added")){sort=it}
         if(later)ViewChoice("Show",whenFilter,listOf("all" to "All ideas & reminders","undated" to "Undated ideas","upcoming" to "Upcoming reminders","overdue" to "Needs follow-up")){whenFilter=it}
     }
