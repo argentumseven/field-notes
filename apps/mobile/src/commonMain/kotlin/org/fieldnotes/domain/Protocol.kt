@@ -18,7 +18,7 @@ fun JsonObject.number(key: String, default: Long = 0) = (get(key) as? JsonPrimit
 @Serializable data class HouseholdPerson(val id:String,val name:String,val can_assign:Boolean)
 @Serializable data class Record(val id: String, val kind: String, val revision: Long, val data: JsonObject)
 @Serializable data class HouseholdCategory(val id:String,val name:String,val archived:Boolean=false,val revision:Long=1)
-@Serializable data class Snapshot(val categories:List<HouseholdCategory> = emptyList(),val protocol: Int, val epoch: String, val generation: Long, val sequence: Long, val records: List<Record>, val actor: Actor,val history_revision:Long=0)
+@Serializable data class Snapshot(val protocol: Int, val epoch: String, val generation: Long, val sequence: Long, val records: List<Record>, val actor: Actor,val history_revision:Long=0,val categories:List<HouseholdCategory> = emptyList())
 @Serializable data class Command(val operation_id: String, val epoch: String, val generation: Long, val action: String, val target: String, val expected_revision: Long?, val data: JsonObject)
 @Serializable data class Basis(val epoch: String, val generation: Long)
 val Snapshot.basis get() = Basis(epoch, generation)
