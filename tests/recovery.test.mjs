@@ -1435,3 +1435,48 @@ test("a failed checkpoint-delete audit rolls back the copy, image references and
     await s.close();
   }
 });
+
+
+test("Trash lists deleted records without changing current content or recovery copies", async () => {
+  const s = await scene();
+  try {
+    const project = await s.send("project.create", randomUUID(), {title: "Discarded draft"});
+    assert.equal(project.status, 200, JSON.stringify(project.data));
+    const record = project.data.record;
+    const removed = await s.send("project.delete", record.id, {}, record.revision);
+    assert.equal(removed.status, 200, JSON.stringify(removed.data));
+    const before = await s.snapshot();
+    assert.equal(before.records.some(r => r.id === record.id), false);
+    const response = await s.recover("trash", {limit: 50});
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    const entry = response.data.entries.find(row => row.id === record.id);
+    assert(entry, "deleted project should appear in Trash");
+    assert.equal(entry.kind, "project");
+    assert.equal(entry.title, "Discarded draft");
+    assert.equal(typeof entry.deleted_at, "number");
+    assert.equal(entry.recoverable, true);
+    assert.equal((await s.versions(record.id)).length > 0, true);
+    const again = await s.recover("trash", {limit: 50});
+    assert.equal(again.status, 200);
+    assert.deepEqual(again.data.entries, response.data.entries);
+    const after = await s.snapshot();
+    assert.deepEqual(after.records, before.records);
+  } finally { await s.f.close(); }
+});
+
+test("Trash rejects malformed pagination and never restores content implicitly", async () => {
+  const s = await scene();
+  try {
+    const project = (await s.send("project.create", randomUUID(), {title: "Safe recovery"})).data.record;
+    assert.equal((await s.send("project.delete", project.id, {}, project.revision)).status, 200);
+    assert.equal((await s.recover("trash", {limit: 0})).status, 400);
+    assert.equal((await s.recover("trash", {limit: 51})).status, 400);
+    assert.equal((await s.recover("trash", {before: "not-a-uuid"})).status, 400);
+    assert.equal((await s.recover("trash", {unexpected: true})).status, 400);
+    const page = await s.recover("trash", {limit: 1});
+    assert.equal(page.status, 200, JSON.stringify(page.data));
+    assert.equal(page.data.entries.length, 1);
+    assert.equal(page.data.entries[0].id, project.id);
+    assert.equal((await s.snapshot()).records.some(r => r.id === project.id), false);
+  } finally { await s.f.close(); }
+});
