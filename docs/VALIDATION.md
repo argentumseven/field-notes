@@ -1494,3 +1494,30 @@ bytes, stable installation identity/ports, encrypted-backup admission, readiness
 rollback, corrupt/incompatible bundles, signer changes and scoped historical
 image ownership. They do **not** establish privileged Debian/Ubuntu/systemd/kernel
 upgrade behavior. See [UPDATES.md](UPDATES.md) for the operator path and limits.
+
+
+## Proposed project lifecycle and collection deletion — review branch (2026-11-11)
+
+Branch: `fix/project-status-and-deletion-workflow-2026-11-11`.
+This is an **unreleased, unmerged implementation**, not a verified deployment.
+
+- Empty projects/lists can be deleted without marking the project Finished.
+- Finished projects retain their state and new finish metadata until explicitly deleted.
+- Project removal has explicit keep-contents or delete-contents choices;
+  populated lists have an explicit reviewed cascade choice.
+- The server checks exact descendant IDs and revisions and applies recursive
+  changes within one transaction; normal unconfirmed deletion does not cascade.
+- Browser and Android library/workspace labels distinguish Finished from task
+  progress, and finished workspaces initially display all tasks.
+- Added server regression cases for empty project deletion, preserving linked
+  content, cascading deletions, and stale child revisions/additions.
+
+**Checks performed:** GitHub branch/compare inspection and JavaScript syntax
+parsing of `apps/admin/lists.js` and `apps/admin/projects.js`.
+**Not run:** Rust compilation/cargo tests, Node integration/browser tests,
+Kotlin/Android builds, emulator tests, physical GrapheneOS verification, and
+deployment. The existing Android publishing workflow reported failed runs with
+no jobs for pushes to this branch and did not validate these changes.
+Before merge, run `cargo test --locked`, `npm test`, `npm run test:browser`
+and the documented Android build/emulator gates; review permission, history,
+recovery, offline queue and sync behavior with populated projects.
