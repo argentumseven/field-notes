@@ -123,7 +123,7 @@ const FieldProjects = (() => {
         : !r.total
           ? "Planning"
           : !r.open
-            ? "Work complete"
+            ? "Ready to finish"
             : r.working
               ? "In progress"
               : r.ready
