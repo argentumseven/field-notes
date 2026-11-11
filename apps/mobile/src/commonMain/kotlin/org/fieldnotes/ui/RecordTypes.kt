@@ -18,7 +18,7 @@ import org.fieldnotes.domain.*
         DropdownMenu(expanded,{expanded=false},scrollState=scroll,modifier=Modifier.visibleScrollbar(scroll)) { for((key,title) in choices)DropdownMenuItem(text={Text(title)},onClick={expanded=false;changed(key)}) }
     }
 }
-@Composable internal fun CategoryPicker(value:String,enabled:Boolean=true,changed:(String)->Unit)=ViewChoice("Category",value,categoryChoices(value),enabled,changed)
+@Composable internal fun CategoryPicker(value:String,enabled:Boolean=true,cache:Cache?=null,changed:(String)->Unit)=ViewChoice("Category",value,if(cache!=null)categoryChoices(cache,value)else categoryChoices(value),enabled,changed)
 @Composable internal fun RecordBadges(record:Record,parent:Record?=null) {
     val scoped=record.kind=="task"&&parent?.kind=="list"&&itemContext(record.data,parent).scoped
     val category=if(scoped)null else categoryLabel(record).takeUnless { it=="General" } ?: parent?.let(::categoryLabel)
