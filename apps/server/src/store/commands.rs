@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl Store {
     pub fn command(&mut self, token: &str, c: Command) -> Result<Value> {
@@ -144,6 +144,16 @@ impl Store {
                 }
                 Self::organized_record(&c.data, &mut record, &actor)?;
                 self.project_fields(&c.data, &mut record)?;
+                if record.kind == "project" {
+                    let previous = history_before.as_ref().and_then(|old| old.data["status"].as_str());
+                    if record.data["status"] == "archived" && previous != Some("archived") {
+                        record.data["finished_at"] = json!(now());
+                        record.data["finished_by"] = json!(actor.user_id);
+                    } else if record.data["status"] != "archived" && previous == Some("archived") {
+                        record.data["finished_at"] = Value::Null;
+                        record.data["finished_by"] = Value::Null;
+                    }
+                }
                 if record.kind == "list" {
                     parent = record.data["project_id"]
                         .as_str()
@@ -400,18 +410,87 @@ impl Store {
                 if record.kind != kind {
                     return fail(400, "Object kind mismatch");
                 }
-                fields(&c.data, &[])?;
+                fields(&c.data, if ["project", "list"].contains(&kind) {
+                    &["mode", "contents"]
+                } else {
+                    &[]
+                })?;
                 if ["project", "list"].contains(&kind) {
-                    let count: i64 = self.db.query_row(
+                    let mode = c.data.get("mode").and_then(Value::as_str).unwrap_or("");
+                    if !matches!(mode, "" | "detach" | "cascade")
+                        || (mode == "detach" && kind != "project")
+                        || (mode.is_empty() && c.data.get("contents").is_some())
+                    {
+                        return fail(400, "Choose a supported collection deletion mode");
+                    }
+                    let descendants = self.collection_descendants(&c.target)?;
+                    if !mode.is_empty() {
+                        // A confirmation covers the exact records and revisions shown to
+                        // the user. A new task, attachment or concurrent edit aborts the
+                        // entire transaction instead of broadening the deletion.
+                        let shown = c.data.get("contents").and_then(Value::as_array)
+                            .ok_or(Fault(400, "Confirm the current collection contents".into()))?;
+                        let mut confirmed = BTreeMap::new();
+                        for entry in shown {
+                            let item = entry.get("id").and_then(Value::as_str)
+                                .ok_or(Fault(400, "Invalid confirmed content ID".into()))?;
+                            let rev = entry.get("revision").and_then(Value::as_i64)
+                                .ok_or(Fault(400, "Invalid confirmed content revision".into()))?;
+                            valid_id(item)?;
+                            if confirmed.insert(item.to_owned(), rev).is_some() {
+                                return fail(400, "Duplicate confirmed content");
+                            }
+                        }
+                        if confirmed.len() != descendants.len()
+                            || descendants.iter().any(|item| confirmed.get(&item.id) != Some(&item.revision))
+                        {
+                            return fail(409, "Collection contents changed. Review the deletion again");
+                        }
+                    } else if !descendants.is_empty() {
+                        return fail(409, "Choose whether to keep or delete this collection's contents");
+                    }
+                    if mode == "detach" {
+                        // Remove just the project. Its direct tasks become Inbox tasks;
+                        // linked lists become standalone, retaining all their items.
+                        for child in self.history_removed_children(&c.target)? {
+                            if !matches!(child.kind.as_str(), "task" | "list") {
+                                return fail(409, "Unexpected project content; review before deleting");
+                            }
+                            self.command_inner(token, &Command {
+                                operation_id: id(),
+                                epoch: c.epoch.clone(),
+                                generation: c.generation,
+                                action: format!("{}.update", child.kind),
+                                target: child.id,
+                                expected_revision: Some(child.revision),
+                                data: json!({"project_id": ""}),
+                            }, importing)?;
+                        }
+                    } else if mode == "cascade" {
+                        // Delete tasks first, including their comments and images, then
+                        // lists. Each child receives normal authorization, history and
+                        // recovery handling. The enclosing SQLite transaction is atomic.
+                        for child in descendants.iter().filter(|item| item.kind == "task")
+                            .chain(descendants.iter().filter(|item| item.kind == "list"))
+                        {
+                            self.command_inner(token, &Command {
+                                operation_id: id(),
+                                epoch: c.epoch.clone(),
+                                generation: c.generation,
+                                action: format!("{}.delete", child.kind),
+                                target: child.id.clone(),
+                                expected_revision: Some(child.revision),
+                                data: json!({}),
+                            }, importing)?;
+                        }
+                    }
+                    let remaining: i64 = self.db.query_row(
                         "SELECT COUNT(*) FROM objects WHERE parent=? AND deleted=0",
                         [&c.target],
                         |r| r.get(0),
                     )?;
-                    if count > 0 {
-                        return fail(
-                            409,
-                            "Move or delete this collection's tasks and linked lists before deleting it",
-                        );
+                    if remaining > 0 {
+                        return fail(409, "Collection still has contents; review the deletion again");
                     }
                 }
                 if ["comment", "image", "event"].contains(&kind)
@@ -545,6 +624,23 @@ impl Store {
             ],
         )?;
         Ok(result)
+    }
+    // Follow only supported collection children: project -> lists/tasks ->
+    // task comments/images. This is the exact membership snapshot required for
+    // deliberate bulk deletion, including attachments added since the preview.
+    fn collection_descendants(&self, target: &str) -> Result<Vec<Record>> {
+        let mut pending = vec![target.to_owned()];
+        let mut descendants = Vec::new();
+        while let Some(parent) = pending.pop() {
+            for child in self.history_removed_children(&parent)? {
+                if matches!(child.kind.as_str(), "list" | "task") {
+                    pending.push(child.id.clone());
+                }
+                descendants.push(child);
+            }
+        }
+        descendants.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(descendants)
     }
     fn quadrant(s: &str) -> Result<()> {
         if !["do", "decide", "delegate", "defer"].contains(&s) {
