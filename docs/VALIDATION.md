@@ -29,6 +29,22 @@ release lint, signed ARM64 packaging, actual APK manifest inspection and 16 KiB
 alignment checks passed. Tests include source-specific phrase and review checks,
 password rejection, cancellation, concurrent deletion, rollback on audit failure,
 receipt persistence across restart, and preservation of shared/live attachments.
+Public delivery was verified from clean tag **v0.11.5**, source `1876afc`,
+with Android code **24** and the unchanged pinned signing certificate. GitHub
+[publication run 43023644420](https://github.com/argentumseven/field-notes/actions/runs/43023644420)
+succeeded. All four downloaded public assets match the local tagged build byte
+for byte; the actual APK signature, package/version/code and ARM64 ABI passed
+verification. APK SHA-256:
+`e23522e475021ebaa3690a32eebc5d64d7276bd52d6efd94ba2e8eeaef58a8c5`.
+The latest-download URL also offers this exact 0.11.5/code-24 metadata.
+
+The default server build downloaded that public APK and built the matching offline
+app/gateway Docker images and Linux bundle. The packaged APK matches the verified
+public bytes; image IDs match the local built tags, and executable/image archive
+checksums passed. No signing key was put in the server bundle. The 25 upgrade
+checks include recovery from a running previous release with missing rollback
+images, preserving content, accounts, pairings, keys and network configuration.
+
 Physical GrapheneOS interaction and the user's home server are not exercised by
 these automated checks.
 
