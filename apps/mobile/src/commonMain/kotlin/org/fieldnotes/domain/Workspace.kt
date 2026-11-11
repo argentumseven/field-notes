@@ -522,6 +522,8 @@ class Workspace(
                     (c.data["reminders"] as? JsonObject)?.containsKey("timing_version")==true&&!cache.supportsReminderTiming()->"This saved edit needs the newer server’s custom reminder timing. Update the server; the complete edit is kept."
                     c.data.keys.any{it in setOf("note_type","ingredients","instructions","location")}&&!cache.supportsPlannerDetails()->"This saved edit needs newer recipe/location fields. Update the server; the complete edit is kept."
                     c.data.containsKey("item_category")&&!cache.supportsItemContexts()->"This saved item category needs a newer server. Update the server; the complete edit is kept."
+                    c.action=="list.unbundle"&&cache.compatibility?.features?.contains("list-unbundle-v1")!=true->"This queued list release requires the updated server. All linked work is retained for review."
+                    (c.data.text("category").startsWith("custom:")||c.data["category_override"]==JsonPrimitive(true))&&!cache.supportsHouseholdCategories()->"This saved custom category edit needs the updated server; the whole edit is kept for review."
                     item.parentCreation!=null->"The parent collection could not be created. Review its retained change before this child item."
                     item.dependsOn != null -> "An earlier queued edit was rejected. Review this dependent draft."
                     else -> null
@@ -634,6 +636,14 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
         } else {
             val current = rows[c.target] ?: continue
             val d = current.record.data
+            if (c.action=="list.unbundle") {
+                for((key,row) in rows.toMap()) {
+                    if(row.record.kind=="task"&&row.record.data.text("project_id")==c.target)
+                        rows[key]=VisibleRecord(row.record.copy(data=JsonObject(row.record.data+("project_id" to "".j()))),true)
+                }
+                rows[c.target]=VisibleRecord(current.record,true)
+                continue
+            }
             if (c.action.endsWith(".delete")) { rows.remove(c.target); rows.entries.removeAll { it.value.record.data.text("task_id") == c.target }; continue }
             val change = when (c.action) {
                 "task.update", "event.update", "note.update", "project.update", "list.update" -> c.data
