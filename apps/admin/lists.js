@@ -429,11 +429,16 @@ function renderCollections(root) {
         el(
           "span",
           "item-sub",
-          c.kind === "project" && c.data.status === "archived"
-            ? "Finished project · retained"
+          c.kind === "project"
+            ? c.data.status === "archived"
+              ? "Finished project · retained"
+              : (() => {
+                  const progress = FieldProjects.graph().rollup(c, FieldPlanning.localDay());
+                  return progress.open + " unfinished of " + progress.total + " project tasks";
+                })()
             : records("task").filter(
                 (t) => t.data.project_id === c.id && t.data.status !== "done",
-              ).length + (c.kind === "list" ? " unchecked items" : " unfinished direct tasks"),
+              ).length + " unchecked items",
         ),
         el("span", "muted", c.data.notes || ""),
       );
