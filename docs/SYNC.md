@@ -43,11 +43,13 @@ can reference a live List or Project, or be empty for Inbox. Creating an Inbox
 task requires no container. A move updates its encrypted data and database parent
 in the same transaction with the task's expected revision. Deleted or wrong-kind
 containers cannot receive tasks. An ordinary empty List or Project delete needs
-no special completion status. Populated-collection deletion requires an explicit
-keep-contents (project only) or cascade mode with a full set of child IDs and
-revisions. The server checks this set under the same transaction as all nested
-edits/deletions and rejects a concurrent child edit or addition. Ordinary
-unconfirmed deletion requests never cascade. Shared Note body/pin updates and
+no special completion status. **project.unbundle** independently releases
+direct project tasks to Inbox and linked lists to standalone while keeping
+all records. It requires the full current descendant ID/revision snapshot and
+runs within a transaction. Populated-collection deletion is always destructive
+and requires the explicit cascade mode with the same full descendant snapshot.
+The server rejects concurrent child edits or additions. Ordinary unconfirmed
+deletion requests never cascade. Shared Note body/pin updates and
 collection name/context edits are revision-checked commands too.
 
 Calendar events are shared server records, downloaded in the same snapshot and
