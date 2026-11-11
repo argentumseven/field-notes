@@ -42,6 +42,32 @@ class FakeEngine:
  def stop(self,*a):self.objects(a[0]);self.calls.append(['stop-owned'])
 
 class Upgrade(unittest.TestCase):
+ def test_new_release_recovers_running_previous_release_with_missing_rollback_images(self):
+  database=self.recovery_ready();original=database.read_bytes()
+  key=self.host.path(self.host.record['config']+'/master.key').read_bytes()
+  release=json.loads((ROOT/'release.json').read_text());previous='0.11.3'
+  installed=self.host.path(self.host.record['prefix']+'/downloads/android.json')
+  info=json.loads(installed.read_text());info.update(version=previous,version_code=22);installed.write_text(json.dumps(info))
+  for role in ('app','gateway'):self.host.record['docker']['tags'][role]='field-notes-'+role+':'+previous
+  self.host.write_record(self.host.record)
+  (self.folder/'release.json').write_text(json.dumps(release))
+  info_path=self.folder/'downloads/android.json';info=json.loads(info_path.read_text())
+  info.update(version=release['version'],version_code=release['android_version_code']);info_path.write_text(json.dumps(info))
+  index_path=self.folder/'images.json';index=json.loads(index_path.read_text())
+  for role in index:index[role]['tag']='field-notes-'+role+':'+release['version']
+  index_path.write_text(json.dumps(index))
+  self.engine.missing_images.update(self.host.record['docker']['settings']['images'].values())
+  self.assertTrue(self.engine.runtime_healthy)
+  result=self.execute_recovery()
+  self.assertEqual(result['from_version'],previous);self.assertEqual(result['to_version'],release['version'])
+  self.assertGreater(result['apk_version_code'],22)
+  backup=next(command for command in self.engine.calls if command[0]=='run')
+  self.assertEqual(backup[backup.index('backup')-1],result['settings']['images']['app'])
+  self.assertIn('--pull=never',backup)
+  self.assertEqual(database.read_bytes(),original)
+  self.assertEqual(self.host.path(self.host.record['config']+'/master.key').read_bytes(),key)
+  self.assertEqual(installation.load(self.host)['docker']['tags']['app'],'field-notes-app:'+release['version'])
+  self.assertEqual(self.host.bungee.read_text(),'BUNGEE MUST SURVIVE\n')
  def recovery_ready(self,phase='installed'):
   import shutil
   installed=self.host.path(self.host.record['prefix']+'/downloads');shutil.copytree(self.folder/'downloads',installed)

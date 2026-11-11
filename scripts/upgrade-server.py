@@ -75,7 +75,7 @@ def bundle_info(folder,current,recover=False):
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0','0.8.1','0.9.0','0.9.1','0.10.0','0.11.0','0.11.1','0.11.2','0.11.3') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0','0.8.1','0.9.0','0.9.1','0.10.0','0.11.0','0.11.1','0.11.2','0.11.3','0.11.4') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -243,7 +243,7 @@ def apply(host,record,folder,engine=None,health=readiness,recover=False):
   if stage.exists():shutil.rmtree(stage)
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next server bundle using the public APK or the retained custom development signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Recover a stopped runtime using a verified compatible bundle and retained data; never initializes a new workspace');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next server bundle using the public APK or the retained custom development signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Repair or upgrade a retained runtime when rollback images are missing, using a verified compatible bundle; never initializes a new workspace');args=parser.parse_args()
  host=Host();record=load(host,args.config)
  if args.build_from_source:
   if not args.apply or os.geteuid()!=0:raise ValueError('--build-from-source requires --apply as root; it never creates a fresh installation')

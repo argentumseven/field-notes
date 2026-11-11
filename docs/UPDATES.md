@@ -58,7 +58,7 @@ features. A newer app can keep syncing with an older server; unsupported editor
 controls stay disabled. A retained edit requiring a newer feature is explained
 in Retained changes. Incompatible protocol/minimum requirements stop uploads
 with a persistent warning and preserve the cache, outbox and keys. The current
-server recommends code 18 and supports the code-10 core during rollout. Update
+server recommends code 23 and supports the code-10 core during rollout. Update
 older clients before relying on repeat-event expansion and its reminders.
 Upgrade older phones to 0.9.1 for immediate/three-second foreground refresh,
 automatic default-network reconnection and visible stale/queued status. Updating
@@ -263,6 +263,28 @@ software-update control route before rollout. Do not make the old client's
 update route depend on a new content protocol it cannot yet speak.
 
 ## Upgrade an existing source installation
+
+Version **0.11.4 / Android code 23** delivers the explicit project task picker,
+parentless task choice and duplicate audio-failure notification fix. Pulling Git
+source alone does not replace an installed server or APK; the matching verified
+release must be built and applied, then accepted on each phone.
+
+If normal upgrade reports a missing pinned rollback image, the running service
+may still be active. Do not delete its containers or reset pairing. The explicit
+recovery-upgrade path uses the verified newer target image for its encrypted
+backup and preserves the retained database and identity inventory:
+
+```bash
+cd /usr/local/src/field-notes &&
+git pull --ff-only origin main &&
+python3 scripts/upgrade-server.py --apply --build-from-source --recover-runtime
+```
+
+This path can upgrade the retained active installation as well as a stopped
+one. It briefly stops the owned stack, retains a raw encrypted database snapshot
+and logical backup, and verifies the new runtime before completing. Same-version
+recovery still requires the identical server executable; it does not install
+unreleased source changes over an existing release number.
 
 For the standard Debian/Ubuntu installation, run as root from the existing
 checkout. Build and verify the next release, then back up and upgrade:

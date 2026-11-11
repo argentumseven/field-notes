@@ -6,6 +6,14 @@ by itself establish an out-of-memory failure. Pulling Git source does not restor
 Docker images. Inspect the first failed Docker operation rather than repeatedly
 restarting the service or resetting users/pairings.
 
+An active service can also have missing rollback image IDs: its existing
+container may continue running while a normal upgrade refuses to proceed.
+The explicit recovery-upgrade path supports that retained active installation
+too. Starting with the verified 0.11.4 release, use
+`--apply --build-from-source --recover-runtime` to build the newer matching
+server/APK bundle and back up with its target image. There is no need to delete
+the running containers first. Installation identities and data are retained.
+
 If the original offline archive is available, verify its checksum and that its
 `images.json` IDs match `/etc/field-notes/deployment.json` before importing it.
 That restores the exact existing images without an upgrade.

@@ -1,6 +1,6 @@
 # Implementation and validation record
 
-## Unreleased project membership workflow — 2026-11-10
+## 0.11.4 project membership and upgrade delivery — 2026-11-11
 
 The project workspace now exposes **Add existing task** on web and Android.
 Task and existing-list-item editors use **Project or list**, including an
@@ -26,9 +26,32 @@ passed. The new notification runtime fixture compiles but
 has not run on a device: the earlier software AVD attempt failed during system
 boot without KVM. Physical GrapheneOS checks remain unrun.
 
-This is an unreleased source change. Release version 0.11.3/code 22, public APK
-assets, signing identity and updater version fences are unchanged. A newer
-verified signed release is required before normal server/phone installation.
+Version **0.11.4 / Android code 23** completes delivery of these changes with
+matching server/client versions and the unchanged pinned public certificate.
+Protocol 1, schema 2 and existing signing/identity/version fences are retained.
+The recovery-upgrade regression covers a retained active 0.11.3 installation
+with missing rollback image IDs, target-image encrypted backup, preserved
+workspace/key bytes and unrelated services, and transition to the newer release.
+Normal upgrade still refuses missing rollback images; the explicit recovery
+path is documented for both active and stopped retained installations.
+
+Release gates passed: **110 API checks, 132 Kotlin host tests, 18 Rust tests,
+3 focused browser cases and 53 focused Python checks** (upgrade, publication,
+APK artifact and container boundaries). Rust formatting/clippy and Android
+release lint passed. The signed ARM64 release passes actual signature,
+package/version, native-library and 16 KiB alignment verification with the
+existing public certificate. The older calendar browser fixture now chooses
+alarm mode before selecting an alarm-only tone; the original schedule, sound
+and recipient assertions remain in place.
+
+The actual 0.11.4 offline app/gateway images were built, exported, reimported
+and resolved by both recorded immutable IDs. A real nonroot, networkless,
+read-only-root app container produced and restored an encrypted backup of
+synthetic project/task/comment/note data. Login password, content and revisions
+were retained; fresh-directory restore changed epoch and revoked the old
+session. This validates the target backup image, not privileged recovery on a
+physical Debian host. Existing field-notes data, phone pairing and signing keys
+were not reset. Publication verification follows delivery of the tagged build.
 
 ## 0.11.3 reminder audio and issue handling — 2026-11-09
 

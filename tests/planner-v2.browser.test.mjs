@@ -90,12 +90,13 @@ test("calendar uses the highlighted day, local ten AM, optional ends and per-rem
       .nth(1)
       .locator("details>summary")
       .click();
-    await page
-      .getByLabel("Reminder 2 sound", { exact: true })
-      .selectOption("sunrise");
+    // Alarm-only tones are offered after selecting alarm delivery.
     await page
       .getByLabel("Reminder 2 delivery mode", { exact: true })
       .selectOption("alarm");
+    await page
+      .getByLabel("Reminder 2 sound", { exact: true })
+      .selectOption("sunrise");
     await page
       .locator(".reminder-row")
       .nth(1)
