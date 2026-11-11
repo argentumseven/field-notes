@@ -410,11 +410,12 @@ impl Store {
                 if record.kind != kind {
                     return fail(400, "Object kind mismatch");
                 }
-                fields(&c.data, if ["project", "list"].contains(&kind) {
+                let allowed: &[&str] = if ["project", "list"].contains(&kind) {
                     &["mode", "contents"]
                 } else {
                     &[]
-                })?;
+                };
+                fields(&c.data, allowed)?;
                 if ["project", "list"].contains(&kind) {
                     let mode = c.data.get("mode").and_then(Value::as_str).unwrap_or("");
                     if !matches!(mode, "" | "detach" | "cascade")
