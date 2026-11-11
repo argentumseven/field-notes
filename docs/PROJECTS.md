@@ -88,10 +88,15 @@ and their changes. New history records preserve both sides of moves. Older
 history can use current membership but cannot reconstruct project moves that
 predate this feature.
 
-Item versions restore that item's complete state. A project/list version restores
-its own settings and description; it does not rewind every child. Task versions
-include their comments and attachments and can recover missing parent collections.
-Use a named **Content checkpoint** for an atomic restore of all household content.
+Item versions restore that item's complete state. For a saved live project/list,
+**Restore with existing bindings** preserves live descendants without overwriting
+them; **Restore missing contents** (administrator only) additionally recovers
+deleted descendants under their original IDs from complete retained versions.
+Neither path silently reassigns a task intentionally moved elsewhere. This is
+previewed, duplicate-safe and all-or-nothing when saved content is unavailable.
+Task versions include their comments and attachments and can recover missing
+parent collections. Use a named **Content checkpoint** for an atomic restore
+of all household content.
 Restoring open work into a finished project requires reopening it first. Accounts,
 device pairing and security settings remain separate.
 
