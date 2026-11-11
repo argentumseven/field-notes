@@ -731,6 +731,10 @@ const FieldRecovery = (() => {
       ),
     );
     panel.append(
+      el("p", "muted", `Saved version metadata: ${size(u.version_metadata_bytes || 0)} · checkpoint metadata: ${size(u.checkpoint_metadata_bytes || 0)} · shared recovery images: ${size(u.image_bytes)}. Deleted items recorded: ${u.trash_records || 0} (${u.trash_recoverable_records || 0} with saved versions). Metadata and shared images are separate, without double-counting image bytes. Database allocated ${size(u.database_allocated_bytes)}; reusable pages ${size(u.database_reusable_bytes)}.`),
+      el("p", "muted", "Finished projects remain live records indefinitely until deliberately deleted. Version age, count and size limits are ceilings, not a guaranteed recovery period. External encrypted backups must be managed separately."),
+    );
+    panel.append(
       button("Retention settings", async () => {
         await reauthenticate();
         const fields = [
@@ -794,7 +798,7 @@ const FieldRecovery = (() => {
           await reauthenticate();
           await formDialog(
             "Purge retained history",
-            "This permanently removes the selected recovery copies. Current content, accounts, pairings and security audit remain. Database free space is reused; its file may not shrink immediately.",
+            `This permanently removes the selected recovery copies. Current retained counts: ${u.versions} item versions, ${u.checkpoints} checkpoints and ${size(u.history_bytes)} of change details. Review which category you are purging. Current content, accounts, pairings and security audit remain; existing backups are unaffected. Reclaimed database space can be reused without shrinking the file.`,
             [
               {
                 key: "scope",
@@ -806,13 +810,24 @@ const FieldRecovery = (() => {
                   ["all", "All content history and recovery copies"],
                 ],
               },
+              {
+                key: "confirmation",
+                label: "Type PURGE HISTORY",
+              },
+              {
+                key: "reviewed",
+                type: "checkbox",
+                label: "I understand the selected recovery copies will be permanently removed from this server. Existing backups are not affected.",
+              },
             ],
             async (v) => {
+              if (v.confirmation !== "PURGE HISTORY" || !v.reviewed)
+                throw Error("Review the impact and type PURGE HISTORY to continue.");
               await api("/admin", {
                 action: "recovery.purge",
                 scope: v.scope,
                 revision: data.history_revision,
-                confirmation: "PURGE HISTORY",
+                confirmation: v.confirmation,
               });
             },
             "Purge selected history",
