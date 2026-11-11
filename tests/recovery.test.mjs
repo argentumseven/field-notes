@@ -1568,3 +1568,33 @@ test("opening Trash does not trim expired versions or mutate the retention revis
     assert.equal(trash.data.history_revision,before);
   } finally {await s.close();}
 });
+
+
+test("deleted project can restore original descendants from a time-anchored pre-delete version", async () => {
+  const s=await scene();
+  try {
+    const project=(await s.send("project.create",randomUUID(),{title:"Whole project"})).data.record;
+    const list=(await s.send("list.create",randomUUID(),{title:"Existing group",project_id:project.id,items_are_tasks:true})).data.record;
+    const nested=(await s.send("task.create",randomUUID(),{title:"Grouped item",project_id:list.id,notes:"Saved detail"})).data.record;
+    const comment=(await s.send("comment.create",randomUUID(),{task_id:nested.id,body:"Saved note"})).data.record;
+    const other=(await s.send("task.create",randomUUID(),{title:"Outside project"})).data.record;
+    const contents=[list,nested,comment].map(r=>({id:r.id,revision:r.revision}));
+    assert.equal((await s.send("project.delete",project.id,{mode:"cascade",contents},project.revision)).status,200);
+    assert.equal((await s.snapshot()).records.some(r=>r.id===project.id),false);
+    const versions=await s.versions(project.id);
+    const anchor=versions.find(v=>v.action==="collection.delete.before");
+    assert(anchor,"cascade must capture a fresh pre-delete project state");
+    const preview=await s.recover("preview",{source:anchor.id,hierarchy_mode:"respawn"});
+    assert.equal(preview.status,200,JSON.stringify(preview.data));
+    assert.equal(preview.data.hierarchy.respawned,3);
+    const result=await s.apply(s.applyBody(preview.data));
+    assert.equal(result.status,200,JSON.stringify(result.data));
+    const rows=(await s.snapshot()).records;
+    for(const id of [project.id,list.id,nested.id,comment.id,other.id])
+      assert.equal(rows.filter(r=>r.id===id).length,1,id+" unique after restore");
+    assert.equal(rows.find(r=>r.id===list.id).data.project_id,project.id);
+    assert.equal(rows.find(r=>r.id===nested.id).data.project_id,list.id);
+    assert.equal(rows.find(r=>r.id===comment.id).data.body,"Saved note");
+    assert.equal(rows.find(r=>r.id===other.id).data.title,"Outside project");
+  } finally {await s.close();}
+});
