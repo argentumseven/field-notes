@@ -673,13 +673,13 @@ impl Store {
                 matches!(row.record.kind.as_str(), "project" | "list")
             )
         );
+        // Requests from older clients have no hierarchy_mode and keep the
+        // pre-existing single-item recovery behavior. New clients must opt in.
         let hierarchy_mode = match body.get("hierarchy_mode") {
-            None => if collection { "bindings" } else { "" },
-            Some(Value::String(value)) if value.is_empty() || value == "bindings" => {
-                if collection { "bindings" } else { "" }
-            }
+            None => "",
+            Some(Value::String(value)) if value == "bindings" && collection => "bindings",
             Some(Value::String(value)) if value == "respawn" && collection => "respawn",
-            _ => return fail(400, "Hierarchy recovery requires a supported mode and saved live project or list"),
+            _ => return fail(400, "Hierarchy recovery requires an explicit supported mode and a saved live project or list"),
         };
         if hierarchy_mode == "respawn" && !actor.admin() {
             return fail(403, "Administrator authorization is required to restore missing linked records");
