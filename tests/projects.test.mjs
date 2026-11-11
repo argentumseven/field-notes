@@ -581,3 +581,71 @@ test("version-one archives remain readable and default grouping fields deduplica
     await other.f.close();
   }
 });
+
+
+test("project finishing is retained separately from deleting an empty project", async () => {
+  const s = await scene();
+  try {
+    const active = await s.ok("project.create", randomUUID(), {title: "Discard scratch project"});
+    assert.equal((await s.send("project.delete", active.id, {}, active.revision)).status, 200);
+    let finished = await s.ok("project.create", randomUUID(), {title: "Completed project"});
+    finished = await s.ok("project.update", finished.id, {status: "archived"}, finished.revision);
+    assert.equal(finished.data.status, "archived");
+    assert.equal(typeof finished.data.finished_at, "number");
+    assert.equal((await s.snap()).records.find(r => r.id === finished.id).data.status, "archived");
+    assert.equal((await s.send("project.delete", finished.id, {}, finished.revision)).status, 200);
+    assert.equal((await s.snap()).records.some(r => r.id === finished.id), false);
+  } finally {await s.f.close();}
+});
+
+test("removing a project can preserve direct tasks and complete standalone lists", async () => {
+  const s = await scene();
+  try {
+    const project = await s.ok("project.create", randomUUID(), {title: "Reorganize"});
+    const list = await s.ok("list.create", randomUUID(), {title: "Shopping", project_id: project.id});
+    const direct = await s.ok("task.create", randomUUID(), {title: "Direct", project_id: project.id});
+    const nested = await s.ok("task.create", randomUUID(), {title: "Nested", project_id: list.id});
+    const comment = await s.ok("comment.create", randomUUID(), {task_id: nested.id, body: "Keep this"});
+    const contents = [list,direct,nested,comment].map(r => ({id:r.id,revision:r.revision}));
+    assert.equal((await s.send("project.delete", project.id, {mode:"detach",contents}, project.revision)).status, 200);
+    const rows = (await s.snap()).records;
+    assert.equal(rows.some(r => r.id === project.id), false);
+    assert.equal(rows.find(r => r.id === list.id).data.project_id, "");
+    assert.equal(rows.find(r => r.id === direct.id).data.project_id, "");
+    assert.equal(rows.find(r => r.id === nested.id).data.project_id, list.id);
+    assert.equal(rows.find(r => r.id === comment.id).data.body, "Keep this");
+  } finally {await s.f.close();}
+});
+
+test("reviewed cascade deletes nested project contents without affecting neighboring work", async () => {
+  const s = await scene();
+  try {
+    const project = await s.ok("project.create", randomUUID(), {title: "Dispose"});
+    const list = await s.ok("list.create", randomUUID(), {title: "Group", project_id: project.id,items_are_tasks:true});
+    const task = await s.ok("task.create", randomUUID(), {title: "Task", project_id: list.id});
+    const comment = await s.ok("comment.create", randomUUID(), {task_id: task.id,body:"Old context"});
+    const other = await s.ok("task.create", randomUUID(), {title: "Keep outside"});
+    const contents = [list,task,comment].map(r=>({id:r.id,revision:r.revision}));
+    assert.equal((await s.send("project.delete",project.id,{mode:"cascade",contents},project.revision)).status,200);
+    const rows = (await s.snap()).records;
+    for(const gone of [project,list,task,comment])assert.equal(rows.some(r=>r.id===gone.id),false);
+    assert.equal(rows.find(r=>r.id===other.id).data.title,"Keep outside");
+  } finally {await s.f.close();}
+});
+
+test("deletion of a collection must match the exact descendant revisions and reject unreviewed additions", async () => {
+  const s = await scene();
+  try {
+    const project=await s.ok("project.create",randomUUID(),{title:"Protect concurrent additions"});
+    const old=await s.ok("task.create",randomUUID(),{title:"Old",project_id:project.id});
+    const confirmed=[{id:old.id,revision:old.revision}];
+    const changed=await s.ok("task.update",old.id,{notes:"Newer"},old.revision);
+    assert.equal((await s.send("project.delete",project.id,{mode:"cascade",contents:confirmed},project.revision)).status,409);
+    assert.equal((await s.snap()).records.find(r=>r.id===changed.id).data.notes,"Newer");
+    const current=[{id:changed.id,revision:changed.revision}];
+    const incoming=await s.ok("task.create",randomUUID(),{title:"New",project_id:project.id});
+    assert.equal((await s.send("project.delete",project.id,{mode:"cascade",contents:current},project.revision)).status,409);
+    assert.equal((await s.snap()).records.some(r=>r.id===incoming.id),true);
+    assert.equal((await s.send("project.delete",project.id,{},project.revision)).status,409);
+  } finally {await s.f.close();}
+});
