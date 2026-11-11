@@ -1482,6 +1482,7 @@ function renderDetail() {
                 project_id: d.project_id,
                 notes: d.notes,
                 category: d.category,
+                ...(task.data.category?.startsWith("custom:") && d.category !== task.data.category ? {category_override:true} : {}),
                 item_category: d.item_category,
                 assignee: d.assignee,
                 due: d.due,
