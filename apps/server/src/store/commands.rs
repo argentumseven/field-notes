@@ -404,6 +404,34 @@ impl Store {
                 }
                 self.calendar_event(&c.data, &mut record, &actor)?;
             }
+            "project.unbundle" => {
+                if record.kind != "project" {
+                    return fail(400, "Only projects can be unbundled");
+                }
+                fields(&c.data, &["contents"])?;
+                let descendants = self.collection_descendants(&c.target)?;
+                if descendants.is_empty() {
+                    return fail(409, "Project has no attached tasks or lists to unbundle");
+                }
+                self.verify_collection_contents(&c.data, &descendants)?;
+                // Release memberships, not records. Direct tasks become Inbox
+                // tasks; linked lists become standalone and keep their children.
+                // Child updates enforce claims and other normal permissions.
+                for child in self.history_removed_children(&c.target)? {
+                    if !matches!(child.kind.as_str(), "task" | "list") {
+                        return fail(409, "Unexpected project content; review before unbundling");
+                    }
+                    self.command_inner(token, &Command {
+                        operation_id: id(),
+                        epoch: c.epoch.clone(),
+                        generation: c.generation,
+                        action: format!("{}.update", child.kind),
+                        target: child.id,
+                        expected_revision: Some(child.revision),
+                        data: json!({"project_id": ""}),
+                    }, importing)?;
+                }
+            }
             "project.delete" | "list.delete" | "note.delete" | "task.delete" | "comment.delete"
             | "image.delete" | "event.delete" => {
                 let kind = c.action.trim_end_matches(".delete");
@@ -418,56 +446,20 @@ impl Store {
                 fields(&c.data, allowed)?;
                 if ["project", "list"].contains(&kind) {
                     let mode = c.data.get("mode").and_then(Value::as_str).unwrap_or("");
-                    if !matches!(mode, "" | "detach" | "cascade")
-                        || (mode == "detach" && kind != "project")
+                    if !matches!(mode, "" | "cascade")
                         || (mode.is_empty() && c.data.get("contents").is_some())
                     {
                         return fail(400, "Choose a supported collection deletion mode");
                     }
                     let descendants = self.collection_descendants(&c.target)?;
-                    if !mode.is_empty() {
-                        // A confirmation covers the exact records and revisions shown to
-                        // the user. A new task, attachment or concurrent edit aborts the
-                        // entire transaction instead of broadening the deletion.
-                        let shown = c.data.get("contents").and_then(Value::as_array)
-                            .ok_or(Fault(400, "Confirm the current collection contents".into()))?;
-                        let mut confirmed = BTreeMap::new();
-                        for entry in shown {
-                            let item = entry.get("id").and_then(Value::as_str)
-                                .ok_or(Fault(400, "Invalid confirmed content ID".into()))?;
-                            let rev = entry.get("revision").and_then(Value::as_i64)
-                                .ok_or(Fault(400, "Invalid confirmed content revision".into()))?;
-                            valid_id(item)?;
-                            if confirmed.insert(item.to_owned(), rev).is_some() {
-                                return fail(400, "Duplicate confirmed content");
-                            }
-                        }
-                        if confirmed.len() != descendants.len()
-                            || descendants.iter().any(|item| confirmed.get(&item.id) != Some(&item.revision))
-                        {
-                            return fail(409, "Collection contents changed. Review the deletion again");
-                        }
+                    if mode == "cascade" {
+                        // Review the exact linked content; ordinary deletion cannot
+                        // remove any populated collection.
+                        self.verify_collection_contents(&c.data, &descendants)?;
                     } else if !descendants.is_empty() {
-                        return fail(409, "Choose whether to keep or delete this collection's contents");
+                        return fail(409, "Unbundle first, or explicitly delete this collection and its contents");
                     }
-                    if mode == "detach" {
-                        // Remove just the project. Its direct tasks become Inbox tasks;
-                        // linked lists become standalone, retaining all their items.
-                        for child in self.history_removed_children(&c.target)? {
-                            if !matches!(child.kind.as_str(), "task" | "list") {
-                                return fail(409, "Unexpected project content; review before deleting");
-                            }
-                            self.command_inner(token, &Command {
-                                operation_id: id(),
-                                epoch: c.epoch.clone(),
-                                generation: c.generation,
-                                action: format!("{}.update", child.kind),
-                                target: child.id,
-                                expected_revision: Some(child.revision),
-                                data: json!({"project_id": ""}),
-                            }, importing)?;
-                        }
-                    } else if mode == "cascade" {
+                    if mode == "cascade" {
                         // Delete tasks first, including their comments and images, then
                         // lists. Each child receives normal authorization, history and
                         // recovery handling. The enclosing SQLite transaction is atomic.
@@ -629,6 +621,27 @@ impl Store {
     // Follow only supported collection children: project -> lists/tasks ->
     // task comments/images. This is the exact membership snapshot required for
     // deliberate bulk deletion, including attachments added since the preview.
+    fn verify_collection_contents(&self, data: &Value, descendants: &[Record]) -> Result<()> {
+        let shown = data.get("contents").and_then(Value::as_array)
+            .ok_or(Fault(400, "Confirm the current collection contents".into()))?;
+        let mut confirmed = BTreeMap::new();
+        for entry in shown {
+            let item = entry.get("id").and_then(Value::as_str)
+                .ok_or(Fault(400, "Invalid confirmed content ID".into()))?;
+            let rev = entry.get("revision").and_then(Value::as_i64)
+                .ok_or(Fault(400, "Invalid confirmed content revision".into()))?;
+            valid_id(item)?;
+            if confirmed.insert(item.to_owned(), rev).is_some() {
+                return fail(400, "Duplicate confirmed content");
+            }
+        }
+        if confirmed.len() != descendants.len()
+            || descendants.iter().any(|item| confirmed.get(&item.id) != Some(&item.revision))
+        {
+            return fail(409, "Collection contents changed. Review the operation again");
+        }
+        Ok(())
+    }
     fn collection_descendants(&self, target: &str) -> Result<Vec<Record>> {
         let mut pending = vec![target.to_owned()];
         let mut descendants = Vec::new();
