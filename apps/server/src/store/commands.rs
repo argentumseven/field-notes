@@ -460,6 +460,23 @@ impl Store {
                         return fail(409, "Unbundle first, or explicitly delete this collection and its contents");
                     }
                     if mode == "cascade" {
+                        // Force a fresh time-anchored collection version before
+                        // deleting its descendants. Otherwise the normal
+                        // identical-content dedup may leave only a project
+                        // version created long before its tasks existed.
+                        // Keep the snapshot under the existing retention policy.
+                        if !importing && self.recovery_policy()?.enabled {
+                            let content = self.recovery_content(Some(&c.target))?;
+                            let sid = self.recovery_save(
+                                &actor,
+                                "version",
+                                &c.target,
+                                (&Self::history_title(&record), "collection.delete.before"),
+                                &content,
+                                true,
+                            )?;
+                            recovery_protected.insert(sid);
+                        }
                         // Delete tasks first, including their comments and images, then
                         // lists. Each child receives normal authorization, history and
                         // recovery handling. The enclosing SQLite transaction is atomic.
