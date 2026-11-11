@@ -64,7 +64,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
             if(project.data.text("notes").isNotBlank()){SecondaryButton(onClick={context=!context}){Text(if(context)"Hide goal & context" else "Goal & context")};if(context)Text(project.data.text("notes"))}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 if(writable){
-                    SecondaryButton(onClick=edit){Text("Project settings / delete")}
+                    SecondaryButton(onClick=edit){Text("Project settings")}
                     if(direct.isNotEmpty())SecondaryButton(onClick={
                         val all=projectRecords(state.cache).map{it.record}
                         val pending=mutableListOf(project.id);val visited=mutableSetOf(project.id)
