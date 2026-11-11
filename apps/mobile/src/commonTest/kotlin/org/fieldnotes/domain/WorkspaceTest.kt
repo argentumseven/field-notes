@@ -67,6 +67,36 @@ private fun model(v: MemoryVault, t: FakeTransport, scope: CoroutineScope): Work
     return Workspace(t, v, { "op-${next++}" }, scope)
 }
 class WorkspaceTest {
+    @Test fun queuedUnbundleKeepsProjectAndContentsWithReleasedMembership() {
+        val project=Record("project","project",1,obj("title" to "Repair".j(),"status" to "archived".j()))
+        val list=Record("list","list",1,obj("title" to "Supplies".j(),"project_id" to project.id.j()))
+        val nested=Record("nested","task",1,obj("title" to "Buy".j(),"project_id" to list.id.j()))
+        val direct=Record("direct","task",1,obj("title" to "Call".j(),"project_id" to project.id.j()))
+        val original=listOf(project,list,nested,direct)
+        val command=Command("op","epoch",1,"project.unbundle",project.id,project.revision,obj())
+        val cache=initial().copy(snapshot=initial().snapshot!!.copy(records=original),outbox=listOf(Pending(command)))
+        val projected=projectRecords(cache).associateBy{it.record.id}
+        assertEquals(original.size,projected.size)
+        assertEquals("archived",projected.getValue(project.id).record.data.text("status"))
+        assertEquals("",projected.getValue(list.id).record.data.text("project_id"))
+        assertEquals("",projected.getValue(direct.id).record.data.text("project_id"))
+        assertEquals(list.id,projected.getValue(nested.id).record.data.text("project_id"))
+        assertTrue(projected.getValue(list.id).pending)
+        assertEquals(project.id,list.data.text("project_id"),"original snapshot is not changed")
+    }
+
+    @Test fun queuedDestructiveCascadeOnlyHidesRelatedRecordsFromTheProjection() {
+        val project=Record("project","project",1,obj("title" to "Old".j()))
+        val list=Record("list","list",1,obj("title" to "Group".j(),"project_id" to project.id.j()))
+        val nested=Record("nested","task",1,obj("title" to "Task".j(),"project_id" to list.id.j()))
+        val comment=Record("comment","comment",1,obj("body" to "Keep in recovery".j(),"task_id" to nested.id.j()))
+        val outside=Record("outside","task",1,obj("title" to "Independent".j()))
+        val original=listOf(project,list,nested,comment,outside)
+        val command=Command("op","epoch",1,"project.delete",project.id,project.revision,obj("mode" to "cascade".j()))
+        val cache=initial().copy(snapshot=initial().snapshot!!.copy(records=original),outbox=listOf(Pending(command)))
+        assertEquals(listOf(outside.id),projectRecords(cache).map{it.record.id})
+        assertEquals(original,cache.snapshot!!.records,"projection must not erase saved data")
+    }
     @Test fun projectMovesPersistOnlyMembershipAndSurviveOfflineRestart()=runTest {
         val a=Record("a","project",1,obj("title" to "Kitchen".j()))
         val b=a.copy(id="b")
