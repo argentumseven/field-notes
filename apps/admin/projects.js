@@ -204,8 +204,37 @@ function renderProjectContext(root, project) {
   async function change(status) {
     await mutate("project.update", project.id, { status }, project.revision);
   }
+  async function unbundle() {
+    const children = collectionContents(project);
+    if (!children.length) return;
+    const directTasks = children.filter((item) =>
+      item.kind === "task" && item.data.project_id === project.id,
+    ).length;
+    const lists = children.filter((item) =>
+      item.kind === "list" && item.data.project_id === project.id,
+    ).length;
+    await formDialog(
+      "Unbundle project: " + project.data.title,
+      "Release " + directTasks + " direct tasks to Inbox and " + lists +
+        " attached lists to standalone lists. Items within those lists, comments, images, progress states and history are kept. The project itself remains. No records are deleted.",
+      [],
+      async () => {
+        await mutate("project.unbundle", project.id, {
+          contents: children.map((item) => ({
+            id: item.id,
+            revision: item.revision,
+          })),
+        }, project.revision);
+      },
+      "Unbundle project",
+    );
+  }
   if (mayWrite()) {
     actions.append(button("Project settings / delete", () => editCollection(project)));
+    const attached = collectionContents(project);
+    if (attached.length) {
+      actions.append(button("Unbundle project", unbundle));
+    }
     if (project.data.status === "on_hold" || project.data.status === "archived")
       actions.append(
         button("Reopen project", () => change("active"), "primary"),
