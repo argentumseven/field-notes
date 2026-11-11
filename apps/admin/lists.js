@@ -48,6 +48,60 @@ async function newCollection(kind = "list", defaults = {}) {
 async function editCollection(record) {
   return collectionEditor(record.kind, record);
 }
+// Delete is independent of finishing. Capture linked records and revisions
+// so concurrent changes cannot silently expand a confirmed deletion.
+async function deleteCollection(record) {
+  const children = [];
+  const visited = new Set([record.id]);
+  const pending = [record.id];
+  while (pending.length) {
+    const parent = pending.pop();
+    for (const item of state.snapshot.records.filter(
+      (r) => r.data.project_id === parent || r.data.task_id === parent,
+    )) {
+      if (visited.has(item.id)) continue;
+      visited.add(item.id);
+      children.push(item);
+      pending.push(item.id);
+    }
+  }
+  const populated = children.length > 0;
+  const fields = [
+    ...(populated
+      ? [{
+          key: "mode",
+          label: "What should happen to its contents?",
+          options: record.kind === "project"
+            ? [["detach", "Keep tasks and lists (move out of project)"],
+               ["cascade", "Delete project, tasks, lists and attachments"]]
+            : [["cascade", "Delete list and all its items"]],
+        }]
+      : []),
+    { key: "confirmation", label: "Type DELETE to confirm" },
+  ];
+  await formDialog(
+    "Delete " + record.kind + ": " + record.data.title,
+    populated
+      ? children.length + " linked records, including nested content. Keeping contents moves direct tasks to Inbox and lists to standalone. Deleting contents also removes active attachments. Saved history and backups follow retention settings."
+      : "This empty collection will be removed from the active workspace. Saved history and backups follow retention settings.",
+    fields,
+    async (v) => {
+      if (v.confirmation !== "DELETE") throw Error("Type DELETE to confirm.");
+      await mutate(
+        record.kind + ".delete",
+        record.id,
+        populated
+          ? { mode: v.mode, contents: children.map((item) => ({ id: item.id, revision: item.revision })) }
+          : {},
+        record.revision,
+      );
+      state.project = null;
+      state.page = record.kind === "list" ? "lists" : "projects";
+      render();
+    },
+    "Delete " + record.kind,
+  );
+}
 async function collectionEditor(kind, record, defaults = {}) {
   const d = record?.data || defaults,
     isList = kind === "list",
@@ -150,23 +204,6 @@ async function collectionEditor(kind, record, defaults = {}) {
           },
         ]
       : []),
-    ...(record
-      ? [
-          {
-            key: "action",
-            label: "Action",
-            options: [
-              ["save", "Save changes"],
-              ["delete", "Delete empty " + kind],
-            ],
-          },
-          {
-            key: "confirmation",
-            label: "For deletion, type DELETE",
-            required: false,
-          },
-        ]
-      : []),
   ];
   await formDialog(
     record ? "Edit " + kind : "New " + kind,
@@ -175,15 +212,6 @@ async function collectionEditor(kind, record, defaults = {}) {
       : "An outcome with its own tasks and context.",
     fields,
     async (v) => {
-      if (v.action === "delete") {
-        if (v.confirmation !== "DELETE")
-          throw Error("Type DELETE to remove this " + kind + ".");
-        await mutate(kind + ".delete", record.id, {}, record.revision);
-        state.project = null;
-        state.page = isList ? "lists" : "projects";
-        render();
-        return;
-      }
       const data = {
         title: v.title,
         category: v.category,
@@ -266,28 +294,12 @@ async function collectionEditor(kind, record, defaults = {}) {
         arrange();
       }
       if (record) {
-        for (const key of ["action", "confirmation"])
-          nodes[key].hidden = nodes[key].previousElementSibling.hidden = true;
-        const remove = button(
-          "Delete " + kind + "…",
-          () => {
-            const deleting = nodes.action.value !== "delete";
-            nodes.action.value = deleting ? "delete" : "save";
-            nodes.confirmation.hidden =
-              nodes.confirmation.previousElementSibling.hidden = !deleting;
-            $("#dialog-submit").textContent = deleting
-              ? "Delete " + kind
-              : "Save changes";
-            remove.textContent = deleting
-              ? "Keep " + kind
-              : "Delete " + kind + "…";
-            if (deleting) nodes.confirmation.focus();
-          },
-          "danger",
-        );
-        remove.disabled = state.snapshot.records.some(
-          (t) => t.id !== record.id && t.data.project_id === record.id,
-        );
+        const remove = button("Delete " + kind + "…", () => {
+          if (state.dismissDialog) state.dismissDialog();
+          deleteCollection(record).catch((e) => {
+            if (e?.name !== "DialogCanceled") notice(e.message);
+          });
+        }, "danger");
         $("#dialog-body").append(remove);
       }
     },
@@ -417,9 +429,11 @@ function renderCollections(root) {
         el(
           "span",
           "item-sub",
-          records("task").filter(
-            (t) => t.data.project_id === c.id && t.data.status !== "done",
-          ).length + (c.kind === "list" ? " unchecked items" : " open tasks"),
+          c.kind === "project" && c.data.status === "archived"
+            ? "Finished project · retained"
+            : records("task").filter(
+                (t) => t.data.project_id === c.id && t.data.status !== "done",
+              ).length + (c.kind === "list" ? " unchecked items" : " unfinished direct tasks"),
         ),
         el("span", "muted", c.data.notes || ""),
       );
