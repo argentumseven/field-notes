@@ -46,7 +46,8 @@ The library shows project progress before you open one.
 **Put on hold** keeps all work and dates but prevents new working claims and
 removes its work from Focus. Release or finish active work first. Tasks can
 still be edited, moved or completed. **Finish project** requires all work tasks
-to be done; open reference/checklist entries do not block it. **Reopen project**
+to be done; open reference/checklist entries do not block it. The server records
+when the project was finished and who finished it. **Reopen project**
 lets you add or reopen work again without reopening completed tasks automatically.
 Concurrent edits are checked together by the server. A rejected offline action
 stays available for review rather than silently changing the grouping.
@@ -54,9 +55,18 @@ stays available for review rather than silently changing the grouping.
 ## Keep continuity
 
 Moving a task or list updates its parent, not its identity. Comments, attachments
-and task history follow the original record. Deleting a nonempty collection is
-refused; move or explicitly delete its contents first. A task cannot steal
-another person's working claim by moving it.
+and task history follow the original record. **Finish project** preserves a
+completed project in the Finished and All projects views; it does not delete
+anything. A newly created empty project may be deleted without first finishing
+it. The **Delete** action is available in project/list settings regardless of
+the status. For a populated project, select either **Keep tasks and lists** to
+move direct tasks into Inbox and detach lists with their content intact, or
+**Delete project and contents** to remove nested lists, tasks, comments and
+images from active content. Lists offer explicit removal of their contents too.
+Deletion requires typing DELETE and verifies every descendant revision so work
+added or edited after confirmation is never removed silently. Saved history,
+recovery versions and backups have separate retention/purge rules. A task cannot
+steal another person's working claim by moving it.
 
 Inside an open project, **Add existing task** moves an existing task or list item
 into that project as direct work. The picker shows its current location; Android
