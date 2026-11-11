@@ -126,7 +126,7 @@ import org.fieldnotes.domain.*
     if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={
         Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Text(if(deleteSelection.isEmpty())"This empty $kind will be removed from active content. It does not need to be finished first."
-                else "This $kind contains ${deleteSelection.size} linked records captured when Delete was chosen. Choose whether to preserve or remove its contents.")
+                else "This $kind contains ${deleteSelection.size} linked records captured when Delete was chosen. Confirming removes the collection and all its linked content from active data.")
             if(deleteSelection.isNotEmpty())Text("All linked tasks, lists, comments and attachments will be removed from active content. To preserve them, cancel and use Unbundle project instead.")
             Text("History, retained versions and backups are governed by separate retention settings.",style=MaterialTheme.typography.bodySmall)
             OutlinedTextField(deleteProof,{deleteProof=it},label={Text("Type DELETE to confirm")},singleLine=true)
