@@ -1,8 +1,8 @@
 use super::*;
 
 impl Store {
-    pub(super) fn planning(data: &Value, record: &mut Record) -> Result<()> {
-        Self::category(data, record)?;
+    pub(super) fn planning(&self, data: &Value, record: &mut Record) -> Result<()> {
+        self.category(data, record)?;
         for (field, default, min, max) in [("priority", 3, 1, 4), ("estimate_minutes", 0, 0, 480)] {
             let value = match data.get(field) {
                 Some(v) => v
@@ -154,7 +154,7 @@ impl Store {
             record.data["end_date"] = json!("");
         }
         Self::reminders(data, record)?;
-        Self::category(data, record)?;
+        self.category(data, record)?;
         Self::recurrence(data, record)?;
         self.reminder_options(data, record, actor)?;
         record.data["title"] = json!(title);
