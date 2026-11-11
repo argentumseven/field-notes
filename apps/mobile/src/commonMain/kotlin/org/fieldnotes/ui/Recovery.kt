@@ -70,6 +70,10 @@ import org.fieldnotes.domain.*
                     item {Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         Text(if(plan.checkpoint)"${plan.restored} restored · ${plan.changed} changed · ${plan.removed} removed" else "Complete item version #${plan.source_index}",style=MaterialTheme.typography.titleMedium)
                         Text("Current state is saved first. Later versions remain available. Working claims are cleared.",style=MaterialTheme.typography.bodySmall)
+                        plan.hierarchy?.let {h->
+                            Text("Linked content: ${h.linked_existing} existing records retained in place, ${h.missing} deleted records.",style=MaterialTheme.typography.bodyMedium)
+                            Text(if(h.mode=="respawn")"${h.respawned} deleted linked records will be restored with their original IDs. Live descendants and their edits are not replaced." else "Deleted linked contents remain deleted. Use the separate option to restore missing contents.",style=MaterialTheme.typography.bodySmall)
+                        }
                         if(plan.checkpoint)Text("Replaces household content. Accounts, pairing and security settings stay current. Unsynchronized edits from the earlier state are retained for review instead of uploaded automatically.")
                     }}
                     plan.item_state?.let { pair->item {ItemStatePanel(pair,plan.source_index,zone,use24Hour)} }
@@ -91,7 +95,7 @@ import org.fieldnotes.domain.*
                     }}
                 }else {
                     item {Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text(if(target==null)"Save household content, comments and attached images together. Checkpoints do not contain accounts or security settings." else "Each version is one complete item state. Task versions include comments and attachments. Project and list versions restore the collection’s own details; current tasks stay as they are. Use a content checkpoint to restore all household content together. Later states stay available.")
+                        Text(if(target==null)"Save household content, comments and attached images together. Checkpoints do not contain accounts or security settings." else "Task versions include comments and attachments. Project and list versions keep existing linked records. When supported, you can explicitly restore missing descendants without duplicating live records. A content checkpoint restores the entire household snapshot. Later states stay available.")
                         if(target==null&&actor?.role in setOf("owner","admin")){
                             OutlinedTextField(name,{name=it.take(120)},label={Text("Checkpoint name")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                             Button(shape=ControlShape,onClick={run{model.createCheckpoint(name);name="";done="Content checkpoint saved.";load()}},enabled=!busy&&name.isNotBlank()&&state.cache.recoveryPending==null){Text("Save content checkpoint")}
@@ -104,7 +108,12 @@ import org.fieldnotes.domain.*
                         Text("${entry.actor_name} · ${historyMoment(entry.at,zone,use24Hour)}",style=MaterialTheme.typography.bodySmall)
                         Text(if(target==null)"${entry.records} items · ${entry.images} images" else "Complete item state",style=MaterialTheme.typography.labelMedium)
                         if(entry.problem.isNotBlank())Text(entry.problem,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
-                        if(entry.can_restore)SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text("Preview restore")}
+                        if(entry.can_restore){
+                            val hierarchy=target!=null&&entry.kind in setOf("project","list")&&!entry.deleted&&state.cache.supportsHierarchyRecovery()
+                            SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text(if(hierarchy)"Preview restore · keep existing links" else "Preview restore")}
+                            if(hierarchy&&actor?.role in setOf("owner","admin"))
+                                SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j(),"hierarchy_mode" to "respawn".j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text("Preview restore + missing contents")}
+                        }
                         if(target==null&&entry.can_delete)SecondaryButton(onClick={problem="";deleting=entry},enabled=!busy&&state.cache.recoveryPending==null){Text("Delete checkpoint")}
                     }}}
                     if(page?.more==true)item {SecondaryButton(onClick={run{load(true)}},enabled=!busy){Text("Load older versions")}}
@@ -116,7 +125,7 @@ import org.fieldnotes.domain.*
     val plan=preview
     if(confirming&&plan!=null)RecoveryConfirmDialog(
         title=if(plan.checkpoint)"Restore content checkpoint" else "Restore item version",
-        description="Restore #${plan.source_index} · ${plan.title}: ${plan.restored} restored, ${plan.changed} changed, ${plan.removed} removed. "+(if(plan.checkpoint)"This replaces household content and affects everyone. " else "This replaces the complete item state, comments and attachments. ")+"Current state is saved first. Working claims are cleared.",
+        description="Restore #${plan.source_index} · ${plan.title}: ${plan.restored} restored, ${plan.changed} changed, ${plan.removed} removed. "+(if(plan.checkpoint)"This replaces household content and affects everyone. " else plan.hierarchy?.let{if(it.mode=="respawn")"Missing linked records are restored with the original IDs; current linked records are kept. " else "Current linked records stay unchanged; missing contents remain deleted. "} ?: "This replaces the complete item state, comments and attachments. ")+"Current state is saved first. Working claims are cleared.",
         phrase=plan.confirmation_phrase,acknowledgement="I reviewed the selected state and restore impact, including removals.",busy=busy,problem=problem,
         enabled=state.cache.recoveryPending==null,onDismiss={if(!busy)confirming=false},
         onConfirm={confirmation,password->run {
