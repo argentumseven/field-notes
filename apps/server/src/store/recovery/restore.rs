@@ -639,13 +639,33 @@ impl Store {
         }
     }
     pub(super) fn recovery_preview(&self, actor: &Actor, body: &Value) -> Result<Value> {
-        fields(body, &["action", "epoch", "generation", "source"])?;
+        fields(body, &["action", "epoch", "generation", "source", "hierarchy_mode"])?;
         let sid = text(body, "source", 36)?;
         let (kind, source_digest, index, saved) = self.recovery_source(&sid)?;
         let checkpoint = kind == "checkpoint";
-        let current = self.recovery_current(saved.content.root.as_deref())?;
-        self.recovery_authorize(actor, checkpoint, &saved.content, &current)?;
-        let desired = self.recovery_desired(&saved.content, &current)?;
+        let collection = !checkpoint && saved.content.root.as_ref().is_some_and(|target|
+            saved.content.records.iter().any(|row|
+                row.record.id == *target &&
+                !row.deleted &&
+                matches!(row.record.kind.as_str(), "project" | "list")
+            )
+        );
+        let hierarchy_mode = match body.get("hierarchy_mode").and_then(Value::as_str) {
+            None | Some("") | Some("bindings") => if collection { "bindings" } else { "" },
+            Some("respawn") if collection => "respawn",
+            _ => return fail(400, "Hierarchy recovery is available only for saved live projects or lists"),
+        };
+        if hierarchy_mode == "respawn" && !actor.admin() {
+            return fail(403, "Administrator authorization is required to restore missing linked records");
+        }
+        let (current, selected, hierarchy) = if hierarchy_mode.is_empty() {
+            (self.recovery_current(saved.content.root.as_deref())?, saved.content.clone(), Value::Null)
+        } else {
+            let (current, selected, summary) = self.recovery_hierarchy(&saved.content, hierarchy_mode)?;
+            (current, selected, summary)
+        };
+        self.recovery_authorize(actor, checkpoint, &selected, &current)?;
+        let desired = self.recovery_desired(&selected, &current)?;
         let changes = self.recovery_changes(&current, &desired, checkpoint)?;
         let plan = RestorePlan {
             epoch: self.meta()?.0,
@@ -657,6 +677,8 @@ impl Store {
             current_digest: Self::recovery_state_digest(&current)?,
             directory_digest: self.recovery_directory_digest()?,
             policy_revision: self.recovery_revision()?,
+            hierarchy_mode: hierarchy_mode.to_owned(),
+            desired_digest: Self::recovery_state_digest(&desired)?,
         };
         let count: i64 = self
             .db
@@ -690,7 +712,7 @@ impl Store {
             if checkpoint { "CHECKPOINT" } else { "ITEM" }
         );
         Ok(
-            json!({"preview_id":preview,"expires_at":expires,"epoch":plan.epoch,"generation":plan.generation,"source":sid,"source_index":index,"title":saved.name,"checkpoint":checkpoint,"reauth_required":true,"confirmation_phrase":confirmation,"change_count":count,"restored":changes.iter().filter(|c|c["action"]=="restore").count(),"removed":changes.iter().filter(|c|c["action"]=="remove").count(),"changed":changes.iter().filter(|c|c["action"]=="change").count(),"changes":changes.into_iter().take(50).collect::<Vec<_>>(),"preview_limited":count>50,"saves_current_state":true,"clears_claims":true,"fences_offline_writes":checkpoint,"item_state":item_state}),
+            json!({"preview_id":preview,"expires_at":expires,"epoch":plan.epoch,"generation":plan.generation,"source":sid,"source_index":index,"title":saved.name,"checkpoint":checkpoint,"reauth_required":true,"confirmation_phrase":confirmation,"change_count":count,"restored":changes.iter().filter(|c|c["action"]=="restore").count(),"removed":changes.iter().filter(|c|c["action"]=="remove").count(),"changed":changes.iter().filter(|c|c["action"]=="change").count(),"changes":changes.into_iter().take(50).collect::<Vec<_>>(),"preview_limited":count>50,"saves_current_state":true,"clears_claims":true,"fences_offline_writes":checkpoint,"item_state":item_state,"hierarchy":hierarchy}),
         )
     }
     pub(super) fn recovery_receipt(
@@ -857,14 +879,30 @@ impl Store {
         if source_digest != plan.source_digest {
             return fail(409, "Saved source changed; make a new preview");
         }
-        let current = self.recovery_current(plan.target.as_deref())?;
-        self.recovery_authorize(actor, plan.checkpoint, &saved.content, &current)?;
+        let (current, selected) = if plan.hierarchy_mode.is_empty() {
+            (self.recovery_current(plan.target.as_deref())?, saved.content.clone())
+        } else {
+            if !matches!(plan.hierarchy_mode.as_str(), "bindings" | "respawn") {
+                return fail(409, "Invalid saved hierarchy choice; review a new preview");
+            }
+            if plan.hierarchy_mode == "respawn" && !actor.admin() {
+                return fail(403, "Administrator authorization required for recovering missing contents");
+            }
+            let (current, selected, _) = self.recovery_hierarchy(&saved.content, &plan.hierarchy_mode)?;
+            (current, selected)
+        };
+        self.recovery_authorize(actor, plan.checkpoint, &selected, &current)?;
         if Self::recovery_state_digest(&current)? != plan.current_digest
             || self.recovery_directory_digest()? != plan.directory_digest
         {
             return fail(409,"Content or people changed after this preview. No restore was applied; review a new preview");
         }
-        let desired = self.recovery_desired(&saved.content, &current)?;
+        let desired = self.recovery_desired(&selected, &current)?;
+        if !plan.desired_digest.is_empty()
+            && Self::recovery_state_digest(&desired)? != plan.desired_digest
+        {
+            return fail(409, "Linked recovery sources changed; review a new preview");
+        }
         let changes = self.recovery_changes(&current, &desired, plan.checkpoint)?;
         let mut protected = BTreeSet::from([plan.source.clone()]);
         let before_checkpoint = if plan.checkpoint && !changes.is_empty() {
