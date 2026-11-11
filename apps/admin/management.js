@@ -87,6 +87,62 @@ async function resetUserPassword(user) {
   );
 }
 
+// Category definitions never own content. All destructive operations require
+// an exact, revision-fenced review and do not delete assigned records.
+async function categoryAdminAction(payload) {
+  await reauthenticate();
+  await api("/admin",payload);
+  await refresh();
+  await renderAdmin();
+}
+function renderCategoryAdmin() {
+  const panel = el("section","panel");
+  panel.append(el("h2","","Household categories"),
+    el("p","muted","Categories describe work; they do not contain tasks. Renaming or archiving preserves record IDs, dates, notes, history and assignments. Manage custom categories here; built-in categories remain available."));
+  const categories=state.snapshot?.categories || [];
+  const allRecords=(state.snapshot?.records || []).filter(r=>["task","list","project","note","event"].includes(r.kind));
+  const members=(c)=>allRecords.filter(r=>r.data.category==="custom:"+c.id);
+  panel.append(button("New category",()=>formDialog("New household category",
+    "A new category becomes available to everyone after sync.",
+    [{key:"name",label:"Category name",max:80}],
+    v=>categoryAdminAction({action:"category.create",target:uuid(),name:v.name}),
+    "Create category").catch(e=>{if(e?.name!=="DialogCanceled")notice(e.message)})));
+  for(const c of categories) {
+    const used=members(c),line=el("section","history-entry");
+    line.append(el("h3","",c.name+(c.archived?" · archived":"")),
+      el("p","muted",used.length+" directly assigned records. Archiving hides the category for new assignments but leaves existing records unchanged."));
+    const buttons=el("div","history-actions");
+    buttons.append(button("Rename",()=>formDialog("Rename "+c.name,
+      "Changes only the category label; original IDs and assignments are retained.",
+      [{key:"name",label:"New name",value:c.name,max:80}],
+      v=>categoryAdminAction({action:"category.rename",target:c.id,revision:c.revision,name:v.name}),
+      "Rename category").catch(e=>{if(e?.name!=="DialogCanceled")notice(e.message)})));
+    buttons.append(button(c.archived?"Unarchive":"Archive",()=>categoryAdminAction({
+      action:c.archived?"category.reopen":"category.archive",target:c.id,revision:c.revision,
+    }).catch(e=>notice(e.message))));
+    buttons.append(button("Merge / reassign",()=>formDialog("Merge "+c.name,
+      "Move only the "+used.length+" reviewed direct category assignments to a different category, preserving every record and its content. The old category is archived afterward. A concurrent change cancels the entire operation.",
+      [{key:"into",label:"Destination category",options:allCategoryChoices().filter(([key])=>key!=="custom:"+c.id)},
+       {key:"confirmation",label:"Type MERGE CATEGORY"}],
+      async v=>{
+        if(v.confirmation!=="MERGE CATEGORY")throw Error("Type MERGE CATEGORY");
+        await categoryAdminAction({action:"category.merge",target:c.id,revision:c.revision,into:v.into,
+          contents:used.map(r=>({id:r.id,revision:r.revision})),confirmation:v.confirmation});
+      },"Merge categories").catch(e=>{if(e?.name!=="DialogCanceled")notice(e.message)})));
+    const remove=button("Delete unused",()=>formDialog("Delete unused category",
+      "This deletes only the category definition; no tasks, lists, projects, notes or calendar events can be removed through this action.",
+      [{key:"confirmation",label:"Type DELETE CATEGORY"}],
+      async v=>{
+        if(v.confirmation!=="DELETE CATEGORY")throw Error("Type DELETE CATEGORY");
+        await categoryAdminAction({action:"category.delete",target:c.id,revision:c.revision,confirmation:v.confirmation});
+      },"Delete category").catch(e=>{if(e?.name!=="DialogCanceled")notice(e.message)}),"danger");
+    remove.disabled=used.length>0;
+    buttons.append(remove);
+    line.append(buttons);
+    panel.append(line);
+  }
+  return panel;
+}
 async function renderAdmin() {
   const previousRoot = $(".admin-grid");
   if (!previousRoot) return;
@@ -107,6 +163,7 @@ async function renderAdmin() {
     button("Check time again", checkClock),
   );
   root.append(clockPanel);
+  root.append(renderCategoryAdmin());
   async function checkClock() {
     try {
       const head = await api("/head");
