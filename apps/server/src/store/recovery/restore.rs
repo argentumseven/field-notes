@@ -15,6 +15,8 @@ struct RestorePlan {
     hierarchy_mode: String,
     #[serde(default)]
     desired_digest: String,
+    #[serde(default)]
+    source_at: i64,
 }
 
 impl Store {
@@ -272,6 +274,7 @@ impl Store {
         &self,
         saved: &ContentState,
         mode: &str,
+        source_at: i64,
     ) -> Result<(ContentState, ContentState, Value)> {
         let root = saved.root.as_deref().ok_or(Fault(400, "A collection identity is required".into()))?;
         let mut current = self.recovery_current(Some(root))?;
@@ -297,6 +300,31 @@ impl Store {
                     .ok_or(Fault(409, "A linked record disappeared; review the restore again".into()))?;
                 if !matches!(row.record.kind.as_str(), "list" | "task" | "image" | "comment") {
                     return fail(409, "Collection has an unsupported linked record");
+                }
+                if row.deleted {
+                    // Only an item that existed when this specific version was
+                    // captured can belong to its restored hierarchy.
+                    if row.record.data["created_at"].as_i64().is_some_and(|at| at > source_at) {
+                        continue;
+                    }
+                    let deleted_at = if let Some(at) = row.record.data["deleted_at"].as_i64() {
+                        Some(at)
+                    } else {
+                        self.db.query_row(
+                            "SELECT MAX(at) FROM events WHERE object_id=? AND action=?",
+                            params![id, format!("{}.delete", row.record.kind)],
+                            |r| r.get::<_, Option<i64>>(0),
+                        )?
+                    };
+                    if deleted_at.is_some_and(|at| at < source_at) {
+                        continue;
+                    }
+                    if deleted_at.is_none() {
+                        if mode == "respawn" {
+                            return fail(409, "A deleted member has no verifiable deletion time. Use bindings-only recovery or a reviewed checkpoint");
+                        }
+                        continue;
+                    }
                 }
                 let parent_field = if matches!(row.record.kind.as_str(), "task" | "list") {
                     "project_id"
@@ -665,6 +693,11 @@ impl Store {
         fields(body, &["action", "epoch", "generation", "source", "hierarchy_mode"])?;
         let sid = text(body, "source", 36)?;
         let (kind, source_digest, index, saved) = self.recovery_source(&sid)?;
+        let source_at: i64 = self.db.query_row(
+            "SELECT at FROM recovery_snapshots WHERE id=? AND lineage=?",
+            params![sid, self.recovery_lineage()?],
+            |r| r.get(0),
+        )?;
         let checkpoint = kind == "checkpoint";
         let collection = !checkpoint && saved.content.root.as_ref().is_some_and(|target|
             saved.content.records.iter().any(|row|
@@ -687,7 +720,7 @@ impl Store {
         let (current, selected, hierarchy) = if hierarchy_mode.is_empty() {
             (self.recovery_current(saved.content.root.as_deref())?, saved.content.clone(), Value::Null)
         } else {
-            let (current, selected, summary) = self.recovery_hierarchy(&saved.content, hierarchy_mode)?;
+            let (current, selected, summary) = self.recovery_hierarchy(&saved.content, hierarchy_mode, source_at)?;
             (current, selected, summary)
         };
         self.recovery_authorize(actor, checkpoint, &selected, &current)?;
@@ -705,6 +738,7 @@ impl Store {
             policy_revision: self.recovery_revision()?,
             hierarchy_mode: hierarchy_mode.to_owned(),
             desired_digest: Self::recovery_state_digest(&desired)?,
+            source_at,
         };
         let count: i64 = self
             .db
@@ -914,7 +948,7 @@ impl Store {
             if plan.hierarchy_mode == "respawn" && !actor.admin() {
                 return fail(403, "Administrator authorization required for recovering missing contents");
             }
-            let (current, selected, _) = self.recovery_hierarchy(&saved.content, &plan.hierarchy_mode)?;
+            let (current, selected, _) = self.recovery_hierarchy(&saved.content, &plan.hierarchy_mode, plan.source_at)?;
             (current, selected)
         };
         self.recovery_authorize(actor, plan.checkpoint, &selected, &current)?;
