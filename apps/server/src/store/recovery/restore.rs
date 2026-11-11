@@ -397,12 +397,19 @@ impl Store {
             }
         }
         for target in sources {
-            let snapshots = self.db.prepare(
-                "SELECT id,data FROM recovery_snapshots WHERE lineage=? AND kind='version' AND target=? ORDER BY version_index DESC LIMIT 64"
+            // IDs first, then decrypt one version at a time. Reading 64
+            // large encrypted states into a Vec could exceed server RAM.
+            let snapshot_ids = self.db.prepare(
+                "SELECT id FROM recovery_snapshots WHERE lineage=? AND kind='version' AND target=? ORDER BY version_index DESC LIMIT 64"
             )?.query_map(params![self.recovery_lineage()?, target], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
+                r.get::<_, String>(0)
             })?.collect::<std::result::Result<Vec<_>, _>>()?;
-            for (snapshot_id, bytes) in snapshots {
+            for snapshot_id in snapshot_ids {
+                let bytes: Vec<u8> = self.db.query_row(
+                    "SELECT data FROM recovery_snapshots WHERE id=?",
+                    [&snapshot_id],
+                    |r| r.get(0),
+                )?;
                 let state = self.recovery_decode(&snapshot_id, &bytes)?;
                 if let Some(candidate) = state.content.records.iter().find(|r| {
                     !r.deleted && r.record.id == *id &&
