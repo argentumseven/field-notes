@@ -1602,3 +1602,27 @@ test("deleted project can restore original descendants from a time-anchored pre-
     assert.equal(rows.find(r=>r.id===other.id).data.title,"Outside project");
   } finally {await s.close();}
 });
+
+
+test("hierarchy respawn excludes records deleted before the selected collection version", async () => {
+  const s=await scene();
+  try {
+    const project=(await s.send("project.create",randomUUID(),{title:"Time-scoped restore"})).data.record;
+    const old=(await s.send("task.create",randomUUID(),{title:"Intentionally removed earlier",project_id:project.id})).data.record;
+    assert.equal((await s.send("task.delete",old.id,{},old.revision)).status,200);
+    // Ensure the deleted item predates the future collection version even
+    // on a filesystem/server recording timestamps in whole seconds.
+    await new Promise(resolve=>setTimeout(resolve,1250));
+    const recent=(await s.send("task.create",randomUUID(),{title:"In project when deleted",project_id:project.id})).data.record;
+    assert.equal((await s.send("project.delete",project.id,{mode:"cascade",contents:[{id:recent.id,revision:recent.revision}]},project.revision)).status,200);
+    const source=(await s.versions(project.id)).find(e=>e.action==="collection.delete.before");
+    assert(source);
+    const preview=await s.recover("preview",{source:source.id,hierarchy_mode:"respawn"});
+    assert.equal(preview.status,200,JSON.stringify(preview.data));
+    assert.equal(preview.data.hierarchy.respawned,1,"only the historically linked task is recovered");
+    assert.equal((await s.apply(s.applyBody(preview.data))).status,200);
+    const rows=(await s.snapshot()).records;
+    assert.equal(rows.filter(r=>r.id===recent.id).length,1);
+    assert.equal(rows.some(r=>r.id===old.id),false,"older intentional deletion remains deleted");
+  } finally {await s.close();}
+});
