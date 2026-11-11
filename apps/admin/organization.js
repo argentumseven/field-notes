@@ -374,7 +374,7 @@ function renderNotes(root) {
   };
   choice(
     "Category",
-    [["*", "All categories"], ...Object.entries(recordCategories)],
+    [["*", "All categories"], ...categoryFilterChoices()],
     view.category || "*",
     (value) => (view.category = value === "*" ? "" : value),
   );
