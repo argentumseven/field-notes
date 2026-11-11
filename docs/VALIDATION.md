@@ -1,5 +1,14 @@
 # Implementation and validation record
 
+## 0.11.6 category workflows and safe portable recovery — 2026-11-11
+
+Version 0.11.6/code 25 delivers custom household categories, revision-fenced
+non-destructive work-list unbundling, explicit list conversion review and the
+follow-up import/calendar fixes described below. Archive version 3 preserves
+custom metadata with administrator password proof for missing definitions.
+The stable public APK signer, protocol 1, schema 2 and pairing identities remain
+unchanged. Public artifact verification is recorded after publication.
+
 ## Custom categories and organization workflows — separate development branch
 
 Branch: `feature/category-and-organization-workflows-2026-11-11`

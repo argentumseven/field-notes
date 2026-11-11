@@ -10,7 +10,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.11.5.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.11.6.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
