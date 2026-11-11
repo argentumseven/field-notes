@@ -82,7 +82,12 @@ using complete retained versions and original parent bindings. Living descendant
 are never overwritten or duplicated, and no names are used as identities.
 Missing saved versions, different parent identities, unavailable images, stale
 preview revisions or invalid hierarchy structures fail visibly instead of
-silently rebuilding only part of the collection. A deliberately moved, now
+silently rebuilding only part of the collection. Respawn candidates must have
+existed at the selected version's time; earlier deliberate deletions are not
+silently resurrected. For populated collection deletions, the server captures
+a fresh pre-delete version when automatic version retention is enabled.
+Clients without the new hierarchy recovery feature retain their previous
+single-item restore behavior. A deliberately moved, now
 standalone item is not silently moved back into a project. Versions never
 promise to reconstruct information already expired under retention rules.
 For coordinated recovery of an entire household beyond the original links,
