@@ -66,6 +66,21 @@ impl Store {
     }
     pub(in crate::store) fn recovery_usage(&self) -> Result<Value> {
         let (versions,checkpoints,metadata):(i64,i64,i64)=self.db.query_row("SELECT COALESCE(SUM(kind='version'),0),COALESCE(SUM(kind='checkpoint'),0),COALESCE(SUM(length(data)),0) FROM recovery_snapshots",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+        let (version_metadata_bytes, checkpoint_metadata_bytes): (i64, i64) = self.db.query_row(
+            "SELECT COALESCE(SUM(CASE WHEN kind='version' THEN length(data) ELSE 0 END),0),COALESCE(SUM(CASE WHEN kind='checkpoint' THEN length(data) ELSE 0 END),0) FROM recovery_snapshots",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let trash_records: i64 = self.db.query_row(
+            "SELECT COUNT(*) FROM objects WHERE deleted=1 AND kind IN ('project','list','task','note','event')",
+            [],
+            |row| row.get(0),
+        )?;
+        let trash_recoverable_records: i64 = self.db.query_row(
+            "SELECT COUNT(*) FROM objects o WHERE o.deleted=1 AND o.kind IN ('project','list','task','note','event') AND EXISTS(SELECT 1 FROM recovery_snapshots s WHERE s.lineage=(SELECT lineage FROM recovery_settings WHERE id=1) AND s.kind='version' AND s.target=o.id)",
+            [],
+            |row| row.get(0),
+        )?;
         let blob_bytes: i64 = self.db.query_row(
             "SELECT COALESCE(SUM(length(bytes)),0) FROM recovery_blobs",
             [],
@@ -83,7 +98,7 @@ impl Store {
                 .query_row("PRAGMA freelist_count", [], |r| r.get(0))?,
         );
         Ok(
-            json!({"versions":versions,"checkpoints":checkpoints,"snapshot_bytes":metadata,"image_bytes":blob_bytes,"recovery_bytes":metadata+blob_bytes,"history_bytes":history_bytes,"database_allocated_bytes":pages*page_size,"database_reusable_bytes":free*page_size}),
+            json!({"versions":versions,"checkpoints":checkpoints,"snapshot_bytes":metadata,"version_metadata_bytes":version_metadata_bytes,"checkpoint_metadata_bytes":checkpoint_metadata_bytes,"image_bytes":blob_bytes,"recovery_bytes":metadata+blob_bytes,"history_bytes":history_bytes,"trash_records":trash_records,"trash_recoverable_records":trash_recoverable_records,"database_allocated_bytes":pages*page_size,"database_reusable_bytes":free*page_size}),
         )
     }
     pub(super) fn recovery_gc_blobs(&self) -> Result<()> {
