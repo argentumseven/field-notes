@@ -29,5 +29,5 @@ class ProjectGraph(val rows:List<Record>) {
     }
 }
 @kotlinx.serialization.Serializable data class ProjectRollup(val total:Int,val done:Int,val open:Int,val working:Int,val waiting:Int,val ready:Int,val later:Int,val overdue:Int,val unassigned:Int,val undated:Int,val remaining_minutes:Long,val unestimated:Int,val after_target:Int,val activity:Long)
-fun projectStateLabel(project:Record,stats:ProjectRollup)=when{project.data.text("status")=="archived"->"Finished";project.data.text("status")=="on_hold"->"On hold";stats.total==0->"Planning";stats.open==0->"Work complete";stats.working>0->"In progress";stats.ready>0->"Ready";stats.waiting>0->"Waiting";else->"Scheduled"}
+fun projectStateLabel(project:Record,stats:ProjectRollup)=when{project.data.text("status")=="archived"->"Finished";project.data.text("status")=="on_hold"->"On hold";stats.total==0->"Planning";stats.open==0->"Ready to finish";stats.working>0->"In progress";stats.ready>0->"Ready";stats.waiting>0->"Waiting";else->"Scheduled"}
 fun Cache.projectGraph()=ProjectGraph(projectRecords(this).map {it.record})
