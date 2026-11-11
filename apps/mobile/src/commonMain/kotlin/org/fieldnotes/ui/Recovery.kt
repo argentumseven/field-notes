@@ -200,3 +200,58 @@ import org.fieldnotes.domain.*
         if(details&&change.total_fields>change.changes.size)Text("${change.changes.size} of ${change.total_fields} changed fields shown.",style=MaterialTheme.typography.labelSmall)
     }}
 }
+
+/** Read-only view over server tombstones. This does not promise that every
+ * deleted item has a retained restorable version. All recovery goes through
+ * the existing fenced preview/password-confirmed restore workflow. */
+@Composable internal fun TrashSheet(model:Workspace,state:WorkspaceState,use24Hour:Boolean,onReview:(String,String)->Unit,close:()->Unit) {
+    val scope=rememberCoroutineScope()
+    val zone=TimeZone.currentSystemDefault()
+    val basis=state.cache.snapshot?.basis
+    var entries by remember(basis){mutableStateOf<List<JsonObject>>(emptyList())}
+    var before by remember(basis){mutableStateOf("")}
+    var more by remember(basis){mutableStateOf(false)}
+    var loaded by remember(basis){mutableStateOf(false)}
+    var busy by remember{mutableStateOf(false)}
+    var problem by remember{mutableStateOf("")}
+    suspend fun load(older:Boolean=false){
+        val response=model.recovery("trash",if(older&&before.isNotBlank())obj("before" to before.j()) else obj())
+        val items=(response["entries"] as? JsonArray).orEmpty().mapNotNull{it as? JsonObject}
+        entries=if(older)(entries+items).distinctBy{it.text("id")}else items
+        before=response.text("next_before")
+        more=(response["more"] as? JsonPrimitive)?.booleanOrNull==true
+        loaded=true
+    }
+    fun run(older:Boolean=false){
+        if(busy)return
+        scope.launch{busy=true;problem=""
+            try{load(older)}catch(e:Exception){if(e is CancellationException)throw e;problem=e.message?:"Trash could not load. Saved data is unchanged."}finally{busy=false}
+        }
+    }
+    LaunchedEffect(basis){run()}
+    ModalBottomSheet(onDismissRequest={if(!busy)close()},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
+        Column(Modifier.fillMaxWidth().heightIn(max=760.dp).imePadding()){
+            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                Text("Trash · deleted items",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
+                SecondaryButton(onClick=close,enabled=!busy){Text("Close")}
+            }
+            HorizontalDivider()
+            VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                item{Text("Deleted items are outside active views. Recoverability depends on saved versions, server limits and independent backups; no fixed Trash lifetime is promised.",style=MaterialTheme.typography.bodySmall)}
+                if(busy)item{LinearProgressIndicator(Modifier.fillMaxWidth())}
+                if(problem.isNotBlank())item{Text(problem,color=MaterialTheme.colorScheme.error)}
+                if(loaded&&entries.isEmpty())item{Text("No deleted items recorded.")}
+                items(entries,key={it.text("id")}){entry->OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text(entry.text("title","Item"),style=MaterialTheme.typography.titleMedium)
+                    val removed=entry.number("deleted_at")
+                    Text(entry.text("kind")+" · "+(if(removed>0)historyMoment(removed,zone,use24Hour) else "Deletion date unavailable"),style=MaterialTheme.typography.bodySmall)
+                    if((entry["recoverable"] as? JsonPrimitive)?.booleanOrNull==true)
+                        SecondaryButton(onClick={onReview(entry.text("id"),entry.text("title","Item"))}){Text("Review saved versions")}
+                    else Text("No retained item version is available. A checkpoint or independent backup may still contain this item.",style=MaterialTheme.typography.bodySmall)
+                }}}
+                if(more)item{SecondaryButton(onClick={run(true)},enabled=!busy){Text("Load more deleted items")}}
+                item{SecondaryButton(onClick={run()},enabled=!busy){Text("Refresh Trash")}}
+            }
+        }
+    }
+}
