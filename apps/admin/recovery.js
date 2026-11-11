@@ -370,9 +370,9 @@ const FieldRecovery = (() => {
     }
     parent.append(card);
   }
-  async function preview(source, title, hierarchyMode = "bindings") {
+  async function preview(source, title, hierarchyMode = "") {
     const live = scope();
-    const plan = await read("preview", { source, ...(hierarchyMode === "respawn" ? { hierarchy_mode: "respawn" } : {}) }, live);
+    const plan = await read("preview", { source, ...(hierarchyMode ? { hierarchy_mode: hierarchyMode } : {}) }, live);
     const d = modal("Restore preview · " + title);
     d.body.append(
       el(
@@ -595,7 +595,7 @@ const FieldRecovery = (() => {
         if (item.can_restore) {
           const isCollection = target && ["project", "list"].includes(item.kind) && !item.deleted;
           row.append(button(isCollection ? "Preview restore · reuse existing links" : "Preview restore", () =>
-            preview(item.id, target ? title : item.title),
+            preview(item.id, target ? title : item.title, isCollection ? "bindings" : ""),
           ));
           if (isCollection && isAdmin())
             row.append(button("Preview restore + missing contents", () =>
