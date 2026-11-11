@@ -107,3 +107,21 @@ test("Converting a work list to reference mode cannot strand an in-progress task
   assert.equal(rows.find(r=>r.id===list.id).data.items_are_tasks,false);
  }finally{await s.f.close();}
 });
+
+
+test("Custom category on calendar events cannot be silently replaced by an older editor",async()=>{
+ const s=await scene();
+ try{
+  const id=randomUUID(),key="custom:"+id;
+  assert.equal((await s.admin("category.create",{target:id,name:"Maintenance calendar"})).status,200);
+  const event=await s.ok("event.create",randomUUID(),{
+    title:"Service visit",category:key,all_day:true,
+    start_date:"2026-12-10",end_date:"2026-12-11"
+  });
+  assert.equal((await s.send("event.update",event.id,{category:"general"},event.revision)).status,409);
+  assert.equal((await s.snapshot()).records.find(r=>r.id===event.id).data.category,key);
+  const changed=await s.ok("event.update",event.id,{category:"general",category_override:true},event.revision);
+  assert.equal(changed.data.category,"general");
+  assert.equal(changed.data.category_override,undefined,"editor-only override must never become persistent content");
+ }finally{await s.f.close();}
+});
