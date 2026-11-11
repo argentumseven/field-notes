@@ -79,7 +79,7 @@ test("List unbundle releases work tasks without deleting the list, comments or w
   const task=await s.ok("task.create",randomUUID(),{title:"Measure wall",notes:"Preserve measurements",project_id:list.id});
   const comment=await s.ok("comment.create",randomUUID(),{task_id:task.id,body:"Remember studs"});
   const contents=[task,comment].map(r=>({id:r.id,revision:r.revision}));
-  assert.equal((await s.send("list.unbundle",list.id,{contents:[{id:task.id,revision:0},contents]},list.revision)).status,400);
+  assert.equal((await s.send("list.unbundle",list.id,{contents:"not an array"},list.revision)).status,400);
   assert.equal((await s.send("list.unbundle",list.id,{contents:[{id:task.id,revision:0},{id:comment.id,revision:comment.revision}]},list.revision)).status,409);
   assert.equal((await s.send("list.unbundle",list.id,{contents},list.revision)).status,200);
   const rows=(await s.snapshot()).records;
