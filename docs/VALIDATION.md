@@ -51,7 +51,21 @@ synthetic project/task/comment/note data. Login password, content and revisions
 were retained; fresh-directory restore changed epoch and revoked the old
 session. This validates the target backup image, not privileged recovery on a
 physical Debian host. Existing field-notes data, phone pairing and signing keys
-were not reset. Publication verification follows delivery of the tagged build.
+were not reset.
+
+Delivery verified: [v0.11.4](https://github.com/argentumseven/field-notes/releases/tag/v0.11.4)
+publishes source `aecbdf52e6eb23f404dab73503b03a01d30e7f05`, Android code 23,
+with the unchanged public signer. The actual APK SHA-256 is
+`8fc49283589fc95e40c48cfef2c1cecf80a9a9ba10b4427078200d67e4fc8a7f`.
+All four public download files match the clean tagged build byte-for-byte;
+actual APK signature/package/version/ARM64 verification passed after download.
+The latest-release URL resolves to the same 0.11.4/code-23 metadata.
+[Publication run 42964587162](https://github.com/argentumseven/field-notes/actions/runs/42964587162)
+succeeded. The default Linux server bundle build downloaded those public assets,
+retained them unchanged, and passed both immutable image-ID and archive-checksum
+verification. The home server and physical phone were not remotely modified
+or physically validated here; the documented recovery-upgrade command applies
+the verified newer release on the retained installation.
 
 ## 0.11.3 reminder audio and issue handling — 2026-11-09
 
