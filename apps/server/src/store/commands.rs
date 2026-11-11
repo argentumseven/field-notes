@@ -465,17 +465,10 @@ impl Store {
                         // identical-content dedup may leave only a project
                         // version created long before its tasks existed.
                         // Keep the snapshot under the existing retention policy.
-                        if !importing && self.recovery_policy()?.enabled {
-                            let content = self.recovery_content(Some(&c.target))?;
-                            let sid = self.recovery_save(
-                                &actor,
-                                "version",
-                                &c.target,
-                                (&Self::history_title(&record), "collection.delete.before"),
-                                &content,
-                                true,
-                            )?;
-                            recovery_protected.insert(sid);
+                        if !importing {
+                            if let Some(sid) = self.recovery_collection_before_delete(&actor, &c.target)? {
+                                recovery_protected.insert(sid);
+                            }
                         }
                         // Delete tasks first, including their comments and images, then
                         // lists. Each child receives normal authorization, history and
