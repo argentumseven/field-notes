@@ -598,7 +598,7 @@ test("project finishing is retained separately from deleting an empty project", 
   } finally {await s.f.close();}
 });
 
-test("removing a project can preserve direct tasks and complete standalone lists", async () => {
+test("unbundling a project keeps its record, direct tasks and complete standalone lists", async () => {
   const s = await scene();
   try {
     const project = await s.ok("project.create", randomUUID(), {title: "Reorganize"});
@@ -607,9 +607,10 @@ test("removing a project can preserve direct tasks and complete standalone lists
     const nested = await s.ok("task.create", randomUUID(), {title: "Nested", project_id: list.id});
     const comment = await s.ok("comment.create", randomUUID(), {task_id: nested.id, body: "Keep this"});
     const contents = [list,direct,nested,comment].map(r => ({id:r.id,revision:r.revision}));
-    assert.equal((await s.send("project.delete", project.id, {mode:"detach",contents}, project.revision)).status, 200);
+    assert.equal((await s.send("project.unbundle", project.id, {contents}, project.revision)).status, 200);
     const rows = (await s.snap()).records;
-    assert.equal(rows.some(r => r.id === project.id), false);
+    assert.equal(rows.some(r => r.id === project.id), true);
+    assert.equal(rows.find(r => r.id === project.id).data.title, "Reorganize");
     assert.equal(rows.find(r => r.id === list.id).data.project_id, "");
     assert.equal(rows.find(r => r.id === direct.id).data.project_id, "");
     assert.equal(rows.find(r => r.id === nested.id).data.project_id, list.id);
@@ -647,5 +648,38 @@ test("deletion of a collection must match the exact descendant revisions and rej
     assert.equal((await s.send("project.delete",project.id,{mode:"cascade",contents:current},project.revision)).status,409);
     assert.equal((await s.snap()).records.some(r=>r.id===incoming.id),true);
     assert.equal((await s.send("project.delete",project.id,{},project.revision)).status,409);
+  } finally {await s.f.close();}
+});
+
+
+test("unbundle is non-destructive, retains project status, and rejects stale membership", async () => {
+  const s = await scene();
+  try {
+    let project = await s.ok("project.create",randomUUID(),{title:"Release grouping"});
+    let task = await s.ok("task.create",randomUUID(),{title:"Keep notes",notes:"Retain me",project_id:project.id});
+    const unrelated=await s.ok("note.create",randomUUID(),{title:"Independent note"});
+    const oldContents=[{id:task.id,revision:task.revision}];
+    task=await s.ok("task.update",task.id,{notes:"Updated elsewhere"},task.revision);
+    assert.equal((await s.send("project.unbundle",project.id,{contents:oldContents},project.revision)).status,409);
+    let rows=(await s.snap()).records;
+    assert.equal(rows.find(r=>r.id===task.id).data.project_id,project.id);
+    assert.equal(rows.find(r=>r.id===task.id).data.notes,"Updated elsewhere");
+    project=await s.ok("project.update",project.id,{status:"on_hold"},project.revision);
+    assert.equal((await s.send("project.unbundle",project.id,{contents:[{id:task.id,revision:task.revision}]},project.revision)).status,200);
+    rows=(await s.snap()).records;
+    assert.equal(rows.find(r=>r.id===project.id).data.status,"on_hold");
+    assert.equal(rows.find(r=>r.id===task.id).data.project_id,"");
+    assert.equal(rows.find(r=>r.id===task.id).data.notes,"Updated elsewhere");
+    assert.equal(rows.find(r=>r.id===unrelated.id).data.title,"Independent note");
+  } finally {await s.f.close();}
+});
+
+test("project deletion rejects the former nondestructive detach mode", async () => {
+  const s=await scene();
+  try {
+    const project=await s.ok("project.create",randomUUID(),{title:"Keep"});
+    const task=await s.ok("task.create",randomUUID(),{title:"Linked",project_id:project.id});
+    assert.equal((await s.send("project.delete",project.id,{mode:"detach",contents:[{id:task.id,revision:task.revision}]},project.revision)).status,400);
+    assert.equal((await s.snap()).records.find(r=>r.id===task.id).data.project_id,project.id);
   } finally {await s.f.close();}
 });
