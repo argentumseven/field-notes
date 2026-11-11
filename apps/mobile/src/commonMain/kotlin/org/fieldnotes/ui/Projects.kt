@@ -19,12 +19,13 @@ internal data class ProjectView(val query:String="",val group:String="",val show
     if(addExisting)AddExistingTaskDialog(model,state,project){addExisting=false}
     val graph=remember(state.cache){state.cache.projectGraph()};val today=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString();val stats=graph.rollup(project,today)
     val writable=state.cache.snapshot?.actor?.role!="viewer";val archived=project.data.text("status")=="archived"
-    var query by rememberSaveable(project.id){mutableStateOf(initialView.query)};var group by rememberSaveable(project.id){mutableStateOf(initialView.group)};var show by rememberSaveable(project.id){mutableStateOf(initialView.show)}
+    var query by rememberSaveable(project.id){mutableStateOf(initialView.query)};var group by rememberSaveable(project.id){mutableStateOf(initialView.group)};var show by rememberSaveable(project.id){mutableStateOf(if(archived&&initialView.show=="open")"all" else initialView.show)}
     var context by rememberSaveable(project.id){mutableStateOf(initialView.context)};var groupsOpen by rememberSaveable(project.id){mutableStateOf(initialView.groupsOpen)}
     var category by rememberSaveable(project.id){mutableStateOf(initialView.filters.category)};var person by rememberSaveable(project.id){mutableStateOf(initialView.filters.person)};var priority by rememberSaveable(project.id){mutableStateOf(initialView.filters.priority)};var sort by rememberSaveable(project.id){mutableStateOf(initialView.filters.sort)}
     val filters=TaskFilters(category=category,person=person,priority=priority,sort=sort)
     DisposableEffect(project.id){onDispose{saveView(ProjectView(query,group,show,context,groupsOpen,TaskFilters(category=category,person=person,priority=priority,sort=sort)))}}
     LaunchedEffect(project.id,group){groupChanged(group.takeIf{it.isNotBlank()&&it!="__direct"} ?: project.id)}
+    LaunchedEffect(project.id,archived){if(archived&&show=="open")show="all"}
     val groups=graph.groups(project.id);val work=groups.filter {it.flag("items_are_tasks")}
     LaunchedEffect(work.map{it.id}){if(group.isNotBlank()&&group!="__direct"&&work.none{it.id==group})group=""}
     val memberIds=graph.members(project.id).map{it.id}.toSet()
@@ -33,7 +34,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
     VisibleLazyColumn(Modifier.weight(1f).testTag("project-workspace"),contentPadding=PaddingValues(top=8.dp,bottom=110.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item("workspace-header"){Column {header()}}
         item {OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            RecordBadges(project);Text(projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
+            RecordBadges(project);Text(if(archived)"Finished project · kept in history" else "Project state: "+projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
             Text(if(stats.total==0)"No work tasks yet" else "${stats.done} of ${stats.total} tasks complete",style=MaterialTheme.typography.titleLarge)
             LinearProgressIndicator(progress={if(stats.total>0)stats.done.toFloat()/stats.total else 0f},modifier=Modifier.fillMaxWidth())
             Text("${stats.ready} ready · ${stats.working} in progress · ${stats.waiting} waiting · ${stats.later} planned later · ${stats.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
