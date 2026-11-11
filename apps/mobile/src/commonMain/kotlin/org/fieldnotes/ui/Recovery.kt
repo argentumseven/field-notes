@@ -110,7 +110,10 @@ import org.fieldnotes.domain.*
                         if(entry.problem.isNotBlank())Text(entry.problem,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
                         if(entry.can_restore){
                             val hierarchy=target!=null&&entry.kind in setOf("project","list")&&!entry.deleted&&state.cache.supportsHierarchyRecovery()
-                            SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text(if(hierarchy)"Preview restore · keep existing links" else "Preview restore")}
+                            SecondaryButton(onClick={run{
+                                val request=JsonObject(obj("source" to entry.id.j())+(if(hierarchy)mapOf("hierarchy_mode" to "bindings".j())else emptyMap()))
+                                preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",request))
+                            }},enabled=!busy&&state.cache.recoveryPending==null){Text(if(hierarchy)"Preview restore · keep existing links" else "Preview restore")}
                             if(hierarchy&&actor?.role in setOf("owner","admin"))
                                 SecondaryButton(onClick={run{preview=SyncJson.decodeFromJsonElement<RecoveryPreview>(model.recovery("preview",obj("source" to entry.id.j(),"hierarchy_mode" to "respawn".j())))}},enabled=!busy&&state.cache.recoveryPending==null){Text("Preview restore + missing contents")}
                         }
