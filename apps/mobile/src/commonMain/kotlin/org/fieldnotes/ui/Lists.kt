@@ -63,7 +63,19 @@ import org.fieldnotes.domain.*
     var perpetual by rememberSaveable { mutableStateOf(record?.data?.get("perpetual")!=JsonPrimitive(false)) }
     var busy by remember { mutableStateOf(false) };var error by remember { mutableStateOf<String?>(null) };var remove by remember { mutableStateOf(false) }
     val scope=rememberCoroutineScope();val basis=remember { state.cache.snapshot!!.basis }
-    val occupied=record!=null&&projectRecords(state.cache).any { it.record.id!=record.id&&it.record.data.text("project_id")==record.id }
+    val descendants=remember(record?.id,state.cache) {
+        val records=projectRecords(state.cache).map{it.record}
+        val pending=mutableListOf(record?.id.orEmpty());val seen=mutableSetOf(record?.id.orEmpty());val found=mutableListOf<Record>()
+        while(pending.isNotEmpty()) {
+            val parentId=pending.removeAt(pending.lastIndex)
+            for(item in records.filter{it.data.text("project_id")==parentId||it.data.text("task_id")==parentId}) {
+                if(seen.add(item.id)){found.add(item);pending.add(item.id)}
+            }
+        }
+        found
+    }
+    var removalMode by remember(record?.id){mutableStateOf("detach")}
+    var deleteProof by remember(record?.id){mutableStateOf("")}
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New $kind" else "Edit $kind")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title,{title=it.take(160)},label={Text(if(kind=="list")"List name" else "Project name")},singleLine=true,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Description")},minLines=2,modifier=Modifier.fillMaxWidth())
@@ -91,7 +103,7 @@ import org.fieldnotes.domain.*
             Text("Check items off, add more whenever you need, and clear only the checked items.",style=MaterialTheme.typography.bodySmall)
             if(state.cache.supportsPlannerV3()){Row(verticalAlignment=Alignment.CenterVertically){Switch(notifyItems,{notifyItems=it});Text("Notify when items are added",Modifier.padding(start=8.dp))};if(template!="groceries")Row(verticalAlignment=Alignment.CenterVertically){Switch(itemReminders,{itemReminders=it});Text("Scheduled item reminders",Modifier.padding(start=8.dp))};Text("Muting keeps saved settings, list contents and sync intact.",style=MaterialTheme.typography.bodySmall)}
         }
-        if(occupied)Text("Clear or move this collection's items before deleting it.",style=MaterialTheme.typography.bodySmall)
+        if(descendants.isNotEmpty())Text("Deletion offers a choice to preserve or remove this collection's contents.",style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
         if(record!=null&&kind=="project"&&state.cache.supportsProjects()) {
@@ -107,10 +119,24 @@ import org.fieldnotes.domain.*
         val id=record?.id ?: model.newId()
         model.enqueue(kind+if(record==null)".create" else ".update",id,fields,record?.revision,basis);model.requestSync();close();if(record==null)onCreated?.invoke(id)
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Create $kind" else "Save changes")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(record!=null)SecondaryButton(onClick={remove=true},enabled=!occupied&&!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
+        if(record!=null)SecondaryButton(onClick={remove=true;deleteProof="";removalMode=if(kind=="project")"detach" else "cascade"},enabled=!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
         SecondaryButton(onClick=close,enabled=!busy){Text("Cancel")}
     }})
-    if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={Text("The empty $kind will be removed from your household.")},confirmButton={Button(shape=ControlShape,onClick={model.enqueueAsync("$kind.delete",record.id,obj(),record.revision,basis);remove=false;close()}){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
+    if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Text(if(descendants.isEmpty())"This empty $kind will be removed from active content. It does not need to be finished first."
+                else "This $kind contains ${descendants.size} linked records. Choose whether to preserve or remove its contents.")
+            if(descendants.isNotEmpty()){
+                if(kind=="project")ViewChoice("Contents",removalMode,listOf("detach" to "Keep tasks and lists (move to Inbox/standalone)","cascade" to "Delete project and all linked content")){removalMode=it}
+                else Text("All list items and their attachments will also be removed from active content.")
+            }
+            Text("History, retained versions and backups are governed by separate retention settings.",style=MaterialTheme.typography.bodySmall)
+            OutlinedTextField(deleteProof,{deleteProof=it},label={Text("Type DELETE to confirm")},singleLine=true)
+        }
+    },confirmButton={Button(shape=ControlShape,enabled=deleteProof=="DELETE",onClick={
+        val payload=if(descendants.isEmpty())obj() else obj("mode" to removalMode.j(),"contents" to JsonArray(descendants.map{obj("id" to it.id.j(),"revision" to it.revision.j())}))
+        model.enqueueAsync("$kind.delete",record.id,payload,record.revision,basis);remove=false;close()
+    }){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
 }
 
 @Composable internal fun NewNoteDialog(model:Workspace,state:WorkspaceState,initialRadar:Boolean=false,device:DeviceActions=DeviceActions(),recipe:Boolean=false,close:()->Unit) {
