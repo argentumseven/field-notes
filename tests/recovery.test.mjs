@@ -1584,6 +1584,10 @@ test("deleted project can restore original descendants from a time-anchored pre-
     const versions=await s.versions(project.id);
     const anchor=versions.find(v=>v.action==="collection.delete.before");
     assert(anchor,"cascade must capture a fresh pre-delete project state");
+    const legacy=await s.recover("preview",{source:anchor.id});
+    assert.equal(legacy.status,200,JSON.stringify(legacy.data));
+    assert.equal(legacy.data.hierarchy,null,"older clients keep single-item recovery semantics");
+    assert.equal(legacy.data.restored,1,"legacy recovery would only restore the project");
     const preview=await s.recover("preview",{source:anchor.id,hierarchy_mode:"respawn"});
     assert.equal(preview.status,200,JSON.stringify(preview.data));
     assert.equal(preview.data.hierarchy.respawned,3);
