@@ -150,6 +150,9 @@ async function collectionEditor(kind, record, defaults = {}) {
           },
         ]
       : []),
+    ...(record && isList && records("task").some(t=>t.data.project_id===record.id)
+      ? [{key:"conversion_confirmation",label:"For changing work-task status: type CONVERT LIST",required:false}]
+      : []),
     ...(record
       ? [
           {
@@ -184,9 +187,18 @@ async function collectionEditor(kind, record, defaults = {}) {
         render();
         return;
       }
+      const direct = record && isList
+        ? records("task").filter((t) => t.data.project_id === record.id)
+        : [];
+      if (record && isList && direct.length &&
+          Boolean(v.items_are_tasks) !== Boolean(record.data.items_are_tasks) &&
+          v.conversion_confirmation !== "CONVERT LIST")
+        throw Error("Review the change in task visibility and type CONVERT LIST.");
       const data = {
         title: v.title,
         category: v.category,
+        ...(record?.data.category?.startsWith("custom:") && v.category !== record.data.category
+          ? { category_override: true } : {}),
         notes: v.notes,
         ...(isList
           ? {
@@ -222,6 +234,22 @@ async function collectionEditor(kind, record, defaults = {}) {
     record ? "Save changes" : "Create " + kind,
     (nodes) => {
       if (isList) {
+        if (record) {
+          const affected = records("task").filter(t=>t.data.project_id===record.id);
+          if (affected.length) {
+            const preview=el("p","muted","");
+            const show=()=>{
+              const changed=nodes.items_are_tasks.checked !== Boolean(record.data.items_are_tasks);
+              preview.textContent=changed
+                ? "Conversion preview: "+affected.length+" existing items keep their IDs, notes, categories and attachments, but "+(nodes.items_are_tasks.checked?"will enter Tasks and project work progress.":"will become checklist/reference items and leave work progress.")+" Existing in-progress work must be released first. Type CONVERT LIST before saving."
+                : "Changing the list's type or visible fields does not erase item data.";
+            };
+            nodes.items_are_tasks.addEventListener("change",show);
+            nodes.template.addEventListener("change",()=>setTimeout(show,0));
+            nodes.items_are_tasks.after(preview);
+            show();
+          }
+        }
         const group = el("details", "field-options"),
           summary = el("summary");
         group.append(summary);
@@ -445,6 +473,27 @@ function renderCollections(root) {
   }
   draw();
 }
+async function unbundleWorkList(list) {
+  const tasks = records("task").filter((t) => t.data.project_id === list.id);
+  if (!tasks.length) return notice("This list has no tasks to release.");
+  const children = tasks.flatMap((t) => [
+    t,
+    ...state.snapshot.records.filter((r) => r.data.task_id === t.id),
+  ]);
+  const basis = {epoch:state.snapshot.epoch,generation:state.snapshot.generation};
+  await formDialog(
+    "Unbundle work list · " + list.data.title,
+    "Release " + tasks.length + " tasks to Inbox, preserving their titles, categories, comments, attachments, dates and completion states. The list itself stays as an empty list. You can separately delete the list afterward. No records are deleted.",
+    [{key:"confirmation",label:"Type UNBUNDLE"}],
+    async (v) => {
+      if (v.confirmation !== "UNBUNDLE") throw Error("Type UNBUNDLE to release tasks.");
+      await mutate("list.unbundle",list.id,
+        {contents:children.map((r)=>({id:r.id,revision:r.revision}))},list.revision,basis);
+      notice("Tasks released to Inbox. The empty list remains and can be deleted separately.");
+    },
+    "Release tasks"
+  );
+}
 function safeShoppingLink(value) {
   try {
     const url = new URL(value);
@@ -557,6 +606,9 @@ function renderChecklist(root, list) {
         "primary",
       ),
       button("List settings", () => editCollection(list)),
+      ...(list.data.items_are_tasks && all.length
+        ? [button("Unbundle tasks", () => unbundleWorkList(list).catch((e)=>{if(e?.name!=="DialogCanceled")notice(e.message)}))]
+        : []),
       clear,
       ...(list.data.perpetual !== false ? [reuse] : []),
     );
