@@ -34,7 +34,7 @@ import org.fieldnotes.domain.*
     val record=visible.record
     OutlinedCard(onClick=open,modifier=Modifier.fillMaxWidth().padding(bottom=10.dp)) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-            RecordBadges(record)
+            RecordBadges(record,cache=cache)
             Text(record.data.text("title"),style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
             if(record.kind=="project") {
                 val progress=cache.projectGraph().rollup(record,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())
@@ -170,7 +170,7 @@ import org.fieldnotes.domain.*
     VisibleLazyColumn(Modifier.weight(1f).testTag("checklist-items"),verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(bottom=100.dp),hideKeyboardOnDrag=true) {
         item("workspace-header"){Column {header()}}
         item("list-controls"){Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
-            RecordBadges(list)
+            RecordBadges(list,cache=state.cache)
             if(finished)Text("Project finished. Reopen it before adding or reopening work.",style=MaterialTheme.typography.bodyMedium)
             if(list.data.text("notes").isNotBlank()) {
                 Text(list.data.text("notes"),style=MaterialTheme.typography.bodyMedium,maxLines=if(descriptionOpen)Int.MAX_VALUE else 2,overflow=TextOverflow.Ellipsis)
