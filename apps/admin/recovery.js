@@ -574,6 +574,8 @@ const FieldRecovery = (() => {
           description =
             item.action === "baseline.before_change"
               ? "Previous state captured"
+              : item.action === "collection.delete.before"
+                ? "Before deleting this collection"
               : item.action === "checkpoint.before_restore"
                 ? "Automatically saved before restore"
                 : item.deleted
