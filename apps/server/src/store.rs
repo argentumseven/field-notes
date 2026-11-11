@@ -1,6 +1,7 @@
 mod admin;
 mod assignment;
 mod auth;
+mod categories;
 mod clock_health;
 mod commands;
 mod enrollment;
@@ -112,6 +113,7 @@ pub struct Command {
 #[derive(Serialize)]
 pub struct Snapshot {
     pub history_revision: i64,
+    pub categories: Vec<categories::HouseholdCategory>,
     pub protocol: u16,
     pub epoch: String,
     pub generation: i64,
@@ -205,6 +207,7 @@ impl Store {
             data_dir: data.to_path_buf(),
         };
         store.recovery_schema().map_err(|error| error.1)?;
+        store.category_schema().map_err(|error| error.1)?;
         Ok(store)
     }
     pub fn meta(&self) -> Result<(String, i64, i64)> {
@@ -288,6 +291,7 @@ impl Store {
             .collect::<Result<Vec<_>>>()?;
         Ok(Snapshot {
             history_revision: self.recovery_revision()?,
+            categories: self.custom_categories()?,
             protocol: 1,
             epoch,
             generation,
