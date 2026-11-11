@@ -10,11 +10,25 @@ const recordCategories = {
 };
 const categoryKey = (value) =>
   value === "honey_do" ? "home" : value || "general";
-const categoryChoices = (value) =>
-  Object.entries(recordCategories).map(([key, label]) => [
+const customCategoryChoices = (value) => {
+  const choices = (state.snapshot?.categories || [])
+    .filter((c) => !c.archived || "custom:" + c.id === value)
+    .map((c) => ["custom:" + c.id, c.name + (c.archived ? " · archived" : "")]);
+  if (value?.startsWith("custom:") && !choices.some(([key]) => key === value))
+    choices.push([value, "Unavailable custom category · retained"]);
+  return choices;
+};
+const categoryChoices = (value) => [
+  ...Object.entries(recordCategories).map(([key, label]) => [
     key === "home" && value === "honey_do" ? value : key,
     label,
-  ]);
+  ]),
+  ...customCategoryChoices(value),
+];
+const allCategoryChoices = () => [
+  ...Object.entries(recordCategories),
+  ...customCategoryChoices(""),
+];
 function categoryField(record) {
   return {
     key: "category",
@@ -177,7 +191,7 @@ function typeBadges(record) {
       el(
         "span",
         "type-badge category-" + category,
-        recordCategories[categoryKey(category)] || "General",
+        categoryChoices(category).find(([key]) => key === category)?.[1] || "Saved category",
       ),
     );
   if (record.kind === "task" && record.data.item_category)
