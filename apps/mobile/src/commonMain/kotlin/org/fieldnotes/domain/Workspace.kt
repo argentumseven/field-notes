@@ -514,6 +514,7 @@ class Workspace(
                 val c = item.command
                 val fence = when {
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
+                    (c.action=="project.unbundle" || c.action in setOf("project.delete","list.delete")&&c.data.text("mode")=="cascade")&&!cache.supportsCollectionActions()->"This queued collection operation requires a newer server. The original command is retained for review; reconnect to the updated server before retrying."
                     (c.data["reminder_options"] as? JsonObject)?.number("playback_version")==2L&&!cache.supportsReminderAudio()->"This saved edit needs the newer server’s sound controls. Update the server; the complete edit is kept."
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
                     c.data.keys.any { it in setOf("recurrence","category","store","on_radar","remind_at","notify_additions","item_reminders") }&&!cache.supportsPlannerV3()->"This saved edit uses newer planner fields. Update the paired server; the complete edit is kept in Retained changes."
