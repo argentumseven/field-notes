@@ -2,7 +2,7 @@
 
 [**Download latest Android APK (ARM64)**](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk) · [Release notes and checksums](https://github.com/argentumseven/field-notes/releases/latest)
 
-[**Download the 0.11.6 Linux server bundle (x86_64)**](https://raw.githubusercontent.com/argentumseven/field-notes/cbde73a01c041f959aa080e2b817106b755dc2b2/server-downloads/field-notes-0.11.6-linux-x86_64.tar.gz) · [Upgrade an existing server](docs/UPDATES.md#linux-container-updates)
+[**Download the 0.11.6 Linux server bundle (x86_64)**](https://raw.githubusercontent.com/argentumseven/field-notes/cbde73a01c041f959aa080e2b817106b755dc2b2/server-downloads/field-notes-0.11.6-linux-x86_64.tar.gz) · [Upgrade an existing server](docs/UPDATES.md#upgrade-the-linux-server-while-keeping-identities)
 
 Standard server installs and GitHub downloads use the same public signing certificate
 and the exact same APK. Existing custom-signed phones retain their original signer.
