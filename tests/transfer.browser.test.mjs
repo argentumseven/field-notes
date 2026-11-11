@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import { readFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import { webcrypto } from "node:crypto";
+import * as fflate from "fflate";
 import { fixture, password } from "./support.mjs";
 
 test("web manager exports an encrypted file, previews duplicates and preserves a newer edit", async () => {
@@ -182,5 +186,146 @@ test("web manager exports an encrypted file, previews duplicates and preserves a
   } finally {
     await browser?.close();
     await f.close();
+  }
+});
+
+test("web imports category metadata only after the reviewed administrator password confirmation", async () => {
+  const source = await fixture(),
+    target = await fixture();
+  let browser;
+  try {
+    const token = await source.login();
+    await source.request("/api/reauth", { token, body: { password } });
+    const category = randomUUID();
+    assert.equal(
+      (
+        await source.request("/api/admin", {
+          token,
+          body: {
+            action: "category.create",
+            target: category,
+            name: "Garden imports",
+          },
+        })
+      ).status,
+      200,
+    );
+    const snap = (await source.request("/api/snapshot", { token })).data;
+    assert.equal(
+      (
+        await source.request("/api/commands", {
+          token,
+          body: {
+            operation_id: randomUUID(),
+            epoch: snap.epoch,
+            generation: snap.generation,
+            action: "note.create",
+            target: randomUUID(),
+            expected_revision: null,
+            data: {
+              title: "Imported garden note",
+              body: "Keep this reference",
+              category: "custom:" + category,
+            },
+          },
+        })
+      ).status,
+      200,
+    );
+    const manifest = (await source.request("/api/transfer/export", { token }))
+      .data;
+    const scope = {
+      window: {},
+      crypto: webcrypto,
+      TextEncoder,
+      TextDecoder,
+      Uint8Array,
+      DataView,
+      fflate,
+      setTimeout,
+    };
+    vm.runInNewContext(readFileSync("apps/admin/archive.js", "utf8"), scope);
+    const pass = "Portable category regression archive!";
+    const bytes = await scope.window.FieldArchive.encrypt(
+      fflate.zipSync({
+        "manifest.json": new TextEncoder().encode(JSON.stringify(manifest)),
+      }),
+      pass,
+    );
+    browser = await chromium.launch({
+      executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+      headless: true,
+      args: ["--no-sandbox"],
+    });
+    const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(target.admin);
+    await page.getByLabel("User name", { exact: true }).fill("owner");
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page
+      .getByRole("heading", { name: "Calendar", exact: true })
+      .waitFor();
+    await page
+      .getByRole("button", { name: "Export & import", exact: true })
+      .click();
+    await page
+      .getByLabel("Choose a Field Notes file", { exact: true })
+      .setInputFiles({
+        name: "categories.fieldnotes",
+        mimeType: "application/octet-stream",
+        buffer: Buffer.from(bytes),
+      });
+    await page.getByLabel("Archive passphrase", { exact: true }).fill(pass);
+    await page
+      .getByRole("button", { name: "Unlock and preview", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Review the import", exact: true })
+      .waitFor();
+    assert.match(
+      await page.locator(".import-preview").innerText(),
+      /1 new category definitions/,
+    );
+    const targetToken = await target.login();
+    assert.equal(
+      (await target.request("/api/snapshot", { token: targetToken })).data
+        .categories.length,
+      0,
+    );
+    await page
+      .getByRole("button", { name: "Import these items", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Password", { exact: true }).waitFor();
+    assert.equal(
+      (await target.request("/api/snapshot", { token: targetToken })).data
+        .records.length,
+      0,
+    );
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Import these items", exact: true })
+      .click();
+    await dialog.getByLabel("Password", { exact: true }).fill(password);
+    await dialog.getByRole("button", { name: "Verify", exact: true }).click();
+    await page
+      .locator(".transfer-status")
+      .filter({ hasText: "Import complete" })
+      .waitFor();
+    const imported = (
+      await target.request("/api/snapshot", { token: targetToken })
+    ).data;
+    assert.equal(
+      imported.categories.find((c) => c.id === category).name,
+      "Garden imports",
+    );
+    assert.equal(imported.records[0].data.category, "custom:" + category);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser?.close();
+    await source.close();
+    await target.close();
   }
 });

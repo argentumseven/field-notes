@@ -102,3 +102,36 @@ test("portable unpack verifies complete image hashes, file set and decompression
     /size|bound/,
   );
 });
+
+test("version-three encrypted archives preserve custom category metadata without accepting future versions", async () => {
+  const category = {
+    id: randomUUID(),
+    name: "Garden",
+    archived: true,
+    deleted: false,
+  };
+  const manifest = {
+    format: "org.fieldnotes.archive",
+    version: 3,
+    source: randomUUID(),
+    generation: 1,
+    created_at: 1,
+    records: [],
+    people: [],
+    media: [],
+    retained: [],
+    categories: [category],
+  };
+  const zip = fflate.zipSync({
+    "manifest.json": new TextEncoder().encode(JSON.stringify(manifest)),
+  });
+  const encrypted = await codec.encrypt(zip, pass);
+  const restored = await codec.unpack(await codec.decrypt(encrypted, pass));
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.manifest.categories)), [
+    category,
+  ]);
+  assert.throws(
+    () => codec.validate({ ...manifest, version: 4 }),
+    /Unsupported/,
+  );
+});

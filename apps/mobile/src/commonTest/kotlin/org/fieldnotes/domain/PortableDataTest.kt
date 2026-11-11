@@ -24,4 +24,20 @@ class PortableDataTest {
         assertTrue(text.contains("Keep the full context"));assertTrue(text.contains("Context to retain"));assertEquals(1,file["people"]!!.jsonArray.size)
         assertEquals(cache,cache.copy(),"Constructing an export does not mutate or clear the outbox")
     }
+    @Test fun customCategoryExportsPreserveLabelsArchiveStateAndMissingHistoricalIds(){
+        val active=HouseholdCategory("active","Garden",false,4)
+        val archived=HouseholdCategory("archived","Past work",true,8)
+        val task=Record("task","task",1,obj("title" to "Archived task".j(),"category" to "custom:archived".j()))
+        val note=Record("note","note",1,obj("title" to "Historical note".j(),"category" to "custom:deleted".j()))
+        val cache=Cache(snapshot=Snapshot(1,"workspace",1,3,listOf(task,note),Actor("person","Alex","owner","session"),categories=listOf(active,archived)))
+        val manifest=portableManifest(cache)
+        assertEquals(3L,manifest.number("version"))
+        val categories=manifest.getValue("categories").jsonArray.map{it.jsonObject}.associateBy{it.text("id")}
+        assertEquals("Garden",categories.getValue("active").text("name"))
+        assertEquals(JsonPrimitive(true),categories.getValue("archived")["archived"])
+        assertEquals(JsonPrimitive(true),categories.getValue("deleted")["deleted"])
+        assertEquals("custom:deleted",manifest.getValue("records").jsonArray.last().jsonObject.getValue("data").jsonObject.text("category"))
+        assertEquals(cache,cache.copy())
+    }
+
 }

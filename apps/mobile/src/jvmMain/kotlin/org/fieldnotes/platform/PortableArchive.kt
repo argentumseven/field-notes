@@ -26,7 +26,7 @@ object PortableArchive {
             }
         }} // Closing the framed stream also verifies the mandatory final frame.
         val m=checkNotNull(result){"The archive manifest is missing."}
-        check(m.text("format")=="org.fieldnotes.archive"&&m.number("version") in 1L..2L&&uuid.matches(m.text("source"))&&m.number("generation")>0){"Unsupported Field Notes archive format."}
+        check(m.text("format")=="org.fieldnotes.archive"&&m.number("version") in 1L..3L&&uuid.matches(m.text("source"))&&m.number("generation")>0){"Unsupported Field Notes archive format."}
         val records=m["records"]!!.jsonArray;check(records.size<=10000&&records.map{it.jsonObject.text("id")}.distinct().size==records.size){"Archive contains duplicate item identities."}
         val media=m["media"]!!.jsonArray.map{it.jsonObject};check(media.size==observed.size&&media.map{it.text("id")}.distinct().size==media.size){"Archive image files differ from the manifest."}
         for(item in media)check(observed[item.text("id")]?.let{it.first.toLong()==item.number("size")&&it.second==item.text("sha256")}==true){"An archive attachment is incomplete or has a bad checksum."}

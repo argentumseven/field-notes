@@ -16,16 +16,32 @@ keys are unchanged at startup.
 Added integration cases cover stable category IDs, merge rollback on stale
 revisions, archive rules, delete-only-when-unused, old-client overwrite
 protection, list unbundle without deleting comments, and work/reference
-conversion restrictions. **Integration tests not run:** GitHub Actions is
-exhausted, and the current environment lacks the Rust compiler and complete
-Android build setup. JavaScript syntax tests alone cannot validate deployment.
+conversion restrictions. Follow-up local review reproduced two defects:
+custom-category exports omitted definitions, and calendar field copying let
+new archived assignments bypass validation. Both have regression tests and
+implementation fixes on `fix/category-merge-readiness`; the category suite is
+now part of `npm test`. Local verification results are recorded below.
 
-Pre-merge gates: Rust compile + Node integration suite; Android Kotlin build,
-unit tests and emulator; old/new server/client feature negotiation; copied
+Local follow-up checks passed: Rust build, formatting, Clippy with warnings as
+errors and 18 Rust tests; all 123 tests in the full `npm test` run, plus the
+updated three-case archive-codec suite; 139 Kotlin host tests; Android debug
+Kotlin compilation; and five Chromium project/transfer workflows. The new web
+workflow cancels password proof without importing anything, then confirms and
+imports the original category ID and label. API regressions cover archived
+calendar reassignment, version-3 metadata, category naming/capacity conflicts,
+administrator/recent-proof checks, preview rollback, injected commit failure,
+retry, restart and destination metadata preservation. Version 1/2 archive
+regressions still pass. JavaScript syntax/formatting and version consistency
+checks pass. No emulator/physical-device run, APK release, push or deployment
+was performed for these fixes.
+
+Remaining gates: Android APK/emulator acceptance; old/new server/client feature negotiation; copied
 encrypted database upgrade; offline conflicting category edits; backup and
 checkpoint recovery of custom definitions; portable export/import with
-custom category IDs; and conflict review against the earlier project
-lifecycle branch. Never run destructive fixtures against the live environment.
+custom category IDs on physical Android; and integration with the earlier
+project lifecycle branch, which has six textual conflicts with the fixed
+branch. A merge simulation against the fetched `origin/main` is clean. Never
+run destructive fixtures against the live environment.
 
 
 ## 0.11.5 checkpoint deletion and deliberate restores — 2026-11-11

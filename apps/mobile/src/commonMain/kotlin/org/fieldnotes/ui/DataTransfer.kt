@@ -23,6 +23,7 @@ import org.fieldnotes.domain.*
 
 @Composable private fun DataTransferDialog(cache:Cache,device:DeviceActions,close:()->Unit) {
     val state=device.transfer;var exporting by remember{mutableStateOf(false)};var password by remember{mutableStateOf("")};var confirm by remember{mutableStateOf("")};var importPassword by remember{mutableStateOf("")}
+    var adminPassword by remember { mutableStateOf("") }
     var removing by remember{mutableStateOf<String?>(null)}
     val writable=cache.snapshot?.actor?.role!="viewer"
     EditorDialog(onDismissRequest={if(!state.busy)close()},title={Text("Export & import")},text={ScrollableColumn {
@@ -48,9 +49,13 @@ import org.fieldnotes.domain.*
         state.preview?.let{preview->
             Text("${preview.number("new_items")} new · ${preview.number("already_present")} already present · ${preview.number("retained_changes")} retained changes",style=MaterialTheme.typography.titleSmall)
             for(raw in preview["people"]!!.jsonArray){val person=raw.jsonObject;var target by remember(person.text("id")){mutableStateOf(person.text("target"))};ViewChoice("Archived ${person.text("name")} →",target,cache.people.filter{it.can_assign}.map{it.id to it.name},enabled=!state.busy){target=it;device.mapImportPerson(person.text("id"),it)}}
+            if(preview.number("new_categories")>0){
+                Text("${preview.number("new_categories")} missing category definitions will be imported. Existing categories keep their names and archive settings.")
+                OutlinedTextField(adminPassword,{adminPassword=it},Modifier.fillMaxWidth(),label={Text("Administrator password")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),singleLine=true)
+            }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
                 SecondaryButton(onClick=device.reviewImport,enabled=!state.busy){Text("Review again")}
-                Button(shape=ControlShape,onClick=device.commitImport,enabled=!state.busy&&state.reviewed){Text("Import items")}
+                Button(shape=ControlShape,onClick={device.commitImport(adminPassword);adminPassword=""},enabled=!state.busy&&state.reviewed&&(preview.number("new_categories")==0L||adminPassword.isNotEmpty())){Text("Import items")}
             }
         }
         if(state.fileName.isNotEmpty())SecondaryButton(onClick=device.cancelImport,enabled=!state.busy){Text("Cancel preview")}

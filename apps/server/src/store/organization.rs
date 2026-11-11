@@ -14,7 +14,13 @@ impl Store {
         }
         Ok(Some(id.to_owned()))
     }
-    pub(super) fn organized_record(&self, data: &Value, record: &mut Record, actor: &Actor) -> Result<()> {
+    pub(super) fn organized_record(
+        &self,
+        data: &Value,
+        record: &mut Record,
+        actor: &Actor,
+        importing: bool,
+    ) -> Result<()> {
         let note = record.kind == "note";
         fields(
             data,
@@ -147,7 +153,7 @@ impl Store {
             return fail(400, "These options belong to a different collection type");
         }
         Self::list_schema(data, record)?;
-        self.category(data, record)?;
+        self.category(data, record, importing)?;
         record.data["updated_at"] = json!(now());
         Ok(())
     }

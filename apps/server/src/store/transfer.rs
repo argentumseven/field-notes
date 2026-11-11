@@ -2,6 +2,7 @@
 //! transaction, and source identities plus exact content matches prevent dupes.
 use super::*;
 use std::collections::{BTreeSet, HashMap};
+mod categories;
 mod recovery;
 const CHUNK: usize = 128 * 1024;
 const MAX_MANIFEST: usize = 24 * 1024 * 1024;
@@ -40,6 +41,8 @@ struct Manifest {
     media: Vec<Media>,
     #[serde(default)]
     retained: Vec<Retained>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    categories: Vec<categories::ArchiveCategory>,
 }
 struct Entry {
     source: Record,
@@ -49,6 +52,7 @@ struct Entry {
     recover: bool,
 }
 struct Plan {
+    new_categories: usize,
     entries: Vec<Entry>,
     mapping: BTreeMap<String, String>,
     needed: BTreeSet<String>,
@@ -385,16 +389,19 @@ impl Store {
         let m: Manifest = serde_json::from_value(value.clone())
             .map_err(|_| Fault(400, "Unsupported or malformed Field Notes archive".into()))?;
         if m.format != "org.fieldnotes.archive"
-            || ![1, 2].contains(&m.version)
+            || ![1, 2, 3].contains(&m.version)
             || m.generation < 1
             || m.records.len() > 10000
             || m.people.len() > 64
             || m.retained.len() > 2000
             || m.media.len() > 10000
+            || m.categories.len() > 10000
+            || (!m.categories.is_empty() && m.version != 3)
         {
             return fail(400, "Unsupported archive version or capacity");
         }
         valid_id(&m.source)?;
+        categories::validate(&m.categories)?;
         let mut ids = BTreeSet::new();
         for r in &m.records {
             valid_id(&r.id)?;
@@ -553,9 +560,10 @@ impl Store {
             }
             retained.push(item);
         }
+        let categories = self.archive_categories()?;
         serde_json::to_value(Manifest {
             format: "org.fieldnotes.archive".into(),
-            version: 2,
+            version: if categories.is_empty() { 2 } else { 3 },
             source: snapshot.epoch,
             generation: snapshot.generation,
             created_at: now(),
@@ -563,6 +571,7 @@ impl Store {
             people,
             media,
             retained,
+            categories,
         })
         .map_err(|_| Fault(500, "Archive serialization failed".into()))
     }
@@ -799,6 +808,7 @@ impl Store {
             }
         }
         Ok(Plan {
+            new_categories: self.missing_archive_categories(m)?,
             entries,
             mapping,
             needed,
@@ -819,7 +829,7 @@ impl Store {
             uploaded.insert(image, chunks);
         }
         Ok(
-            json!({"plan_id":id,"new_items":plan.new,"already_present":plan.skipped,"retained_changes":plan.recovered,"needed_media":plan.needed,"uploaded_chunks":uploaded,"people":people,"expires":expires,"chunk_size":CHUNK}),
+            json!({"plan_id":id,"new_items":plan.new,"new_categories":plan.new_categories,"already_present":plan.skipped,"retained_changes":plan.recovered,"needed_media":plan.needed,"uploaded_chunks":uploaded,"people":people,"expires":expires,"chunk_size":CHUNK}),
         )
     }
     pub fn transfer_prepare(&mut self, token: &str, input: &Value) -> Result<Value> {
@@ -1074,6 +1084,7 @@ impl Store {
         staging: Option<&str>,
     ) -> Result<()> {
         let actor = self.actor(token)?;
+        self.import_archive_categories(&actor, m, staging.is_some())?;
         let (epoch, generation, _) = self.meta()?;
         let origin = format!("{}:{}", m.source, m.generation);
         let mut tiny = Cursor::new(Vec::new());

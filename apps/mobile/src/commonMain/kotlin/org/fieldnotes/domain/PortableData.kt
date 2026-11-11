@@ -32,7 +32,20 @@ fun portableManifest(cache:Cache):JsonObject {
     }
     retained+=cache.recoveredImports.map { item->obj("id" to item.getValue("id"),"title" to (item["title"]?:"Recovered change".j()),"payload" to item.getValue("payload"),"media_id" to if(item["has_image"]==JsonPrimitive(true))item.getValue("id") else JsonNull) }
     val people=(cache.people.map{obj("id" to it.id.j(),"name" to it.name.j())}+obj("id" to snapshot.actor.user_id.j(),"name" to snapshot.actor.name.j())).distinctBy{it.text("id")}
-    return obj("format" to "org.fieldnotes.archive".j(),"version" to 2.j(),"source" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"created_at" to Clock.System.now().epochSeconds.j(),"records" to JsonArray(records.map{WireJson.encodeToJsonElement(Record.serializer(),it)}),"people" to JsonArray(people),"media" to JsonArray(emptyList()),"retained" to JsonArray(retained))
+    val categories=snapshot.categories.map { category->obj("id" to category.id.j(),"name" to category.name.j(),"archived" to JsonPrimitive(category.archived),"deleted" to JsonPrimitive(false)) }.toMutableList()
+    fun retainCategory(element:JsonElement) {
+        when(element) {
+            is JsonArray->element.forEach(::retainCategory)
+            is JsonObject->{
+                val key=element.text("category")
+                if(key.startsWith("custom:")&&categories.none{it.text("id")==key.removePrefix("custom:")})categories+=obj("id" to key.removePrefix("custom:").j(),"name" to "Unavailable saved category".j(),"archived" to JsonPrimitive(true),"deleted" to JsonPrimitive(true))
+                element.values.forEach(::retainCategory)
+            }
+            else->Unit
+        }
+    }
+    records.forEach { retainCategory(it.data) };retained.forEach(::retainCategory)
+    return JsonObject(obj("format" to "org.fieldnotes.archive".j(),"version" to (if(categories.isEmpty())2 else 3).j(),"source" to snapshot.epoch.j(),"generation" to snapshot.generation.j(),"created_at" to Clock.System.now().epochSeconds.j(),"records" to JsonArray(records.map{WireJson.encodeToJsonElement(Record.serializer(),it)}),"people" to JsonArray(people),"media" to JsonArray(emptyList()),"retained" to JsonArray(retained))+(if(categories.isEmpty())emptyMap()else mapOf("categories" to JsonArray(categories))))
 }
 
 data class TransferUi(val busy:Boolean=false,val message:String="",val fileName:String="",val preview:JsonObject?=null,val reviewed:Boolean=false,val recovered:List<JsonObject> = emptyList())

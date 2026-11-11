@@ -34,6 +34,15 @@ Personal reminder recipients follow that mapping, including reminders for an
 unassigned item's original creator; importing does not turn those into Everyone.
 Then choose **Import items**. Viewers can export but cannot import or restore.
 
+Files with custom household categories use archive version 3, including their
+category definitions. Update the destination server and app before opening
+these files; version 1/2 files remain supported. The preview counts missing
+definitions, and an administrator must confirm their password before adding
+them. Other members can import once the definitions are present. Existing
+destination names, archived categories and deleted definitions are preserved.
+Duplicate names under different IDs require category management before import;
+no content or metadata is partially committed when an import fails.
+
 Imports are additive. Matching source identities and exact matching content are
 reused; repeated imports do not create more active copies. A different version
 of a current item is retained separately. Current items, pairings and accounts

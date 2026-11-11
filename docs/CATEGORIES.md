@@ -35,6 +35,18 @@ retain the historical category ID and remains editable, but the deleted name
 is not offered as a new choice. Built-in categories cannot be deleted.
 Category merges and deletes never cascade to the records.
 
+Portable exports include category definitions and historical tombstones in
+archive version 3. Imports preserve IDs, names and archive state, and never
+rename, reopen or resurrect an existing destination definition. Only an
+administrator may introduce missing definitions, with password confirmation
+before commit; other members can import when those definitions already exist.
+Name conflicts or the 64-definition limit abort the whole import. Previewing
+does not persist definitions, and failed commits roll back metadata and records
+together. Version 1/2 archives remain readable; older applications reject version
+3 rather than dropping its metadata. Offline Android exports keep known names;
+a missing historical definition is retained as an unavailable tombstone with
+its original ID, rather than silently changing the record's category.
+
 Existing older clients may still edit other fields while preserving a custom
 category. If they attempt to replace an unfamiliar custom category implicitly,
 the server rejects the edit rather than silently reclassifying the record.

@@ -87,11 +87,12 @@ class PortableFiles(private val app:FieldNotesApplication) {
     }
     fun mapPerson(id:String,target:String){if(state.value.busy)return;mapping=JsonObject(mapping+(id to target.j()));state.value=state.value.copy(reviewed=false,message="People mapping changed. Review again before importing.")}
     fun review()=run {current();val p=checkNotNull(plan);val result=plannedTransfer("review",obj("plan_id" to p.getValue("plan_id"),"mapping" to mapping));current();plan=result;state.value=state.value.copy(preview=result,reviewed=true,message="Preview refreshed. Current data is unchanged.")}
-    fun commit()=run {
+    fun commit(password:String)=run {
         current();check(state.value.reviewed){"Review again before importing."};val p=checkNotNull(plan);val id=p.getValue("plan_id");val needed=p["needed_media"]!!.jsonArray.map{it.jsonPrimitive.content}.toSet();val uploaded=p["uploaded_chunks"]!!.jsonObject
         message("Preparing the reviewed images…")
         scan(checkNotNull(selected),checkNotNull(passphrase)){image,bytes->if(image in needed){val already=uploaded[image].orEmptyArray().map{it.jsonPrimitive.int}.toSet();var index=0;for(offset in bytes.indices step 131072){current();if(index !in already){val chunk=bytes.copyOfRange(offset,minOf(offset+131072,bytes.size));try{plannedTransfer("image",obj("plan_id" to id,"image_id" to image.j(),"index" to index.j(),"bytes" to Base64.getEncoder().encodeToString(chunk).j()))}finally{chunk.fill(0)}};index++;message("Preparing image ${needed.indexOf(image)+1} of ${needed.size} · part $index")}}}
-        current();message("Importing the reviewed items…")
+        current();if(p.number("new_categories")>0){app.model.reauthenticate(password);current()}
+        message("Importing the reviewed items…")
         val result=try{plannedTransfer("commit",obj("plan_id" to id))}catch(e:ApiError){if(e.status==409)state.value=state.value.copy(reviewed=false);throw e}catch(e:Exception){if(e is CancellationException)throw e;plannedTransfer("commit",obj("plan_id" to id))}
         clear();app.model.sync();message("Import complete · ${result.number("imported")} added, ${result.number("already_present")} already present, ${result.number("retained_changes")} retained for review.")
         refreshRecoveredNow()

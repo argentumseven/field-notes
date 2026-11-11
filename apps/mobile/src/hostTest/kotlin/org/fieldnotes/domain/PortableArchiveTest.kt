@@ -14,10 +14,10 @@ import kotlin.test.*
 class PortableArchiveTest {
     private val pass="A portable café 🌙 with punctuation!".toCharArray()
     private val image="12345678-1234-1234-1234-123456789abc"
-    private fun archive(wrongHash:Boolean=false,extra:String?=null):ByteArray {
+    private fun archive(wrongHash:Boolean=false,extra:String?=null,version:Int=1):ByteArray {
         val bytes=ByteArray(150000){(it%251).toByte()}
         val hash=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
-        val manifest=obj("format" to "org.fieldnotes.archive".j(),"version" to 1.j(),"source" to "12345678-1234-1234-1234-123456789aaa".j(),"generation" to 1.j(),"records" to JsonArray(emptyList()),"people" to JsonArray(emptyList()),"media" to JsonArray(listOf(obj("id" to image.j(),"size" to bytes.size.j(),"sha256" to (if(wrongHash)"0".repeat(64) else hash).j()))),"retained" to JsonArray(listOf(obj("media_id" to image.j()))))
+        val manifest=obj("format" to "org.fieldnotes.archive".j(),"version" to version.j(),"source" to "12345678-1234-1234-1234-123456789aaa".j(),"generation" to 1.j(),"records" to JsonArray(emptyList()),"people" to JsonArray(emptyList()),"media" to JsonArray(listOf(obj("id" to image.j(),"size" to bytes.size.j(),"sha256" to (if(wrongHash)"0".repeat(64) else hash).j()))),"retained" to JsonArray(listOf(obj("media_id" to image.j()))))
         return ByteArrayOutputStream().also{output->PortableCipher.encrypting(output,pass).use{cipher->ZipOutputStream(cipher).use{zip->
             for((name,data)in listOf("media/$image.bin" to bytes,"manifest.json" to manifest.toString().toByteArray())+(extra?.let{listOf(it to byteArrayOf(1))}?:emptyList())){zip.putNextEntry(ZipEntry(name));zip.write(data);zip.closeEntry()}
         }}}.toByteArray()
@@ -29,4 +29,9 @@ class PortableArchiveTest {
         assertFails{PortableArchive.read(ByteArrayInputStream(archive(wrongHash=true)),pass)}
         assertFails{PortableArchive.read(ByteArrayInputStream(archive(extra="../unexpected")),pass)}
     }
+    @Test fun versionThreeArchivesAreReadableAndFutureFormatsFailClosed()=runTest {
+        assertEquals(3L,PortableArchive.read(ByteArrayInputStream(archive(version=3)),pass).number("version"))
+        assertFails { PortableArchive.read(ByteArrayInputStream(archive(version=4)),pass) }
+    }
+
 }

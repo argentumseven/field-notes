@@ -1,8 +1,13 @@
 use super::*;
 
 impl Store {
-    pub(super) fn planning(&self, data: &Value, record: &mut Record) -> Result<()> {
-        self.category(data, record)?;
+    pub(super) fn planning(
+        &self,
+        data: &Value,
+        record: &mut Record,
+        importing: bool,
+    ) -> Result<()> {
+        self.category(data, record, importing)?;
         for (field, default, min, max) in [("priority", 3, 1, 4), ("estimate_minutes", 0, 0, 480)] {
             let value = match data.get(field) {
                 Some(v) => v
@@ -49,6 +54,7 @@ impl Store {
         data: &Value,
         record: &mut Record,
         actor: &Actor,
+        importing: bool,
     ) -> Result<()> {
         fields(
             data,
@@ -96,17 +102,9 @@ impl Store {
                 "Only the event author or administrator may change this event",
             );
         }
-        // Calendar editing copies incoming fields into the record before
-        // category validation. Verify its old category first, otherwise an
-        // older client could replace a custom label without acknowledging it.
-        if record.revision > 0
-            && record.data["category"].as_str().is_some_and(|v| v.starts_with("custom:"))
-            && data.get("category").and_then(Value::as_str)
-                .is_some_and(|next| Some(next) != record.data["category"].as_str())
-            && data["category_override"] != true
-        {
-            return fail(409,"This event has a custom category. Update the app before changing its category");
-        }
+        // Validate against the original assignment before copying editor fields.
+        // Otherwise a newly assigned archived category looks unchanged.
+        self.category(data, record, importing)?;
         for (key, value) in data.as_object().unwrap() {
             // Preserve the old audience until recipient validation can tell
             // historical disabled accounts from newly selected ones.
@@ -166,7 +164,6 @@ impl Store {
             record.data["end_date"] = json!("");
         }
         Self::reminders(data, record)?;
-        self.category(data, record)?;
         Self::recurrence(data, record)?;
         self.reminder_options(data, record, actor)?;
         record.data["title"] = json!(title);

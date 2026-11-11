@@ -14,7 +14,12 @@ pub(super) const LIST_FIELDS: &[&str] = &[
     "images",
 ];
 impl Store {
-    pub(super) fn category(&self, data: &Value, record: &mut Record) -> Result<()> {
+    pub(super) fn category(
+        &self,
+        data: &Value,
+        record: &mut Record,
+        importing: bool,
+    ) -> Result<()> {
         if data.get("category").is_some_and(|v| !v.is_string()) {
             return fail(400, "Choose a supported household category");
         }
@@ -23,16 +28,19 @@ impl Store {
             .or_else(|| record.data.get("category"))
             .and_then(Value::as_str)
             .unwrap_or("general");
-        let before=record.data["category"].as_str().unwrap_or("general");
-        let changed=record.revision>0 && before!=category;
-        let unchanged=record.revision>0 && before==category;
-        if changed && before.starts_with("custom:") && data["category_override"]!=true {
-            return fail(409,"This item has a custom category. Update the app before changing its category");
+        let before = record.data["category"].as_str().unwrap_or("general");
+        let changed = record.revision > 0 && before != category;
+        let unchanged = record.revision > 0 && before == category;
+        if changed && before.starts_with("custom:") && data["category_override"] != true {
+            return fail(
+                409,
+                "This item has a custom category. Update the app before changing its category",
+            );
         }
-        if data.get("category_override").is_some() && data["category_override"]!=true {
-            return fail(400,"Invalid category override");
+        if data.get("category_override").is_some() && data["category_override"] != true {
+            return fail(400, "Invalid category override");
         }
-        self.category_allowed(category,unchanged)?;
+        self.category_allowed(category, unchanged || importing)?;
 
         record.data["category"] = json!(category);
         Ok(())

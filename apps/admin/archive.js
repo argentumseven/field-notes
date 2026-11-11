@@ -146,7 +146,7 @@ window.FieldArchive = (() => {
   function validate(manifest) {
     if (
       manifest?.format !== "org.fieldnotes.archive" ||
-      ![1,2].includes(manifest.version) ||
+      ![1, 2, 3].includes(manifest.version) ||
       !uuid.test(manifest.source) ||
       !Number.isInteger(manifest.generation) ||
       manifest.generation < 1 ||
@@ -531,6 +531,7 @@ window.FieldArchive = (() => {
               status.textContent = `Preparing images · ${++done} of ${total} chunks`;
             }
           }
+          if (preview.new_categories > 0) await reauthenticate();
           status.textContent = "Importing the reviewed items…";
           let result;
           try {
@@ -575,7 +576,7 @@ window.FieldArchive = (() => {
         el(
           "p",
           "",
-          `${preview.new_items} new items · ${preview.already_present} already present · ${preview.retained_changes} saved alternatives / retained changes`,
+          `${preview.new_items} new items · ${preview.already_present} already present · ${preview.retained_changes} saved alternatives / retained changes · ${preview.new_categories || 0} new category definitions`,
         ),
       );
       for (const person of preview.people) {

@@ -3,7 +3,7 @@ package org.fieldnotes.ui
 /** OS-owned actions stay outside the shared planner and its transport. */
 data class DeviceActions(
     val transfer:org.fieldnotes.domain.TransferUi=org.fieldnotes.domain.TransferUi(),
-    val exportData:(String)->Unit={},val chooseImport:()->Unit={},val previewImport:(String)->Unit={},val reviewImport:()->Unit={},val commitImport:()->Unit={},val cancelImport:()->Unit={},val mapImportPerson:(String,String)->Unit={_,_->},val refreshRecovered:()->Unit={},val restoreRecovered:(String,String?)->Unit={_,_->},val discardRecovered:(String)->Unit={},
+    val exportData:(String)->Unit={},val chooseImport:()->Unit={},val previewImport:(String)->Unit={},val reviewImport:()->Unit={},val commitImport:(String)->Unit={},val cancelImport:()->Unit={},val mapImportPerson:(String,String)->Unit={_,_->},val refreshRecovered:()->Unit={},val restoreRecovered:(String,String?)->Unit={_,_->},val discardRecovered:(String)->Unit={},
     val update:org.fieldnotes.domain.AppUpdateUi=org.fieldnotes.domain.AppUpdateUi(),
     val checkUpdate:()->Unit={},val downloadUpdate:()->Unit={},val cancelUpdate:()->Unit={},val installUpdate:()->Unit={},
     val testReminderSound:(org.fieldnotes.domain.AlertProfile)->Unit={},
