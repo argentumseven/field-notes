@@ -2,6 +2,8 @@
 
 [**Download latest Android APK (ARM64)**](https://github.com/argentumseven/field-notes/releases/latest/download/field-notes.apk) · [Release notes and checksums](https://github.com/argentumseven/field-notes/releases/latest)
 
+[**Download the 0.11.6 Linux server bundle (x86_64)**](https://raw.githubusercontent.com/argentumseven/field-notes/cbde73a01c041f959aa080e2b817106b755dc2b2/server-downloads/field-notes-0.11.6-linux-x86_64.tar.gz) · [Upgrade an existing server](docs/UPDATES.md#linux-container-updates)
+
 Standard server installs and GitHub downloads use the same public signing certificate
 and the exact same APK. Existing custom-signed phones retain their original signer.
 
@@ -23,6 +25,11 @@ services. iOS/native desktop packages are deferred.
 ![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/119-calendar-at-glance.png)
 
 ## Planner and administration
+
+- Custom household categories can be created, renamed, archived, merged and
+  removed when unused from web Management, with selection and filters on web
+  and Android. Work lists can release tasks to Inbox without deleting them;
+  work/reference conversion has an explicit impact review. [Category guide](docs/CATEGORIES.md).
 
 - Capture tasks in Inbox without creating a project. Household/honey-do is a
   category for standalone tasks, task lists or projects. Projects combine direct

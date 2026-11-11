@@ -7,7 +7,30 @@ non-destructive work-list unbundling, explicit list conversion review and the
 follow-up import/calendar fixes described below. Archive version 3 preserves
 custom metadata with administrator password proof for missing definitions.
 The stable public APK signer, protocol 1, schema 2 and pairing identities remain
-unchanged. Public artifact verification is recorded after publication.
+unchanged.
+
+Public delivery verified: [v0.11.6](https://github.com/argentumseven/field-notes/releases/tag/v0.11.6),
+source `83ed751cb2cc9b222f73151c6880fd65ef09635d`, Android code 25.
+[Prebuilt publication run 43113774560](https://github.com/argentumseven/field-notes/actions/runs/43113774560)
+succeeded. The four public assets match the clean tagged build byte for byte;
+actual APK signature/package/version/ARM64 and 16 KiB alignment checks pass.
+The latest-download URL returns this same version/code/hash. APK SHA-256:
+`deceecd83677350e6aa39676420613651f09dba308b222554af59e1ec3a3b2cb`.
+The actual APK contains the category, list-unbundle, conversion and import
+password-confirmation code. Release lint, 139 Kotlin host tests, all 124 Node
+checks and 25 upgrade/recovery tests passed for this version.
+
+The matching offline x86_64 Linux bundle is available from the README download
+link, on the dedicated `server-bundles/v0.11.6` artifact branch. The downloaded
+100,142,156-byte public bundle was verified independently, including its APK
+hash/version metadata and preserved pinned signer. Bundle SHA-256:
+`aafe7e8bb559b4d55a3cf3250d10c461e725426681793e743aed07908e5bb9aa`.
+Both Docker image IDs were built/resolved locally and the nonroot production
+app ran with a read-only root, no capabilities and no network. Recompressing
+the offline image archive reduced download size without changing its images;
+embedded and outer checksums were recalculated and verified. No private key is
+in the bundle. Physical phone/home-server installation remains an operator
+upgrade; this publication did not change the user's running household.
 
 ## Custom categories and organization workflows — separate development branch
 
