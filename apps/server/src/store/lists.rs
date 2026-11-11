@@ -25,13 +25,14 @@ impl Store {
             .unwrap_or("general");
         let before=record.data["category"].as_str().unwrap_or("general");
         let changed=record.revision>0 && before!=category;
+        let unchanged=record.revision>0 && before==category;
         if changed && before.starts_with("custom:") && data["category_override"]!=true {
             return fail(409,"This item has a custom category. Update the app before changing its category");
         }
         if data.get("category_override").is_some() && data["category_override"]!=true {
             return fail(400,"Invalid category override");
         }
-        self.category_allowed(category,!changed)?;
+        self.category_allowed(category,unchanged)?;
 
         record.data["category"] = json!(category);
         Ok(())
