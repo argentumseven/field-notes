@@ -141,7 +141,7 @@ function renderProjectContext(root, project) {
   const line = el("div", "project-heading");
   line.append(
     typeBadges(project),
-    el("strong", "", FieldProjects.stateLabel(project, r)),
+    el("strong", "", project.data.status === "archived" ? "Finished project · retained" : "Project state: " + FieldProjects.stateLabel(project, r)),
   );
   section.append(line);
   const context = [
