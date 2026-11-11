@@ -16,8 +16,10 @@ planning responsibility; the working claim is exclusive server-accepted activity
 Handoffs require releasing active claims. Focus, widgets and due reminders
 respect assignments. Old matrix buckets are retained only for protocol
 compatibility, without a confusing Collection selector in the interface.
-Tasks can move to Inbox or either kind of collection using Keep in. Nonempty
-collections cannot be deleted. Android keeps Focus / Tasks / Calendar in its
+Tasks can move to Inbox or either kind of collection using Keep in. Project
+completion and deletion are separate: Finished projects remain browseable, while
+Delete offers explicit keep-contents or delete-contents choices. Both require
+confirmation, and server-side revision and permission checks protect linked work. Android keeps Focus / Tasks / Calendar in its
 bottom bar for frequent access; Browse workspace opens the full navigation.
 
 Focus explains its ranking;
