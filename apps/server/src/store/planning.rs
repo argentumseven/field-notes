@@ -96,6 +96,17 @@ impl Store {
                 "Only the event author or administrator may change this event",
             );
         }
+        // Calendar editing copies incoming fields into the record before
+        // category validation. Verify its old category first, otherwise an
+        // older client could replace a custom label without acknowledging it.
+        if record.revision > 0
+            && record.data["category"].as_str().is_some_and(|v| v.starts_with("custom:"))
+            && data.get("category").and_then(Value::as_str)
+                .is_some_and(|next| Some(next) != record.data["category"].as_str())
+            && data["category_override"] != true
+        {
+            return fail(409,"This event has a custom category. Update the app before changing its category");
+        }
         for (key, value) in data.as_object().unwrap() {
             // Preserve the old audience until recipient validation can tell
             // historical disabled accounts from newly selected ones.
