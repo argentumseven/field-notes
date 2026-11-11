@@ -99,7 +99,7 @@ impl Store {
         for (key, value) in data.as_object().unwrap() {
             // Preserve the old audience until recipient validation can tell
             // historical disabled accounts from newly selected ones.
-            if key != "reminder_options" {
+            if key != "reminder_options" && key != "category_override" {
                 record.data[key] = value.clone();
             }
         }
