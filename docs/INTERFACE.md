@@ -17,9 +17,11 @@ Handoffs require releasing active claims. Focus, widgets and due reminders
 respect assignments. Old matrix buckets are retained only for protocol
 compatibility, without a confusing Collection selector in the interface.
 Tasks can move to Inbox or either kind of collection using Keep in. Project
-completion and deletion are separate: Finished projects remain browseable, while
-Delete offers explicit keep-contents or delete-contents choices. Both require
-confirmation, and server-side revision and permission checks protect linked work. Android keeps Focus / Tasks / Calendar in its
+completion and deletion are separate: Finished projects remain browseable.
+Unbundle is a non-destructive project action that preserves the project and all
+its contents while releasing their grouping. Delete is strictly destructive and
+requires an explicit confirmation for populated content. Server-side revision
+and permission checks protect both workflows. Android keeps Focus / Tasks / Calendar in its
 bottom bar for frequent access; Browse workspace opens the full navigation.
 
 Focus explains its ranking;
