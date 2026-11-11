@@ -651,6 +651,7 @@ async function eventEditor(record, selectedTime) {
         {
           title: v.title,
           category: v.category,
+          ...(record?.data.category?.startsWith("custom:") && v.category !== record.data.category ? {category_override:true} : {}),
           recurrence,
           notes: v.notes,
           location: v.location,
