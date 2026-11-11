@@ -441,7 +441,7 @@ import org.fieldnotes.domain.*
         val data=obj("title" to title.j(),"notes" to notes.j(),"due" to due.j(),"project_id" to container.j(),"priority" to priority.j(),"planned_for" to planned.j(),"estimate_minutes" to (effort.toIntOrNull()?:0).j(),"pinned" to JsonPrimitive(pinned),"blocked" to JsonPrimitive(blocked))
         val assigned=if(state.cache.people.isEmpty())data else JsonObject(data+("assignee" to if(assignee.isBlank())JsonNull else assignee.j()))
         val classified=if(state.cache.supportsItemContexts()||task.data.containsKey("item_category")||draft?.data?.containsKey("item_category")==true)JsonObject(assigned+("item_category" to itemCategory.j()))else assigned
-        return if(state.cache.supportsPlannerV3())JsonObject(classified+("category" to category.j())) else classified
+        return if(state.cache.supportsPlannerV3())JsonObject(classified+("category" to category.j())+(if(task.data.text("category").startsWith("custom:")&&category!=task.data.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())) else classified
     }
     fun retain() { dirty = true; val captured = fields(); val base = revision; model.launch { model.saveDraft(task.id, base, captured, basis) } }
     LaunchedEffect(draft?.revision) { if (dirty && draft != null && draft.dependsOn == null) revision = draft.revision }
