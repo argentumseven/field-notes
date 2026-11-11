@@ -67,7 +67,7 @@ import org.fieldnotes.domain.*
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New $kind" else "Edit $kind")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title,{title=it.take(160)},label={Text(if(kind=="list")"List name" else "Project name")},singleLine=true,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Description")},minLines=2,modifier=Modifier.fillMaxWidth())
-        if(state.cache.supportsPlannerV3())CategoryPicker(category){category=it}
+        if(state.cache.supportsPlannerV3())CategoryPicker(category,cache=state.cache){category=it}
         if(state.cache.supportsProjects()) {
             if(kind=="project") {
                 ViewChoice("Project coordinator",coordinator,listOf("" to "No coordinator")+state.cache.people.filter {it.can_assign||it.id==coordinator}.map {it.id to it.name}){coordinator=it}
@@ -127,7 +127,7 @@ import org.fieldnotes.domain.*
         OutlinedTextField(body,{body=it.take(16384)},label={Text(if(recipe)"Notes · optional" else "Content")},minLines=if(recipe)2 else 6,modifier=Modifier.fillMaxWidth())
         SecondaryButton(onClick={extra=!extra},modifier=Modifier.fillMaxWidth()){Text(if(extra)"Fewer options ▴" else "More options ▾")}
         if(extra){
-        if(state.cache.supportsPlannerV3()){CategoryPicker(category){category=it};FollowUpControls(onRadar,remindAt,device.use24Hour){radar,at->onRadar=radar;remindAt=at}}
+        if(state.cache.supportsPlannerV3()){CategoryPicker(category,cache=state.cache){category=it};FollowUpControls(onRadar,remindAt,device.use24Hour){radar,at->onRadar=radar;remindAt=at}}
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(pinned,{pinned=it});Text("Pin this note")}
         }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
