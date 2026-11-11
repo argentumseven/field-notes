@@ -266,7 +266,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         OutlinedTextField(data.text("title"),{set("title",it.take(240).j())},label={Text("Item name")},enabled=writable,modifier=Modifier.fillMaxWidth())
         if(record!=null)MembershipField(state.cache,data.text("project_id",record.data.text("project_id")),writable&&!busy){set("project_id",it.j())}
         val context=itemContext(data,list)
-        if(state.cache.supportsPlannerV3()&&!context.scoped)CategoryPicker(data.text("category","general"),writable){set("category",it.j())}
+        if(state.cache.supportsPlannerV3()&&!context.scoped)CategoryPicker(data.text("category","general"),writable,cache=state.cache){set("category",it.j())}
         if(state.cache.supportsItemContexts()||data.containsKey("item_category"))ItemCategoryPicker(context,data.text("item_category"),writable&&state.cache.supportsItemContexts()){set("item_category",it.j())}
         else Text("Update the server to add item categories. Existing labels and content are kept.",style=MaterialTheme.typography.bodySmall)
         for((field,label) in listOf("quantity" to "Quantity","store" to "Store","link_url" to "Web link","price" to "Price"))if(field in fields) {
@@ -306,8 +306,9 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
             val options=prunedReminderOptions(SyncJson.decodeFromJsonElement<ReminderOptions>(it),itemReminderRules(data,id));validateReminderOptions(options)
             JsonObject(data+("reminder_options" to reminderOptionsData(options)))
         } ?: data else JsonObject(data-"reminder_options")
-        if(record==null)model.enqueue("task.create",id,JsonObject(payload+("project_id" to list.id.j())),null,basis)
-        else { model.saveDraft(id,revision,payload,basis);model.submitDraft(id) }
+        val saved=if(record!=null&&record.data.text("category").startsWith("custom:")&&payload.text("category")!=record.data.text("category"))JsonObject(payload+("category_override" to JsonPrimitive(true)))else payload
+        if(record==null)model.enqueue("task.create",id,JsonObject(saved+("project_id" to list.id.j())),null,basis)
+        else { model.saveDraft(id,revision,saved,basis);model.submitDraft(id) }
         model.requestSync();close()
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Add item" else "Save item")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
         if(record!=null&&writable)SecondaryButton(onClick={removing=basis to record.copy(revision=revision)},enabled=!busy,dangerous=true){Text("Delete item")}
