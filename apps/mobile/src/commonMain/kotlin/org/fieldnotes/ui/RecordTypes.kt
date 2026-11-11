@@ -19,9 +19,9 @@ import org.fieldnotes.domain.*
     }
 }
 @Composable internal fun CategoryPicker(value:String,enabled:Boolean=true,cache:Cache?=null,changed:(String)->Unit)=ViewChoice("Category",value,if(cache!=null)categoryChoices(cache,value)else categoryChoices(value),enabled,changed)
-@Composable internal fun RecordBadges(record:Record,parent:Record?=null) {
+@Composable internal fun RecordBadges(record:Record,parent:Record?=null,cache:Cache?=null) {
     val scoped=record.kind=="task"&&parent?.kind=="list"&&itemContext(record.data,parent).scoped
-    val category=if(scoped)null else categoryLabel(record).takeUnless { it=="General" } ?: parent?.let(::categoryLabel)
+    val category=if(scoped)null else (if(cache!=null)categoryLabel(cache,record)else categoryLabel(record)).takeUnless { it=="General" } ?: parent?.let {if(cache!=null)categoryLabel(cache,it)else categoryLabel(it)}
     val kind=if(parent?.kind=="list"&&!parent.flag("items_are_tasks"))when(parent.data.text("template")){"groceries"->"Grocery item";"shopping"->"Shopping item";else->"List item"} else recordTypeLabel(record)
     FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         for(label in listOfNotNull(kind,category?.takeUnless { it=="General" },itemCategory(record).takeIf{record.kind=="task"&&it.isNotBlank()}))Surface(color=MaterialTheme.colorScheme.surfaceContainerLow,shape=MaterialTheme.shapes.extraSmall,border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)){Text(label,Modifier.padding(horizontal=7.dp,vertical=3.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)}
