@@ -104,7 +104,7 @@ import org.fieldnotes.domain.*
             Text("Check items off, add more whenever you need, and clear only the checked items.",style=MaterialTheme.typography.bodySmall)
             if(state.cache.supportsPlannerV3()){Row(verticalAlignment=Alignment.CenterVertically){Switch(notifyItems,{notifyItems=it});Text("Notify when items are added",Modifier.padding(start=8.dp))};if(template!="groceries")Row(verticalAlignment=Alignment.CenterVertically){Switch(itemReminders,{itemReminders=it});Text("Scheduled item reminders",Modifier.padding(start=8.dp))};Text("Muting keeps saved settings, list contents and sync intact.",style=MaterialTheme.typography.bodySmall)}
         }
-        if(descendants.isNotEmpty())Text("Deletion offers a choice to preserve or remove this collection's contents.",style=MaterialTheme.typography.bodySmall)
+        if(descendants.isNotEmpty())Text(if(state.cache.supportsCollectionActions())"To keep the project and its contents, use Unbundle project. Delete here removes linked content." else "Update the paired server before removing a populated collection. Existing work is kept.",style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
         if(record!=null&&kind=="project"&&state.cache.supportsProjects()) {
