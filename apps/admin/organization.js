@@ -643,6 +643,7 @@ function renderNoteDetail(note) {
                 : {}),
               pinned: d.pinned,
               category: d.category,
+              ...(note.data.category?.startsWith("custom:") && d.category !== note.data.category ? {category_override:true} : {}),
               ...follow.value(),
             },
             d.baseRevision,
