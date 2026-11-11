@@ -1524,3 +1524,53 @@ no jobs for pushes to this branch and did not validate these changes.
 Before merge, run `cargo test --locked`, `npm test`, `npm run test:browser`
 and the documented Android build/emulator gates; review permission, history,
 recovery, offline queue and sync behavior with populated projects.
+
+### Retention and Trash follow-up — review branch (2026-11-11)
+
+These additions are **unmerged and not deployed**. They introduce a read-only
+Trash list backed by existing SQLite tombstones, without changing database
+`user_version`, resetting encrypted keys, or enabling any automatic purge.
+New tombstones retain `deleted_at`; older entries remain browseable even if
+the date is missing. Recovery uses the existing item-version preview and
+explicit restore confirmation; no unreviewed restoration is performed.
+The browser shows version/checkpoint metadata, shared image bytes, and Trash
+counts. The web purge form requires typing its confirmation phrase and checking
+an acknowledgement; the legacy admin API contract remains unchanged.
+Compatible Android clients show Trash and the new collection actions only when
+the paired server advertises `content-trash-v1` and
+`collection-lifecycle-v2` respectively. Queued unbundle/cascade changes have
+explicit optimistic projections; underlying snapshots and outbox entries remain
+durable.
+
+Added automated test cases (not executed here): read-only Trash listing,
+new tombstone timestamp, pagination validation, unchanged active snapshot,
+recovery-version availability, and Android offline unbundle/cascade projections.
+
+**Pre-merge and deployment gates:**
+1. Compile the Rust server and Kotlin common/Android sources; run
+   `cargo test --locked`, `npm test`, `npm run test:browser`,
+   the Kotlin unit suite and Android emulator instrumentation.
+2. Run an isolated upgrade test against a **copy** of an existing encrypted
+   workspace and original key, covering old tombstones without timestamps,
+   existing snapshots/checkpoints/attachments, current work, account sessions,
+   outbox conflicts, and a restart without schema migration.
+3. Confirm crash/replay, stale descendant revisions, multi-user authorization,
+   deleted image recovery and checkpoint restore after cascade deletion.
+4. Verify an encrypted backup **and a restore into a separate test directory**
+   before any deployment; confirm sufficient free space. Never run destructive
+   fixtures on the user's real server or phone.
+5. Roll out server first and matching same-signer Android build afterward;
+   verify feature negotiation and pending work. Maintain the known-good prior
+   package for rollback, and never downgrade a database without an explicit
+   compatibility check.
+6. Confirm new web controls preserve old clients and older offline phones.
+   No forced pairing reset or background erasure is permitted.
+
+**Deferred by design:** A guaranteed 30-day Trash policy, targeted permanent
+purge across snapshots/checkpoints/attachments, separate checkpoint lifetime,
+and independent backup disposal. These would change retention guarantees and
+must not silently activate during an ordinary upgrade.
+
+**Tooling limitation:** This GitHub-connected edit environment cannot run
+Rust/Android builds or full process tests. Branch/JavaScript static inspection
+does not constitute a passed release gate.
