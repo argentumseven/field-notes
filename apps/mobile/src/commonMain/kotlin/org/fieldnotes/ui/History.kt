@@ -26,6 +26,8 @@ import org.fieldnotes.domain.*
     val cache=state.cache;val snapshot=cache.snapshot ?: return
     val scope=rememberCoroutineScope();val focus=LocalFocusManager.current;val zone=TimeZone.currentSystemDefault()
     var recoveryTarget by remember {mutableStateOf<String?>(null)};var recoveryTitle by remember {mutableStateOf("")}
+    var trashOpen by remember {mutableStateOf(false)}
+    if(trashOpen)TrashSheet(model,state,use24Hour,{id,itemTitle->trashOpen=false;recoveryTarget=id;recoveryTitle=itemTitle}){trashOpen=false}
     recoveryTarget?.let {RecoverySheet(model,state,it.takeIf {s->s.isNotEmpty()},recoveryTitle,use24Hour){recoveryTarget=null}}
     var query by rememberSaveable {mutableStateOf("")};var actor by rememberSaveable {mutableStateOf("")};var kind by rememberSaveable {mutableStateOf("")};var action by rememberSaveable {mutableStateOf("")}
     var from by rememberSaveable {mutableStateOf("")};var to by rememberSaveable {mutableStateOf("")};var expanded by rememberSaveable {mutableStateOf(false)}
@@ -67,7 +69,13 @@ import org.fieldnotes.domain.*
                     SecondaryButton(onClick={focus.clearFocus();reload++},enabled=!loading){Text("Refresh history")}
                 }
                 if(projectTarget!=null){Text("Project activity · $projectTitle");SecondaryButton(onClick=allHistory){Text("All household history")}}
-                if(cache.supportsRecovery()){RecoveryPendingCard(model,state);SecondaryButton(onClick={recoveryTarget="";recoveryTitle="Content checkpoints"}){Text("Content checkpoints")}}
+                if(cache.supportsRecovery()){
+                    RecoveryPendingCard(model,state)
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        SecondaryButton(onClick={trashOpen=true}){Text("Trash · deleted items")}
+                        SecondaryButton(onClick={recoveryTarget="";recoveryTitle="Content checkpoints"}){Text("Content checkpoints")}
+                    }
+                }
                 OutlinedTextField(query,{query=it.take(100)},Modifier.fillMaxWidth().testTag("history-search").onFocusChanged {if(it.isFocused)expanded=false},label={Text("Search titles, people and change details")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={focus.clearFocus()}))
                 FlowRow(Modifier.padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     SecondaryButton(onClick={focus.clearFocus();expanded=!expanded}){Text(if(expanded)"Filters ▴" else "Filters ▾")}
