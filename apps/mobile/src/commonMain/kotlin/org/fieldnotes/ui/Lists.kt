@@ -59,6 +59,9 @@ import org.fieldnotes.domain.*
     var coordinator by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("assignee") ?: "")}
     var targetDay by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("due") ?: "")}
     var projectStatus by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("status","active") ?: "active")}
+    var conversionProof by remember(record?.id){mutableStateOf("")}
+    val affectedItems=if(record!=null&&kind=="list")projectRecords(state.cache).count{it.record.kind=="task"&&it.record.data.text("project_id")==record.id}else 0
+    val converting=record!=null&&kind=="list"&&affectedItems>0&&workItems!=record.flag("items_are_tasks")
     var notifyItems by rememberSaveable(record?.id){mutableStateOf(record?.data?.get("notify_additions")!=JsonPrimitive(false))};var itemReminders by rememberSaveable(record?.id){mutableStateOf(record?.data?.get("item_reminders")!=JsonPrimitive(false))}
     var perpetual by rememberSaveable { mutableStateOf(record?.data?.get("perpetual")!=JsonPrimitive(false)) }
     var busy by remember { mutableStateOf(false) };var error by remember { mutableStateOf<String?>(null) };var remove by remember { mutableStateOf(false) }
@@ -91,9 +94,14 @@ import org.fieldnotes.domain.*
             Text("Check items off, add more whenever you need, and clear only the checked items.",style=MaterialTheme.typography.bodySmall)
             if(state.cache.supportsPlannerV3()){Row(verticalAlignment=Alignment.CenterVertically){Switch(notifyItems,{notifyItems=it});Text("Notify when items are added",Modifier.padding(start=8.dp))};if(template!="groceries")Row(verticalAlignment=Alignment.CenterVertically){Switch(itemReminders,{itemReminders=it});Text("Scheduled item reminders",Modifier.padding(start=8.dp))};Text("Muting keeps saved settings, list contents and sync intact.",style=MaterialTheme.typography.bodySmall)}
         }
+        if(converting) {
+            Text("Conversion preview: $affectedItems existing items keep their IDs, notes, categories, attachments and history. "+if(workItems)"They will become work tasks and count toward project progress."else"They will become checklist/reference items and no longer count toward work progress.",style=MaterialTheme.typography.bodyMedium)
+            OutlinedTextField(conversionProof,{conversionProof=it},label={Text("Type CONVERT LIST to confirm")},singleLine=true)
+        }
         if(occupied)Text("Clear or move this collection's items before deleting it.",style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
+        require(!converting||conversionProof=="CONVERT LIST"){"Review the list conversion and type CONVERT LIST."}
         if(record!=null&&kind=="project"&&state.cache.supportsProjects()) {
             val progress=state.cache.projectGraph().rollup(record,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())
             require(projectStatus!="archived"||progress.open==0){"Finish or move unfinished work before finishing this project."}
