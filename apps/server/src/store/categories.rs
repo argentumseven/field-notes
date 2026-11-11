@@ -41,9 +41,16 @@ impl Store {
         let Some(id) = key.strip_prefix("custom:") else {
             return fail(400,"Unknown category; choose a supported category");
         };
-        let found = self.category_by_id(id)?;
-        if found.archived && !unchanged {
-            return fail(409,"Category is archived; keep its current assignment or choose an active category");
+        // Deleted category definitions leave encrypted tombstones. A version
+        // restored later can retain its original category without the metadata
+        // lookup turning ordinary task edits into permanent errors.
+        let status: Option<(i64,i64)> = self.db.query_row(
+            "SELECT archived,deleted FROM household_categories WHERE id=?",
+            [id], |r| Ok((r.get(0)?,r.get(1)?)),
+        ).optional()?;
+        let (archived,deleted)=status.ok_or(Fault(409,"Category is unavailable; choose an active category".into()))?;
+        if (archived!=0 || deleted!=0) && !unchanged {
+            return fail(409,"Category is inactive; keep its current assignment or choose an active category");
         }
         Ok(())
     }
