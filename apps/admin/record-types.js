@@ -29,6 +29,12 @@ const allCategoryChoices = () => [
   ...Object.entries(recordCategories),
   ...customCategoryChoices(""),
 ];
+const categoryFilterChoices = () => [
+  ...Object.entries(recordCategories),
+  ...(state.snapshot?.categories || []).map((c)=>[
+    "custom:"+c.id,c.name+(c.archived?" · archived":""),
+  ]),
+];
 function categoryField(record) {
   return {
     key: "category",
