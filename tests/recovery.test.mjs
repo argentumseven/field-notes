@@ -1546,3 +1546,22 @@ test("hierarchy restore rejects unreviewed membership edits and unavailable dele
     assert.equal((await s.snapshot()).records.some(r=>r.id===missing.id),false);
   } finally {await s.close();}
 });
+
+
+test("opening Trash does not trim expired versions or mutate the retention revision", async () => {
+  const s=await scene();
+  try {
+    const p=(await s.send("project.create",randomUUID(),{title:"Preserve until maintenance"})).data.record;
+    assert.equal((await s.send("project.delete",p.id,{},p.revision)).status,200);
+    const saved=(await s.versions(p.id))[0];
+    const before=(await s.status()).history_revision;
+    // Make one retained version expired after its last ordinary write. The
+    // Trash listing must not schedule maintenance or remove it.
+    s.sql("db.execute(\"UPDATE recovery_snapshots SET at=1 WHERE id='"+saved.id+"'\")");
+    const trash=await s.recover("trash",{limit:10});
+    assert.equal(trash.status,200,JSON.stringify(trash.data));
+    assert(trash.data.entries.some(row=>row.id===p.id));
+    assert.equal(s.sql("print(db.execute(\"SELECT COUNT(*) FROM recovery_snapshots WHERE id='"+saved.id+"'\").fetchone()[0])").trim(),"1");
+    assert.equal(trash.data.history_revision,before);
+  } finally {await s.close();}
+});
