@@ -33,7 +33,7 @@ import org.fieldnotes.domain.*
     VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         if(notes.isEmpty())item { Text(if(recipes&&!cache.supportsPlannerDetails())"Update your server to add recipes. Existing notes and lists continue to sync." else if(recipes)"No recipes match. Search names, ingredients and instructions, or add a recipe." else if(later)"Keep an idea here for later. Add an optional reminder when you want it brought back." else "No notes match. Search titles and full content, or add a note.",Modifier.padding(vertical=24.dp)) }
         items(notes,key={it.record.id}){note->OutlinedCard(onClick={open(note.record.id)},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-            RecordBadges(note.record)
+            RecordBadges(note.record,cache=cache)
             if(note.record.flag("on_radar"))Text(note.record.data.number("remind_at").takeIf { it>0 }?.let{val local=kotlinx.datetime.Instant.fromEpochSeconds(it).toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault());"Remind ${friendlyDate(local.date)} · ${friendlyTime(local.time)}"} ?: "Someday · no reminder",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
             Text(note.record.data.text("title"),style=MaterialTheme.typography.titleMedium)
             Text(note.record.data.text("ingredients").ifBlank{note.record.data.text("body")}.take(180),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
