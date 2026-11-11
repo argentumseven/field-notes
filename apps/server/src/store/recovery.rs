@@ -188,6 +188,32 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
+    /// Capture a fresh collection time anchor immediately before a reviewed
+    /// cascade. A plain project version can be deduplicated against its
+    /// creation state despite many tasks being added in the meantime.
+    /// Keep the policy's disabled-versions behavior intact.
+    pub(in crate::store) fn recovery_collection_before_delete(
+        &self,
+        actor: &Actor,
+        target: &str,
+    ) -> Result<Option<String>> {
+        if !self.recovery_policy()?.enabled {
+            return Ok(None);
+        }
+        let root = self.recovery_object(target)?
+            .ok_or(Fault(404, "Collection no longer exists".into()))?;
+        let content = self.recovery_content(Some(target))?;
+        let sid = self.recovery_save(
+            actor,
+            "version",
+            target,
+            (&Self::history_title(&root.record), "collection.delete.before"),
+            &content,
+            true,
+        )?;
+        Ok(Some(sid))
+    }
+
     pub(super) fn recovery_incarnation(&self, target: &str) -> Result<i64> {
         Ok(self
             .db
