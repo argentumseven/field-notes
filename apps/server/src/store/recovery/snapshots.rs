@@ -19,10 +19,16 @@ impl Store {
             "created_by",
             "created_by_name",
             "created_at",
+            "deleted_at",
         ] {
             if let Some(value) = row.record.data.get(field) {
                 data.insert(field.into(), value.clone());
             }
+        }
+        // Tombstone timestamps live in the existing encrypted record payload:
+        // no schema migration, and older deleted records remain readable.
+        if !data.contains_key("deleted_at") {
+            data.insert("deleted_at".into(), json!(now()));
         }
         if let Some(body) = row.record.data["body"].as_str() {
             data.insert(
