@@ -367,7 +367,7 @@ function renderCollections(root) {
     ]);
   choice("Category", "category", [
     ["*", "All categories"],
-    ...allCategoryChoices(),
+    ...categoryFilterChoices(),
   ]);
   if (kinds.includes("project"))
     choice("Project state", "status", [
