@@ -674,7 +674,8 @@ impl Store {
             )
         );
         let hierarchy_mode = match body.get("hierarchy_mode") {
-            None | Some(Value::String(value)) if value.is_empty() || value == "bindings" => {
+            None => if collection { "bindings" } else { "" },
+            Some(Value::String(value)) if value.is_empty() || value == "bindings" => {
                 if collection { "bindings" } else { "" }
             }
             Some(Value::String(value)) if value == "respawn" && collection => "respawn",
