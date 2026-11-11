@@ -468,7 +468,7 @@ import org.fieldnotes.domain.*
             item { MembershipField(state.cache,container,writable&&!saving&&!staleWorkspace){container=it;retain()} }
             val categoryParent=state.cache.projectGraph().byId[container]
             val categoryContext=itemContext(obj("category" to category.j()),categoryParent)
-            if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))item{CategoryPicker(category,writable&&!saving&&!staleWorkspace){category=it;retain()}}
+            if(state.cache.supportsPlannerV3()&&!(categoryParent?.kind=="list"&&categoryContext.scoped))item{CategoryPicker(category,writable&&!saving&&!staleWorkspace,cache=state.cache){category=it;retain()}}
             if(state.cache.supportsItemContexts()||task.data.containsKey("item_category"))item{ItemCategoryPicker(categoryContext,itemCategory,writable&&!saving&&!staleWorkspace&&state.cache.supportsItemContexts()){itemCategory=it;retain()}}
             item { DateField("Due date", due, writable && !saving && !staleWorkspace) { due = it; retain() } }
             item { DateField("Planned day", planned, writable && !saving && !staleWorkspace) { planned = it; retain() } }
