@@ -370,9 +370,9 @@ const FieldRecovery = (() => {
     }
     parent.append(card);
   }
-  async function preview(source, title) {
+  async function preview(source, title, hierarchyMode = "bindings") {
     const live = scope();
-    const plan = await read("preview", { source }, live);
+    const plan = await read("preview", { source, ...(hierarchyMode === "respawn" ? { hierarchy_mode: "respawn" } : {}) }, live);
     const d = modal("Restore preview · " + title);
     d.body.append(
       el(
@@ -386,6 +386,18 @@ const FieldRecovery = (() => {
         "Current state is saved before changes. Restoration creates new versions; newer retained versions remain available to roll forward. Active working claims are cleared.",
       ),
     );
+    if (plan.hierarchy) {
+      const h = plan.hierarchy;
+      d.body.append(
+        el("p", "recovery-warning",
+          "Hierarchy recovery: " + h.linked_existing + " existing linked records kept under their original IDs · " +
+          h.missing + " deleted linked records · " +
+          (h.mode === "respawn"
+            ? h.respawned + " missing records will be restored under their original IDs, without overwriting live descendants."
+            : "Deleted linked records stay deleted. Choose the separate restore-missing option to recover their contents.")
+        ),
+      );
+    }
     if (plan.checkpoint)
       d.body.append(
         el(
@@ -418,7 +430,7 @@ const FieldRecovery = (() => {
         el(
           "p",
           "muted",
-          "Restores the entire selected item state, including comments and attachments. Individual attributes are not restored separately.",
+          "Restores the selected item. Existing linked records keep their current content; only explicitly selected missing contents are respawned using their original IDs. Individual attributes are not restored separately.",
         ),
       );
     }
@@ -500,7 +512,7 @@ const FieldRecovery = (() => {
           title: plan.checkpoint
             ? "Restore content checkpoint"
             : "Restore item version",
-          description: `Restore #${plan.source_index} · ${plan.title}: ${plan.restored} restored, ${plan.changed} changed, ${plan.removed} removed. ${plan.checkpoint ? "This replaces household content and affects everyone." : "This replaces the complete item state, including its comments and attachments."} Current state is saved first. Working claims are cleared.`,
+          description: `Restore #${plan.source_index} · ${plan.title}: ${plan.restored} restored, ${plan.changed} changed, ${plan.removed} removed. ${plan.checkpoint ? "This replaces household content and affects everyone." : plan.hierarchy ? "Existing linked records remain unchanged; " + (plan.hierarchy.mode === "respawn" ? "missing linked records will be restored with their existing IDs." : "missing linked records stay deleted.") : "This replaces the complete item state, including its comments and attachments."} Current state is saved first. Working claims are cleared.`,
           phrase: plan.confirmation_phrase,
           reviewLabel:
             "I reviewed the selected state and restore impact, including removals.",
@@ -580,12 +592,16 @@ const FieldRecovery = (() => {
           ),
         );
         if (item.problem) row.append(el("p", "error", item.problem));
-        if (item.can_restore)
-          row.append(
-            button("Preview restore", () =>
-              preview(item.id, target ? title : item.title),
-            ),
-          );
+        if (item.can_restore) {
+          const isCollection = target && ["project", "list"].includes(item.kind) && !item.deleted;
+          row.append(button(isCollection ? "Preview restore · reuse existing links" : "Preview restore", () =>
+            preview(item.id, target ? title : item.title),
+          ));
+          if (isCollection && isAdmin())
+            row.append(button("Preview restore + missing contents", () =>
+              preview(item.id, target ? title : item.title, "respawn"),
+            ));
+        }
         if (!target && item.can_delete)
           row.append(
             button(
