@@ -154,6 +154,8 @@ function renderProjectContext(root, project) {
       ? "Target: " + FieldHistory.value({ field: "due" }, project.data.due)
       : "No target date",
   ];
+  if (project.data.status === "archived" && project.data.finished_at)
+    context.push("Finished on " + new Date(project.data.finished_at * 1000).toLocaleDateString());
   section.append(el("p", "muted", context.join(" · ")));
   const progress = el("progress");
   progress.max = r.total || 1;
@@ -203,7 +205,7 @@ function renderProjectContext(root, project) {
     await mutate("project.update", project.id, { status }, project.revision);
   }
   if (mayWrite()) {
-    actions.append(button("Project settings", () => editCollection(project)));
+    actions.append(button("Project settings / delete", () => editCollection(project)));
     if (project.data.status === "on_hold" || project.data.status === "archived")
       actions.append(
         button("Reopen project", () => change("active"), "primary"),
