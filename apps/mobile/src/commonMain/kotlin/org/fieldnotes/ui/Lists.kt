@@ -74,6 +74,8 @@ import org.fieldnotes.domain.*
         }
         found
     }
+    var deleteSelection by remember(record?.id){mutableStateOf<List<Record>>(emptyList())}
+    var deleteRevision by remember(record?.id){mutableStateOf(record?.revision ?: 0L)}
     var removalMode by remember(record?.id){mutableStateOf("detach")}
     var deleteProof by remember(record?.id){mutableStateOf("")}
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New $kind" else "Edit $kind")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -119,14 +121,14 @@ import org.fieldnotes.domain.*
         val id=record?.id ?: model.newId()
         model.enqueue(kind+if(record==null)".create" else ".update",id,fields,record?.revision,basis);model.requestSync();close();if(record==null)onCreated?.invoke(id)
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Create $kind" else "Save changes")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(record!=null)SecondaryButton(onClick={remove=true;deleteProof="";removalMode=if(kind=="project")"detach" else "cascade"},enabled=!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
+        if(record!=null)SecondaryButton(onClick={deleteSelection=descendants.toList();deleteRevision=record.revision;remove=true;deleteProof="";removalMode=if(kind=="project")"detach" else "cascade"},enabled=!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
         SecondaryButton(onClick=close,enabled=!busy){Text("Cancel")}
     }})
     if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={
         Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text(if(descendants.isEmpty())"This empty $kind will be removed from active content. It does not need to be finished first."
-                else "This $kind contains ${descendants.size} linked records. Choose whether to preserve or remove its contents.")
-            if(descendants.isNotEmpty()){
+            Text(if(deleteSelection.isEmpty())"This empty $kind will be removed from active content. It does not need to be finished first."
+                else "This $kind contains ${deleteSelection.size} linked records captured when Delete was chosen. Choose whether to preserve or remove its contents.")
+            if(deleteSelection.isNotEmpty()){
                 if(kind=="project")ViewChoice("Contents",removalMode,listOf("detach" to "Keep tasks and lists (move to Inbox/standalone)","cascade" to "Delete project and all linked content")){removalMode=it}
                 else Text("All list items and their attachments will also be removed from active content.")
             }
@@ -134,8 +136,8 @@ import org.fieldnotes.domain.*
             OutlinedTextField(deleteProof,{deleteProof=it},label={Text("Type DELETE to confirm")},singleLine=true)
         }
     },confirmButton={Button(shape=ControlShape,enabled=deleteProof=="DELETE",onClick={
-        val payload=if(descendants.isEmpty())obj() else obj("mode" to removalMode.j(),"contents" to JsonArray(descendants.map{obj("id" to it.id.j(),"revision" to it.revision.j())}))
-        model.enqueueAsync("$kind.delete",record.id,payload,record.revision,basis);remove=false;close()
+        val payload=if(deleteSelection.isEmpty())obj() else obj("mode" to removalMode.j(),"contents" to JsonArray(deleteSelection.map{obj("id" to it.id.j(),"revision" to it.revision.j())}))
+        model.enqueueAsync("$kind.delete",record.id,payload,deleteRevision,basis);remove=false;close()
     }){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
 }
 
