@@ -143,7 +143,7 @@ impl Store {
                                 operation_id:id(),epoch:self.meta()?.0,generation:self.meta()?.1,
                                 action:format!("{}.update",row.kind),target:row.id.clone(),
                                 expected_revision:Some(row.revision),
-                                data:json!({"category":into})
+                                data:json!({"category":into,"category_override":true})
                             },false)?;
                         }
                         self.db.execute("UPDATE household_categories SET archived=1,revision=revision+1 WHERE id=?",[target])?;
