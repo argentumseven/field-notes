@@ -20,6 +20,21 @@ are reference checklists whose items stay in that list. A list can be standalone
 or grouped under a project; its work contributes to that project's progress.
 See [Tasks and projects](PROJECTS.md) for Household/honey-do examples and safe moves.
 
+## Non-destructive list release
+
+Work-task lists can release their direct tasks to Inbox through **Unbundle
+tasks**. Tasks retain their original IDs, categories, comments, images,
+due dates, completion states and history. The original list remains empty
+and can be deleted separately if desired. This operation is independent
+of destructive deletion, validates each affected revision, and is atomic.
+
+Reference, grocery and shopping checklists cannot use this action because
+their items must remain reference/checklist entries. To remove their project
+association, make the whole list standalone instead. Changing between
+work and reference-list roles requires a reviewed conversion with an
+explicit confirmation when items exist; the server refuses conversion
+while any of its tasks are in progress.
+
 ## Categories follow purpose
 
 A list's **type** and broad **category** describe its purpose. The optional
