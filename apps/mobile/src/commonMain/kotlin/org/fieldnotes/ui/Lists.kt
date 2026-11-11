@@ -38,7 +38,7 @@ import org.fieldnotes.domain.*
             Text(record.data.text("title"),style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
             if(record.kind=="project") {
                 val progress=cache.projectGraph().rollup(record,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())
-                Text("${progress.done}/${progress.total} tasks · ${projectStateLabel(record,progress)} · ${progress.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
+                Text(if(record.data.text("status")=="archived")"Finished project · ${progress.done}/${progress.total} tasks retained" else "${progress.done}/${progress.total} tasks · ${projectStateLabel(record,progress)} · ${progress.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
             }else if(record.data.text("project_id").isNotBlank())Text("In "+(cache.projectGraph().project(record)?.data?.text("title") ?: "Project"),style=MaterialTheme.typography.labelMedium)
             if(record.data.text("notes").isNotBlank())Text(record.data.text("notes"),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis)
             Text(recordHistory(cache,record,TimeZone.currentSystemDefault(),compact=true),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
