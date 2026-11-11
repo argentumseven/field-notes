@@ -1503,14 +1503,17 @@ This is an **unreleased, unmerged implementation**, not a verified deployment.
 
 - Empty projects/lists can be deleted without marking the project Finished.
 - Finished projects retain their state and new finish metadata until explicitly deleted.
-- Project removal has explicit keep-contents or delete-contents choices;
-  populated lists have an explicit reviewed cascade choice.
+- A standalone project.unbundle operation keeps the project and all linked
+  content, releasing direct tasks to Inbox and attached lists to standalone.
+- Project/list deletion is always destructive; populated deletion requires
+  an explicit reviewed cascade choice.
 - The server checks exact descendant IDs and revisions and applies recursive
   changes within one transaction; normal unconfirmed deletion does not cascade.
 - Browser and Android library/workspace labels distinguish Finished from task
   progress, and finished workspaces initially display all tasks.
-- Added server regression cases for empty project deletion, preserving linked
-  content, cascading deletions, and stale child revisions/additions.
+- Added server regression cases for empty project deletion, non-destructive
+  unbundling, cascading deletions, rejecting deletion detach mode, and stale
+  child revisions/additions.
 
 **Checks performed:** GitHub branch/compare inspection and JavaScript syntax
 parsing of `apps/admin/lists.js` and `apps/admin/projects.js`.
