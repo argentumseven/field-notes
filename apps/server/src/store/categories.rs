@@ -54,7 +54,7 @@ impl Store {
         }
         let previous = self.custom_categories()?;
         if previous.iter().any(|c| c.name.eq_ignore_ascii_case(&name) &&
-            input["target"] != c.id) {
+            input["target"].as_str() != Some(c.id.as_str())) {
             return fail(409,"A category already has this name");
         }
         if ["General","Action","Food & cooking","Household","Errands","Work","Personal"]
@@ -143,7 +143,7 @@ impl Store {
                                 operation_id:id(),epoch:self.meta()?.0,generation:self.meta()?.1,
                                 action:format!("{}.update",row.kind),target:row.id.clone(),
                                 expected_revision:Some(row.revision),
-                                data:json!({"category":into,"category_override":true})
+                                data:json!({"category":into})
                             },false)?;
                         }
                         self.db.execute("UPDATE household_categories SET archived=1,revision=revision+1 WHERE id=?",[target])?;
