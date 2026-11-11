@@ -59,12 +59,13 @@ and task history follow the original record. **Finish project** preserves a
 completed project in the Finished and All projects views; it does not delete
 anything. A newly created empty project may be deleted without first finishing
 it. The **Delete** action is available in project/list settings regardless of
-the status. For a populated project, select either **Keep tasks and lists** to
-move direct tasks into Inbox and detach lists with their content intact, or
-**Delete project and contents** to remove nested lists, tasks, comments and
-images from active content. Lists offer explicit removal of their contents too.
-Deletion requires typing DELETE and verifies every descendant revision so work
-added or edited after confirmation is never removed silently. Saved history,
+the status. **Unbundle project** is a separate non-destructive action: it
+releases direct tasks to Inbox and makes attached lists standalone while
+preserving the project, items, comments, images, task states and history.
+**Delete** is destructive: deleting a populated project or list removes its
+linked content from active data. Deletion requires typing DELETE and verifies
+every descendant revision so work added or edited after confirmation is never
+removed silently. Unbundle also verifies the current membership before moving it. Saved history,
 recovery versions and backups have separate retention/purge rules. A task cannot
 steal another person's working claim by moving it.
 
