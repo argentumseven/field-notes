@@ -668,9 +668,49 @@ const FieldRecovery = (() => {
       );
     await d.run(load);
   }
+  async function trash() {
+    const live = scope(), d = modal("Trash · deleted items");
+    const rows = el("div", "recovery-versions");
+    d.body.append(
+      el("p", "muted", "Deleted content is absent from active views. Recoverability depends on retained item versions and storage limits; Trash is not a guaranteed 30-day holding period. Old deleted items may have no recoverable version. Encrypted backups are separate."),
+      rows,
+    );
+    let before = null;
+    const more = button("Load more deleted items", () => d.run(load));
+    async function load() {
+      const page = await read("trash", before ? { before } : {}, live);
+      if (!before && !page.entries.length) {
+        rows.append(el("p", "empty", "No deleted items are recorded."));
+      }
+      for (const item of page.entries) {
+        const row = el("article", "history-entry");
+        row.append(
+          el("h3", "", item.title),
+          el("p", "muted", item.kind + " · " +
+            (item.deleted_at ? "Deleted " + moment(item.deleted_at) : "Deletion date unavailable")),
+        );
+        if (item.recoverable) {
+          row.append(button("Review saved versions", () => {
+            d.close();
+            return versions(item.id, item.title);
+          }));
+        } else {
+          row.append(el("p", "muted", "No retained item versions are available. An earlier checkpoint or independent backup may still contain this item."));
+        }
+        rows.append(row);
+      }
+      before = page.more ? page.next_before : null;
+      more.hidden = !page.more;
+    }
+    d.actions.prepend(more);
+    await d.run(load);
+  }
   function tools(parent) {
     pendingCard(parent);
-    parent.append(button("Content checkpoints", () => versions(null)));
+    parent.append(
+      button("Trash · deleted items", trash),
+      button("Content checkpoints", () => versions(null)),
+    );
   }
   function management(parent, data) {
     if (!data) return;
@@ -782,7 +822,10 @@ const FieldRecovery = (() => {
         "danger",
       ),
     );
-    panel.append(button("Content checkpoints", () => versions(null)));
+    panel.append(
+      button("Trash · deleted items", trash),
+      button("Content checkpoints", () => versions(null)),
+    );
     parent.append(panel);
   }
   function changed() {
@@ -792,5 +835,5 @@ const FieldRecovery = (() => {
         node.remove();
       }
   }
-  return { tools, versions, pendingCard, management, changed };
+  return { tools, versions, trash, pendingCard, management, changed };
 })();
