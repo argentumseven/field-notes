@@ -1480,3 +1480,69 @@ test("Trash rejects malformed pagination and never restores content implicitly",
     assert.equal((await s.snapshot()).records.some(r => r.id === project.id), false);
   } finally { await s.f.close(); }
 });
+
+
+test("project recovery preserves existing bindings and can explicitly respawn missing descendants without duplicate IDs", async () => {
+  const s = await scene();
+  try {
+    const p = await s.send("project.create", randomUUID(), {title:"Restore a grouping"});
+    assert.equal(p.status,200);
+    const project=p.data.record;
+    const list=(await s.send("list.create",randomUUID(),{title:"Work group",project_id:project.id,items_are_tasks:true})).data.record;
+    const existing=(await s.send("task.create",randomUUID(),{title:"Existing",notes:"Original",project_id:project.id})).data.record;
+    const missing=(await s.send("task.create",randomUUID(),{title:"Missing",notes:"Original attachment",project_id:list.id})).data.record;
+    const comment=(await s.send("comment.create",randomUUID(),{task_id:missing.id,body:"Original comment"})).data.record;
+    const image=(await s.send("image.create",randomUUID(),{task_id:missing.id,name:"Original image",bytes:png().toString("base64")})).data.record;
+    const source=(await s.versions(project.id)).find(entry=>!entry.deleted);
+    assert(source,"saved project state is available");
+    const edited=(await s.send("task.update",existing.id,{notes:"Changed since the snapshot"},existing.revision)).data.record;
+    assert.equal((await s.send("task.delete",missing.id,{},missing.revision)).status,200);
+    const bindings=await s.recover("preview",{source:source.id,hierarchy_mode:"bindings"});
+    assert.equal(bindings.status,200,JSON.stringify(bindings.data));
+    assert.equal(bindings.data.hierarchy.missing,3);
+    assert.equal(bindings.data.hierarchy.respawned,0);
+    assert.equal(bindings.data.hierarchy.linked_existing,2);
+    const keep=await s.apply(s.applyBody(bindings.data));
+    assert.equal(keep.status,200,JSON.stringify(keep.data));
+    let rows=(await s.snapshot()).records;
+    assert.equal(rows.filter(r=>r.id===existing.id).length,1);
+    assert.equal(rows.find(r=>r.id===existing.id).data.notes,"Changed since the snapshot");
+    assert.equal(rows.filter(r=>r.id===missing.id).length,0);
+    const respawn=await s.recover("preview",{source:source.id,hierarchy_mode:"respawn"});
+    assert.equal(respawn.status,200,JSON.stringify(respawn.data));
+    assert.equal(respawn.data.hierarchy.respawned,3);
+    const restored=await s.apply(s.applyBody(respawn.data));
+    assert.equal(restored.status,200,JSON.stringify(restored.data));
+    rows=(await s.snapshot()).records;
+    for(const id of [project.id,list.id,existing.id,missing.id,comment.id,image.id])
+      assert.equal(rows.filter(r=>r.id===id).length,1,id+" must not be duplicated");
+    assert.equal(rows.find(r=>r.id===existing.id).data.notes,"Changed since the snapshot");
+    assert.equal(rows.find(r=>r.id===missing.id).data.project_id,list.id);
+    assert.equal(rows.find(r=>r.id===comment.id).data.body,"Original comment");
+    assert.equal((await s.f.request("/api/images/"+image.id,{token:s.token})).status,200);
+  } finally {await s.close();}
+});
+
+test("hierarchy restore rejects unreviewed membership edits and unavailable deleted content", async () => {
+  const s=await scene();
+  try {
+    const project=(await s.send("project.create",randomUUID(),{title:"Protect latest edits"})).data.record;
+    const active=(await s.send("task.create",randomUUID(),{title:"Active",notes:"Original",project_id:project.id})).data.record;
+    const source=(await s.versions(project.id)).find(e=>!e.deleted);
+    const preview=await s.recover("preview",{source:source.id,hierarchy_mode:"bindings"});
+    assert.equal(preview.status,200,JSON.stringify(preview.data));
+    assert.equal(preview.data.hierarchy.linked_existing,1);
+    const changed=(await s.send("task.update",active.id,{notes:"New important edit"},active.revision)).data.record;
+    const stale=await s.apply(s.applyBody(preview.data));
+    assert.equal(stale.status,409);
+    assert.equal((await s.snapshot()).records.find(r=>r.id===changed.id).data.notes,"New important edit");
+    const missing=(await s.send("task.create",randomUUID(),{title:"Deleted without source",project_id:project.id})).data.record;
+    assert.equal((await s.send("task.delete",missing.id,{},missing.revision)).status,200);
+    // Remove only this test fixture's optional item versions while retaining
+    // the project source. A respawn cannot invent missing task details.
+    s.sql("db.execute(\"DELETE FROM recovery_snapshots WHERE target='"+missing.id+"'\")");
+    const noVersion=await s.recover("preview",{source:source.id,hierarchy_mode:"respawn"});
+    assert.equal(noVersion.status,409,JSON.stringify(noVersion.data));
+    assert.equal((await s.snapshot()).records.some(r=>r.id===missing.id),false);
+  } finally {await s.close();}
+});
