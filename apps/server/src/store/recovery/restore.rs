@@ -11,6 +11,10 @@ struct RestorePlan {
     current_digest: String,
     directory_digest: String,
     policy_revision: i64,
+    #[serde(default)]
+    hierarchy_mode: String,
+    #[serde(default)]
+    desired_digest: String,
 }
 
 impl Store {
@@ -259,6 +263,131 @@ impl Store {
         }
         self.project_validate(&overlay)?;
         Ok(desired)
+    }
+    // Project/list versions save their own settings. Existing members are
+    // recovered through stable object IDs and current parent bindings; missing
+    // descendants are restored only when explicitly requested. No new IDs are
+    // allocated, and live descendants are never overwritten.
+    fn recovery_hierarchy(
+        &self,
+        saved: &ContentState,
+        mode: &str,
+    ) -> Result<(ContentState, ContentState, Value)> {
+        let root = saved.root.as_deref().ok_or(Fault(400, "A collection identity is required".into()))?;
+        let mut current = self.recovery_current(Some(root))?;
+        let mut proposed = saved.clone();
+        let mut pending = vec![root.to_owned()];
+        let mut visited = HashSet::from([root.to_owned()]);
+        let mut linked = 0usize;
+        let mut missing = 0usize;
+        let mut respawned = 0usize;
+        while let Some(parent) = pending.pop() {
+            let children = self.db
+                .prepare("SELECT id FROM objects WHERE parent=? ORDER BY id")?
+                .query_map([&parent], |r| r.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            for id in children {
+                if !visited.insert(id.clone()) {
+                    return fail(409, "Collection hierarchy contains a duplicate or cycle");
+                }
+                if visited.len() > 300 {
+                    return fail(413, "This collection is too large for item-level restoration; use a reviewed content checkpoint");
+                }
+                let row = self.recovery_object(&id)?
+                    .ok_or(Fault(409, "A linked record disappeared; review the restore again".into()))?;
+                if !matches!(row.record.kind.as_str(), "list" | "task" | "image" | "comment") {
+                    return fail(409, "Collection has an unsupported linked record");
+                }
+                if matches!(row.record.kind.as_str(), "task" | "list") {
+                    pending.push(id.clone());
+                }
+                current.records.push(row.clone());
+                if !row.deleted {
+                    linked += 1;
+                    if row.record.kind == "image" {
+                        let encrypted: Option<Vec<u8>> = self.db.query_row(
+                            "SELECT bytes FROM blobs WHERE id=?", [&id], |r| r.get(0)
+                        ).optional()?;
+                        let digest = encrypted.and_then(|bytes| {
+                            self.vault.open(&format!("blob:{id}"), &bytes).ok()
+                        }).map(|bytes| crypto::digest(&bytes))
+                          .unwrap_or_else(|| "unavailable".into());
+                        current.blobs.insert(id.clone(), digest.clone());
+                        proposed.blobs.insert(id.clone(), digest);
+                    }
+                    // An existing member is its own binding. In particular,
+                    // do not replace newer edits with older recovery content.
+                    proposed.records.push(row);
+                } else {
+                    missing += 1;
+                    if mode == "respawn" {
+                        let (restored, digest) = self.recovery_hierarchy_source(&row)?;
+                        if let Some(digest) = digest {
+                            proposed.blobs.insert(id.clone(), digest);
+                        }
+                        proposed.records.push(restored);
+                        respawned += 1;
+                    } else {
+                        // Preserve the tombstone (and its revision); an ordinary
+                        // collection restore must not resurrect deleted items.
+                        proposed.records.push(row);
+                    }
+                }
+            }
+        }
+        current.records.sort_by(|a, b| a.record.id.cmp(&b.record.id));
+        proposed.records.sort_by(|a, b| a.record.id.cmp(&b.record.id));
+        Ok((current, proposed, json!({
+            "mode": mode,
+            "linked_existing": linked,
+            "missing": missing,
+            "respawned": respawned,
+            "kept_deleted": missing - respawned,
+        })))
+    }
+
+    // Prefer the deleted item's own retained version; a task version can also
+    // supply an older comment/image and its encrypted blob. Never fabricate a
+    // record from a compact tombstone, or reparent a different saved identity.
+    fn recovery_hierarchy_source(
+        &self,
+        deleted: &SavedRecord,
+    ) -> Result<(SavedRecord, Option<String>)> {
+        let id = &deleted.record.id;
+        let mut sources = vec![id.to_owned()];
+        if let Some(parent) = deleted.parent.as_ref() {
+            if self.recovery_object(parent)?.is_some_and(|r| r.record.kind == "task") {
+                sources.push(parent.clone());
+            }
+        }
+        for target in sources {
+            let snapshots = self.db.prepare(
+                "SELECT id,data FROM recovery_snapshots WHERE lineage=? AND kind='version' AND target=? ORDER BY version_index DESC LIMIT 64"
+            )?.query_map(params![self.recovery_lineage()?, target], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
+            })?.collect::<std::result::Result<Vec<_>, _>>()?;
+            for (snapshot_id, bytes) in snapshots {
+                let state = self.recovery_decode(&snapshot_id, &bytes)?;
+                if let Some(candidate) = state.content.records.iter().find(|r| {
+                    !r.deleted && r.record.id == *id &&
+                    r.record.kind == deleted.record.kind && r.parent == deleted.parent
+                }) {
+                    let digest = if candidate.record.kind == "image" {
+                        match state.content.blobs.get(id) {
+                            Some(value) => Some(value.clone()),
+                            None => continue,
+                        }
+                    } else {
+                        None
+                    };
+                    return Ok((candidate.clone(), digest));
+                }
+            }
+        }
+        fail(409, &format!(
+            "No complete retained version for deleted {}. Restore only the collection, or use a suitable content checkpoint",
+            Self::recovery_title(&deleted.record)
+        ))
     }
     fn recovery_semantic(row: &SavedRecord) -> Value {
         let mut data = row.record.data.as_object().cloned().unwrap_or_default();
