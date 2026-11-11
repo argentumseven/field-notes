@@ -10,12 +10,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlinx.datetime.*
+import kotlinx.serialization.json.JsonArray
 import org.fieldnotes.domain.*
 
 internal data class ProjectView(val query:String="",val group:String="",val show:String="open",val context:Boolean=false,val groupsOpen:Boolean=false,val filters:TaskFilters=TaskFilters(sort="smart"))
 
 @Composable internal fun ColumnScope.ProjectWorkspace(model:Workspace,state:WorkspaceState,project:Record,open:(String)->Unit,openList:(String)->Unit,edit:()->Unit,newList:(Boolean)->Unit,history:()->Unit,newTask:(String)->Unit,initialView:ProjectView=ProjectView(),saveView:(ProjectView)->Unit={},groupChanged:(String)->Unit={},header:@Composable ()->Unit={}) {
     var addExisting by remember(project.id) {mutableStateOf(false)}
+    var unbundleSelection by remember(project.id){mutableStateOf<List<Record>?>(null)}
+    var unbundleRevision by remember(project.id){mutableStateOf(0L)}
     if(addExisting)AddExistingTaskDialog(model,state,project){addExisting=false}
     val graph=remember(state.cache){state.cache.projectGraph()};val today=Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString();val stats=graph.rollup(project,today)
     val writable=state.cache.snapshot?.actor?.role!="viewer";val archived=project.data.text("status")=="archived"
@@ -31,6 +34,22 @@ internal data class ProjectView(val query:String="",val group:String="",val show
     val memberIds=graph.members(project.id).map{it.id}.toSet()
     val visible=filterTasks(projectRecords(state.cache).filter {row->val task=row.record;task.id in memberIds&&(group.isBlank()||task.data.text("project_id")==if(group=="__direct")project.id else group)&&(task.data.text("title")+" "+task.data.text("notes")).contains(query,true)&&when(show){"ready"->task.data.text("status")=="todo"&&!task.flag("blocked")&&!graph.held(task)&&(task.data.text("planned_for").isBlank()||task.data.text("planned_for")<=today);"waiting"->task.data.text("status")=="todo"&&(task.flag("blocked")||graph.held(task));"done"->task.data.text("status")=="done";"all"->true;else->task.data.text("status")!="done"} }.sortedWith(compareBy<VisibleRecord>{it.record.data.text("status")=="done"}.thenBy {it.record.data.number("priority",3)}.thenBy {it.record.data.text("due").ifBlank{"9999-12-31"}}.thenBy{it.record.id}),filters)
     val queued=projectRecords(state.cache).count {it.pending&&(it.record.id==project.id||graph.project(it.record)?.id==project.id)}
+    val direct=projectRecords(state.cache).map{it.record}.filter{it.data.text("project_id")==project.id}
+    if(unbundleSelection!=null) {
+        val selection=unbundleSelection.orEmpty()
+        val detachedTasks=selection.count{it.kind=="task"&&it.data.text("project_id")==project.id}
+        val detachedLists=selection.count{it.kind=="list"&&it.data.text("project_id")==project.id}
+        EditorDialog(onDismissRequest={unbundleSelection=null},title={Text("Unbundle project?")},text={
+            Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text("Release $detachedTasks direct tasks to Inbox and $detachedLists attached lists to standalone lists.")
+                Text("The project stays. Tasks inside lists, attachments, comments, completion states and history are retained. No records are deleted.",style=MaterialTheme.typography.bodySmall)
+                Text("If linked content changes before sync, the server will reject the release for review.",style=MaterialTheme.typography.bodySmall)
+            }
+        },confirmButton={Button(shape=ControlShape,onClick={
+            model.enqueueAsync("project.unbundle",project.id,obj("contents" to JsonArray(selection.map{obj("id" to it.id.j(),"revision" to it.revision.j())})),unbundleRevision)
+            unbundleSelection=null
+        }){Text("Unbundle")}},dismissButton={SecondaryButton(onClick={unbundleSelection=null}){Text("Cancel")}})
+    }
     VisibleLazyColumn(Modifier.weight(1f).testTag("project-workspace"),contentPadding=PaddingValues(top=8.dp,bottom=110.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item("workspace-header"){Column {header()}}
         item {OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -44,7 +63,21 @@ internal data class ProjectView(val query:String="",val group:String="",val show
             if(queued>0)Text("Includes $queued queued changes. Final progress follows the server.",style=MaterialTheme.typography.labelMedium)
             if(project.data.text("notes").isNotBlank()){SecondaryButton(onClick={context=!context}){Text(if(context)"Hide goal & context" else "Goal & context")};if(context)Text(project.data.text("notes"))}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                if(writable){SecondaryButton(onClick=edit){Text("Project settings / delete")};if(project.data.text("status")!="active"&&project.data.text("status").isNotBlank())SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "active".j()),project.revision)}){Text("Reopen project")}else SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "on_hold".j()),project.revision)},enabled=stats.working==0){Text("Put on hold")};if(!archived)SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "archived".j()),project.revision)},enabled=stats.open==0){Text("Finish project")}}
+                if(writable){
+                    SecondaryButton(onClick=edit){Text("Project settings / delete")}
+                    if(direct.isNotEmpty())SecondaryButton(onClick={
+                        val all=projectRecords(state.cache).map{it.record}
+                        val pending=mutableListOf(project.id);val visited=mutableSetOf(project.id)
+                        val selection=mutableListOf<Record>()
+                        while(pending.isNotEmpty()) {
+                            val parent=pending.removeAt(pending.lastIndex)
+                            for(child in all.filter{it.data.text("project_id")==parent||it.data.text("task_id")==parent}) {
+                                if(visited.add(child.id)){selection.add(child);pending.add(child.id)}
+                            }
+                        }
+                        unbundleRevision=project.revision;unbundleSelection=selection
+                    },enabled=queued==0){Text("Unbundle project")}
+                    if(project.data.text("status")!="active"&&project.data.text("status").isNotBlank())SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "active".j()),project.revision)}){Text("Reopen project")}else SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "on_hold".j()),project.revision)},enabled=stats.working==0){Text("Put on hold")};if(!archived)SecondaryButton(onClick={model.enqueueAsync("project.update",project.id,obj("status" to "archived".j()),project.revision)},enabled=stats.open==0){Text("Finish project")}}
                 SecondaryButton(onClick=history){Text("Project history")}
             }
         }}}
