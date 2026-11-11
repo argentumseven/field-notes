@@ -142,7 +142,7 @@ impl Store {
                 if record.kind != c.action.split('.').next().unwrap_or("") {
                     return fail(400, "Object kind mismatch");
                 }
-                Self::organized_record(&c.data, &mut record, &actor)?;
+                self.organized_record(&c.data, &mut record, &actor)?;
                 self.project_fields(&c.data, &mut record)?;
                 if record.kind == "list" {
                     parent = record.data["project_id"]
@@ -177,6 +177,7 @@ impl Store {
                         "quantity",
                         "store",
                         "category",
+                        "category_override",
                         "item_category",
                         "link_url",
                         "price",
@@ -202,7 +203,7 @@ impl Store {
                 Self::due(due)?;
                 record.data = json!({"title":text(&c.data,"title",240)?,"notes":notes,"project_id":pid,"quadrant":quadrant,"due":due,"status":"todo","claimant":null,"created_by":actor.user_id,"updated_at":now()});
                 record.data["created_at"] = json!(now());
-                Self::planning(&c.data, &mut record)?;
+                self.planning(&c.data, &mut record)?;
                 Self::list_item_fields(&c.data, &mut record)?;
                 Self::reminders(&c.data, &mut record)?;
                 self.reminder_options(&c.data, &mut record, &actor)?;
@@ -227,6 +228,7 @@ impl Store {
                         "quantity",
                         "store",
                         "category",
+                        "category_override",
                         "item_category",
                         "link_url",
                         "price",
@@ -254,7 +256,7 @@ impl Store {
                     )?;
                     record.data["project_id"] = json!(container.unwrap_or_default());
                 }
-                Self::planning(&c.data, &mut record)?;
+                self.planning(&c.data, &mut record)?;
                 Self::list_item_fields(&c.data, &mut record)?;
                 Self::reminders(&c.data, &mut record)?;
                 self.reminder_options(&c.data, &mut record, &actor)?;
