@@ -120,7 +120,7 @@ import org.fieldnotes.domain.*
         val id=record?.id ?: model.newId()
         model.enqueue(kind+if(record==null)".create" else ".update",id,fields,record?.revision,basis);model.requestSync();close();if(record==null)onCreated?.invoke(id)
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Create $kind" else "Save changes")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(record!=null)SecondaryButton(onClick={deleteSelection=descendants.toList();deleteRevision=record.revision;remove=true;deleteProof=""},enabled=!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
+        if(record!=null)SecondaryButton(onClick={deleteSelection=descendants.toList();deleteRevision=record.revision;remove=true;deleteProof=""},enabled=!busy&&(descendants.isEmpty()||state.cache.supportsCollectionActions())){Text("Delete",color=MaterialTheme.colorScheme.error)}
         SecondaryButton(onClick=close,enabled=!busy){Text("Cancel")}
     }})
     if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={
