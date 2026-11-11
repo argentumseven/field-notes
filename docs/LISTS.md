@@ -90,8 +90,10 @@ what will be removed. Only checked items are removed; unchecked items stay.
 Android queues those exact
 removals durably while offline. A remotely reopened/edited item causes a retained
 revision conflict rather than being deleted without review. Two people checking
-different item records can sync independently. Deleting a list still requires
-removing or moving its items; it cannot cascade-delete another person's work.
+different item records can sync independently. Deleting a populated list offers
+an explicit, confirmed remove-contents action; the server checks its full
+descendant set and revisions and refuses changes that cannot be safely
+authorized. It never silently cascades from a normal list edit.
 
 Web **List history**, or Android **List options → List history**, opens the
 collection's trail and retained item versions. Deletion removes active items and
