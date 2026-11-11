@@ -66,6 +66,40 @@ reloads; they never write household content/passwords to browser storage. The
 same user can check a committed result after signing in again. An old session's
 mutation envelope cannot be reused by the new session.
 
+## Trash and the limits of deletion
+
+**Library → History → Trash · deleted items** on the website and on Android
+(after the paired server advertises the Trash feature) lists the server's
+existing deleted-record tombstones, without reactivating them. Newly deleted
+records include a server timestamp; older tombstones may lack that timestamp.
+The action **Review saved versions** opens the existing version preview and
+password-confirmed restore process. A project/list version restores its own
+settings, **not automatically every deleted child**. For coordinated recovery
+of an entire household hierarchy, use a suitable content checkpoint or a
+verified encrypted backup after reviewing the impact.
+
+Trash is **not yet a new 30-day guaranteed recovery bin** and does not silently
+turn on automatic cleanup. Recovery still depends on the configured age, count
+and capacity limits; a deleted record can outlive its recoverable versions.
+Read-only Trash browsing does not permanently erase content. Existing encrypted
+server backups and independently exported files are unaffected by deletion
+or a purge of online recovery data. Do not assume permanent erasure of all copies
+when a record disappears from active views.
+
+**Non-destructive:** Finish, Reopen, Move, Unbundle, and restoring a confirmed
+saved state. **Destructive:** Delete active content, delete a named checkpoint,
+purge saved versions/history, and clear the workspace. Ordinary deletion is
+not a substitute for permanent purging. Selective permanent erasure across
+checkpoints, task attachments, shared images, offline devices and backups
+requires a separate reviewed design; this branch does not implement that action.
+
+The recovery management screen now reports distinct *metadata* costs for
+item versions and checkpoints, shared recovery image bytes counted only once,
+existing Trash counts, and database reusable pages. These numbers are not
+a forensic disk-erase report. Web history purge now requires the administrator
+to type PURGE HISTORY and acknowledge its impact; the existing admin API
+continues to accept the legacy phrase for older compatible clients.
+
 ## Retention and storage
 
 Defaults are automatic item versions on, **90 days**, **50 versions per item**,
