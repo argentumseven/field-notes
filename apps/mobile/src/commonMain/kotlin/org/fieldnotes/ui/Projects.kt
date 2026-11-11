@@ -33,7 +33,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
     VisibleLazyColumn(Modifier.weight(1f).testTag("project-workspace"),contentPadding=PaddingValues(top=8.dp,bottom=110.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         item("workspace-header"){Column {header()}}
         item {OutlinedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            RecordBadges(project);Text(projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
+            RecordBadges(project,cache=state.cache);Text(projectStateLabel(project,stats),style=MaterialTheme.typography.titleMedium)
             Text(if(stats.total==0)"No work tasks yet" else "${stats.done} of ${stats.total} tasks complete",style=MaterialTheme.typography.titleLarge)
             LinearProgressIndicator(progress={if(stats.total>0)stats.done.toFloat()/stats.total else 0f},modifier=Modifier.fillMaxWidth())
             Text("${stats.ready} ready · ${stats.working} in progress · ${stats.waiting} waiting · ${stats.later} planned later · ${stats.overdue} overdue",style=MaterialTheme.typography.bodyMedium)
