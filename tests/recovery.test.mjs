@@ -1522,6 +1522,10 @@ test("project recovery preserves existing bindings and can explicitly respawn mi
     assert.equal(rows.find(r=>r.id===missing.id).data.project_id,list.id);
     assert.equal(rows.find(r=>r.id===comment.id).data.body,"Original comment");
     assert.equal((await s.f.request("/api/images/"+image.id,{token:s.token})).status,200);
+    const repeated=await s.recover("preview",{source:source.id,hierarchy_mode:"respawn"});
+    assert.equal(repeated.status,200,JSON.stringify(repeated.data));
+    assert.equal(repeated.data.hierarchy.respawned,0,"restored descendants are reused, not cloned again");
+    assert.equal((await s.recover("preview",{source:source.id,hierarchy_mode:123})).status,400);
   } finally {await s.close();}
 });
 
