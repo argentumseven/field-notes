@@ -65,7 +65,7 @@ internal data class ProjectView(val query:String="",val group:String="",val show
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 if(writable){
                     SecondaryButton(onClick=edit){Text("Project settings")}
-                    if(direct.isNotEmpty())SecondaryButton(onClick={
+                    if(direct.isNotEmpty()&&state.cache.supportsCollectionActions())SecondaryButton(onClick={
                         val all=projectRecords(state.cache).map{it.record}
                         val pending=mutableListOf(project.id);val visited=mutableSetOf(project.id)
                         val selection=mutableListOf<Record>()
