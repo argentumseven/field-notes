@@ -170,6 +170,7 @@ impl Store {
                 json!({"epoch":epoch,"generation":generation,"lineage":self.recovery_lineage()?,"policy":self.recovery_policy()?,"usage":self.recovery_usage()?,"history_revision":self.recovery_revision()?})
             }
             "versions" | "checkpoints" => self.recovery_list(&actor, &body)?,
+            "trash" => self.recovery_trash(&body)?,
             "checkpoint.create" => self.recovery_create_checkpoint(&actor, &body)?,
             "checkpoint.delete" => self.recovery_delete_checkpoint(&actor, &body)?,
             "preview" => self.recovery_preview(&actor, &body)?,
@@ -201,6 +202,52 @@ impl Store {
             return fail(400, "Invalid task restore identity");
         }
         Ok(())
+    }
+    // Browse existing deleted-object tombstones without changing their lifetime.
+    // No schema migration or implicit garbage collection is performed.
+    // The cursor is a stable ID (not the client's clock); readers may paginate
+    // large existing installations without returning unbounded content.
+    fn recovery_trash(&self, body: &Value) -> Result<Value> {
+        fields(body, &["action", "epoch", "generation", "before", "limit"])?;
+        let limit = body.get("limit").and_then(Value::as_i64).unwrap_or(30);
+        if !(1..=50).contains(&limit) {
+            return fail(400, "Choose a Trash page size from 1 to 50");
+        }
+        let before = body.get("before").and_then(Value::as_str).unwrap_or("");
+        if !before.is_empty() {
+            valid_id(before)?;
+        }
+        let ids = self.db
+            .prepare("SELECT id FROM objects WHERE deleted=1 AND kind IN ('project','list','task','note','event') AND (?1='' OR id<?1) ORDER BY id DESC LIMIT ?2")?
+            .query_map(params![before, limit+1], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let more = ids.len() > limit as usize;
+        let mut entries = Vec::new();
+        for target in ids.into_iter().take(limit as usize) {
+            let Some(saved) = self.recovery_object(&target)? else { continue };
+            let recoverable: bool = self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM recovery_snapshots WHERE lineage=? AND kind='version' AND target=?)",
+                params![self.recovery_lineage()?, target],
+                |row| row.get(0),
+            )?;
+            entries.push(json!({
+                "id": target,
+                "kind": saved.record.kind,
+                "title": Self::history_title(&saved.record),
+                "deleted_at": saved.record.data["deleted_at"].as_i64(),
+                "recoverable": recoverable,
+            }));
+        }
+        let next_before = entries.last()
+            .and_then(|row| row["id"].as_str()).unwrap_or(before);
+        Ok(json!({
+            "entries": entries,
+            "more": more,
+            "next_before": next_before,
+            "epoch": self.meta()?.0,
+            "generation": self.meta()?.1,
+            "history_revision": self.recovery_revision()?,
+        }))
     }
     fn recovery_list(&self, actor: &Actor, body: &Value) -> Result<Value> {
         fields(
