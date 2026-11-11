@@ -14,7 +14,7 @@ impl Store {
         }
         Ok(Some(id.to_owned()))
     }
-    pub(super) fn organized_record(data: &Value, record: &mut Record, actor: &Actor) -> Result<()> {
+    pub(super) fn organized_record(&self, data: &Value, record: &mut Record, actor: &Actor) -> Result<()> {
         let note = record.kind == "note";
         fields(
             data,
@@ -27,6 +27,7 @@ impl Store {
                     "instructions",
                     "pinned",
                     "category",
+                    "category_override",
                     "on_radar",
                     "remind_at",
                     "reminders",
@@ -45,6 +46,7 @@ impl Store {
                     "fields",
                     "perpetual",
                     "category",
+                    "category_override",
                     "notify_additions",
                     "item_reminders",
                 ][..]
@@ -145,7 +147,7 @@ impl Store {
             return fail(400, "These options belong to a different collection type");
         }
         Self::list_schema(data, record)?;
-        Self::category(data, record)?;
+        self.category(data, record)?;
         record.data["updated_at"] = json!(now());
         Ok(())
     }
