@@ -4,6 +4,19 @@ package org.fieldnotes.domain
 val recordCategories = linkedMapOf("general" to "General", "action" to "Action", "food" to "Food & cooking", "home" to "Household", "errands" to "Errands", "work" to "Work", "personal" to "Personal")
 fun categoryKey(value:String)=if(value=="honey_do")"home" else value.ifBlank { "general" }
 fun categoryChoices(value:String)=recordCategories.map { (key,label)->(if(key=="home"&&value=="honey_do")value else key) to label }
+const val HOUSEHOLD_CATEGORIES_FEATURE="household-categories-v1"
+fun Cache.supportsHouseholdCategories()=compatibility?.let{!it.blocked&&HOUSEHOLD_CATEGORIES_FEATURE in it.features}==true
+fun categoryChoices(cache:Cache,value:String):List<Pair<String,String>> {
+    val builtins=categoryChoices(value)
+    if(!cache.supportsHouseholdCategories())return builtins+(if(value.startsWith("custom:"))listOf(value to "Saved custom category (update server)")else emptyList())
+    val custom=cache.snapshot?.categories.orEmpty()
+        .filter{!it.archived||"custom:"+it.id==value}
+        .map{("custom:"+it.id) to (it.name+if(it.archived)" · archived" else "")}
+    return builtins+custom+(if(value.startsWith("custom:")&&custom.none{it.first==value})listOf(value to "Unavailable saved category")else emptyList())
+}
+fun categoryLabel(cache:Cache,record:Record):String=if(record.data.text("category").startsWith("custom:"))
+    cache.snapshot?.categories.orEmpty().firstOrNull{"custom:"+it.id==record.data.text("category")}?.name ?: "Saved custom category"
+    else categoryLabel(record)
 fun recordTypeLabel(record:Record):String = when {
     record.isRecipe()->"Recipe"
     record.kind=="list"&&record.flag("items_are_tasks")->"Task list"
