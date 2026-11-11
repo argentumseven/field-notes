@@ -168,7 +168,7 @@ import org.fieldnotes.domain.*
         val fields=if(state.cache.supportsPlannerDetails())JsonObject(baseFields+("location" to location.j()))else baseFields
         val result=if(remindersDirty)JsonObject(fields+("reminders" to reminderData(reminders))) else fields
         recurrence?.let(::validateRepeat)
-        val modern=if(state.cache.supportsPlannerV3())JsonObject(result+mapOf("recurrence" to repeatData(recurrence),"category" to category.j())) else result
+        val modern=if(state.cache.supportsPlannerV3())JsonObject(result+mapOf("recurrence" to repeatData(recurrence),"category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record.data.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())) else result
         return if(state.cache.supportsRemindersV2()) {
             val extra=prunedReminderOptions(reminderOptions,reminders);validateReminderOptions(extra)
             JsonObject(modern+("reminder_options" to reminderOptionsData(extra)))
