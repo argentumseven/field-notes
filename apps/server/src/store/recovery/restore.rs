@@ -298,6 +298,14 @@ impl Store {
                 if !matches!(row.record.kind.as_str(), "list" | "task" | "image" | "comment") {
                     return fail(409, "Collection has an unsupported linked record");
                 }
+                let parent_field = if matches!(row.record.kind.as_str(), "task" | "list") {
+                    "project_id"
+                } else {
+                    "task_id"
+                };
+                if row.record.data[parent_field].as_str() != Some(parent.as_str()) {
+                    return fail(409, "Linked record parent binding is inconsistent; no content was restored");
+                }
                 if matches!(row.record.kind.as_str(), "task" | "list") {
                     pending.push(id.clone());
                 }
@@ -665,10 +673,12 @@ impl Store {
                 matches!(row.record.kind.as_str(), "project" | "list")
             )
         );
-        let hierarchy_mode = match body.get("hierarchy_mode").and_then(Value::as_str) {
-            None | Some("") | Some("bindings") => if collection { "bindings" } else { "" },
-            Some("respawn") if collection => "respawn",
-            _ => return fail(400, "Hierarchy recovery is available only for saved live projects or lists"),
+        let hierarchy_mode = match body.get("hierarchy_mode") {
+            None | Some(Value::String(value)) if value.is_empty() || value == "bindings" => {
+                if collection { "bindings" } else { "" }
+            }
+            Some(Value::String(value)) if value == "respawn" && collection => "respawn",
+            _ => return fail(400, "Hierarchy recovery requires a supported mode and saved live project or list"),
         };
         if hierarchy_mode == "respawn" && !actor.admin() {
             return fail(403, "Administrator authorization is required to restore missing linked records");
