@@ -4,6 +4,23 @@ import kotlin.test.*
 import kotlinx.datetime.*
 
 class PlannerRefinementsTest {
+    @Test fun customCategoriesPreserveLegacyChoicesAndArchivedLabels() {
+        val id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val category=HouseholdCategory(id,"Garden",archived=false,revision=3)
+        val snapshot=Snapshot(1,"epoch",1,1,emptyList(),Actor("me","Me","owner","session"),categories=listOf(category))
+        val enabled=Cache(snapshot=snapshot,compatibility=ServerCompatibility(features=setOf(HOUSEHOLD_CATEGORIES_FEATURE)))
+        val key="custom:"+id
+        assertTrue(categoryChoices(enabled,key).contains(key to "Garden"))
+        assertEquals("Garden",categoryLabel(enabled,Record("r","task",1,obj("category" to key.j()))))
+        assertEquals("Household",categoryLabel(Record("r","task",1,obj("category" to "honey_do".j()))))
+        val archived=enabled.copy(snapshot=snapshot.copy(categories=listOf(category.copy(archived=true))))
+        assertEquals(false,categoryChoices(archived,"general").any{it.first==key})
+        assertTrue(categoryChoices(archived,key).any{it.first==key})
+        assertTrue(categoryFilterChoices(archived).any{it.first==key})
+        val old=enabled.copy(compatibility=ServerCompatibility())
+        assertTrue(categoryChoices(old,key).any{it.first==key},"Older server still keeps an unreadable category key")
+    }
+
     @Test fun annualRepeatsKeepTheExistingWireFormatAndReachCalendarAndAlerts() {
         val zone=TimeZone.of("America/New_York");val rule=EventRepeat("monthly",12,zone=zone.id)
         assertEquals("yearly",repeatPreset(rule));assertEquals("Every year",repeatLabel(rule))
