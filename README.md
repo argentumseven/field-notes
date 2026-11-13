@@ -22,7 +22,24 @@ services. iOS/native desktop packages are deferred.
 [Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [Recipes](docs/RECIPES.md) · [Time checks](docs/TIME-ACCURACY.md) · [List types and fields](docs/LISTS.md) · [Live updates](docs/LIVE-UPDATES.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
 [Household planning](docs/PLANNER-0.6.md) · [Tasks and project tracking](docs/PROJECTS.md) · [History & restore](docs/HISTORY.md) · [Planner comparison](docs/PLANNER-COMPARISON.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
-![Calendar with occupied time blocks and grouped navigation](docs/screenshots/web/119-calendar-at-glance.png)
+## Screenshots
+
+A quick look at the web interface and Android app, using synthetic household data.
+Select a screenshot to see it at full size.
+
+**Web interface**
+
+| Calendar | Projects | Shared notes |
+| :---: | :---: | :---: |
+| <a href="docs/screenshots/web/119-calendar-at-glance.png"><img src="docs/screenshots/web/119-calendar-at-glance.png" alt="Web calendar showing scheduled blocks and planning controls" width="320"></a> | <a href="docs/screenshots/web/83-project-workspace.png"><img src="docs/screenshots/web/83-project-workspace.png" alt="Web project workspace with tasks and progress" width="320"></a> | <a href="docs/screenshots/web/23-shared-note.png"><img src="docs/screenshots/web/23-shared-note.png" alt="Shared note in the web interface" width="320"></a> |
+
+**Android app**
+
+| Focus | Lists | Calendar |
+| :---: | :---: | :---: |
+| <a href="docs/screenshots/android/03-focus.png"><img src="docs/screenshots/android/03-focus.png" alt="Android Focus screen showing prioritized work" width="190"></a> | <a href="docs/screenshots/android/120-native-list-viewport.png"><img src="docs/screenshots/android/120-native-list-viewport.png" alt="Android grocery list with compact items and list controls" width="190"></a> | <a href="docs/screenshots/android/05-calendar.png"><img src="docs/screenshots/android/05-calendar.png" alt="Android calendar screen" width="190"></a> |
+
+[Explore the full screenshot walkthrough](docs/WALKTHROUGH.md), including Android home-screen widgets, recipes, reminders, and light-theme views.
 
 ## Planner and administration
 
