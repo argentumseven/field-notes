@@ -2,11 +2,12 @@
 
 ## 0.11.7 delete navigation and visible alarms — prepared, not published
 
-Version 0.11.7/code 26 on branch `claude/workflow-bugs-ux-polish-remy0r`. The version
-metadata is prepared and a development-signed APK can be built here, but nothing has been
-pushed to `main`, tagged, published or deployed. The public release APK must be signed with
-the stable operator key, which is not available in this environment, so no public delivery,
-download hash or server bundle is claimed. No physical-phone check is claimed.
+Version 0.11.7/code 26 is on `main` at `f2ec388`, and a development-signed APK was built
+from it. The `v0.11.7` tag push was refused with HTTP 403 for this session's GitHub access, and
+the public release APK must be signed with the stable operator key, which is not available in
+this environment. Nothing is tagged, published or deployed, so no public delivery, download hash
+or server bundle is claimed. Run before tagging: all 124 Node checks, 19 Rust tests and the
+planner-details browser test passed. No physical-phone check is claimed.
 
 Changes: deleting a project or list from inside it returns to Projects, its parent
 project or Lists instead of a task view filtered to a missing id; a container removed
