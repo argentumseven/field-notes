@@ -3,7 +3,7 @@ package org.fieldnotes.domain
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-const val CURRENT_CLIENT_CODE=25
+const val CURRENT_CLIENT_CODE=26
 const val REMINDER_OPTIONS_FEATURE="reminder-options-v1"
 @Serializable data class ServerCompatibility(val version:String="legacy",val protocolMin:Int=1,val protocolMax:Int=1,val minimumClient:Int=1,val recommendedClient:Int=1,val features:Set<String> = emptySet(),val checkedAt:Long=0,val warning:String="") {
     val blocked get()=protocolMin>1||protocolMax<1||minimumClient>CURRENT_CLIENT_CODE

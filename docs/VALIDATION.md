@@ -1,9 +1,12 @@
 # Implementation and validation record
 
-## Development — delete navigation and visible alarms (unreleased, version unchanged)
+## 0.11.7 delete navigation and visible alarms — prepared, not published
 
-Branch `claude/workflow-bugs-ux-polish-remy0r`. No release, deployment or physical-phone
-check is claimed.
+Version 0.11.7/code 26 on branch `claude/workflow-bugs-ux-polish-remy0r`. The version
+metadata is prepared and a development-signed APK can be built here, but nothing has been
+pushed to `main`, tagged, published or deployed. The public release APK must be signed with
+the stable operator key, which is not available in this environment, so no public delivery,
+download hash or server bundle is claimed. No physical-phone check is claimed.
 
 Changes: deleting a project or list from inside it returns to Projects, its parent
 project or Lists instead of a task view filtered to a missing id; a container removed
