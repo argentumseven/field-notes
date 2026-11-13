@@ -8,12 +8,21 @@ import wave
 ROOT = pathlib.Path(__file__).resolve().parents[1] / 'apps/mobile/src/androidMain/res/raw'
 TONES = ('chime', 'bell', 'pulse', 'beacon', 'marimba', 'orbit', 'sunrise', 'siren')
 RATE = 22050
+# Each alarm clip spans a whole number of its own phrase periods (1.5 s beats, a 1.25 s siren sweep,
+# a 2 s orbit drift), so it can loop without a seam. Notification cues are one-shots.
+ALARM_SECONDS = {'sunrise': 6, 'siren': 5, 'orbit': 4}
+
+
+def ring(freq, age, decay):
+    """An exponentially decaying sine that has not started yet when age < 0."""
+    return math.sin(2*math.pi*freq*age)*math.exp(-decay*age) if age >= 0 else 0.0
 
 
 def sample(tone, t, alarm):
     if alarm:
-        # Alarm phrases repeat audibly; these are not stretched notification cues.
-        beat = t % 1.5
+        # Alarm phrases loop for the whole ring time, so every phrase is exactly periodic over its
+        # clip: the tail of the previous beat is folded into the next one, which makes the loop seam
+        # continuous without any baked fade. See ALARM_SECONDS for the matching clip lengths.
         if tone == 'siren':
             return math.sin(2*math.pi*620*t-110*math.cos(2*math.pi*.8*t))*.7
         if tone == 'sunrise':
@@ -21,13 +30,14 @@ def sample(tone, t, alarm):
         if tone == 'orbit':
             return (math.sin(2*math.pi*(330*t+8*math.sin(math.pi*t)))+.25*math.sin(2*math.pi*660*t))*(.35+.35*math.sin(2*math.pi*t)**2)
         if tone == 'bell':
-            return (math.sin(2*math.pi*660*beat)+.3*math.sin(2*math.pi*1320*beat))*math.exp(-1.5*beat)*.65
+            beat=t%1.5
+            return sum((math.sin(2*math.pi*660*(beat+1.5*k))+.3*math.sin(2*math.pi*1320*(beat+1.5*k)))*math.exp(-1.5*(beat+1.5*k)) for k in (0,1,2))*.65
         if tone == 'marimba':
-            beat=t%.375
-            f=(523,659,784,1046)[int(t/.375)%4]
-            return math.sin(2*math.pi*f*beat)*math.exp(-5*beat)*.75
+            beat=t%.375;index=int(t/.375)
+            return sum(ring((523,659,784,1046)[(index-k)%4],beat+.375*k,5) for k in (0,1,2))*.75
+        beat=t%1.5
         freq=880 if tone=='chime' else 660 if tone=='pulse' else 554
-        return sum(math.sin(2*math.pi*f*(beat-delay))*math.exp(-4*(beat-delay)) for f,delay in ((freq,0),(freq*1.5,.4),(freq,.8)) if beat>=delay)*.65
+        return sum(ring(f,beat+1.5*k-delay,4) for k in (0,1) for f,delay in ((freq,0),(freq*1.5,.4),(freq,.8)))*.65
     if tone == 'bell':
         return (math.sin(2*math.pi*660*t)+.35*math.sin(2*math.pi*1320*t))*math.exp(-7*t)
     if tone == 'pulse':
@@ -43,12 +53,14 @@ def generate():
     ROOT.mkdir(parents=True, exist_ok=True)
     for alarm in (False, True):
         for tone in TONES:
-            duration = (6 if tone=='sunrise' else 4) if alarm else (.65 if tone=='pulse' else .9)
+            duration = ALARM_SECONDS.get(tone, 3) if alarm else (.65 if tone=='pulse' else .9)
             for level in (25,50,75,100):
                 pcm=bytearray()
                 for n in range(round(RATE*duration)):
                     t=n/RATE
-                    value=sample(tone,t,alarm)*min(1,t/.015)*min(1,(duration-t)/.03)*level/100*.65
+                    # Cues fade at both ends. Alarm loops must not: the playback service eases the volume.
+                    edges=1 if alarm else min(1,t/.015)*min(1,(duration-t)/.03)
+                    value=sample(tone,t,alarm)*edges*level/100*.65
                     pcm.extend(struct.pack('<h',round(max(-1,min(1,value))*32767)))
                 prefix='alarm' if alarm else 'reminder'
                 with wave.open(str(ROOT/f'{prefix}_{tone}_{level}.wav'),'wb') as out:

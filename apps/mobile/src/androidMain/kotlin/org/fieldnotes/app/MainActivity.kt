@@ -109,9 +109,19 @@ class MainActivity : ComponentActivity() {
     }
     override fun onStart(){super.onStart();app.uiVisible=true}
     override fun onStop(){app.uiVisible=false;super.onStop()}
+    /** Opening a ringing reminder from its notification also silences it, once per delivered intent. */
+    private fun silenceAlarmIfRequested(intent:Intent?) {
+        if(intent?.getBooleanExtra(Alerts.STOP_ALARM_EXTRA,false)!=true)return
+        intent.removeExtra(Alerts.STOP_ALARM_EXTRA)
+        app.scope.launch {
+            try{AlarmPlaybackService.stop(this@MainActivity);AlarmAudio.restoreAfterStop(this@MainActivity);NotificationAudio.restoreAfterStop(this@MainActivity)}
+            catch(e:Exception){if(e is CancellationException)throw e;app.deliveryError.value=e.message ?: "Alarm volume could not be restored. Open Android sound settings."}
+        }
+    }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        silenceAlarmIfRequested(intent)
         navigationSequence++
         requestedRecord = intent.getStringExtra("open_record")
         requestedDate = intent.getStringExtra("open_date")
@@ -151,6 +161,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if(savedInstanceState==null)silenceAlarmIfRequested(intent)
         requestedRecord = intent?.getStringExtra("open_record")
         requestedDate = intent?.getStringExtra("open_date")
         requestedPage = intent?.getStringExtra("open_page")

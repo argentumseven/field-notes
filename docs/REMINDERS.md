@@ -10,7 +10,25 @@ volume change needs its own phone permission and restores after that one sound.
 **Alarm** uses a separate set of sustained phrases: Beacon, Orbit, Sunrise or
 Siren. It uses Android's alarm stream, rings for the selected duration (five
 seconds by default), and offers **Stop alarm**. Stopping or reaching the time
-limit restores any app-owned temporary volume change. Later manual volume choices
+limit restores any app-owned temporary volume change.
+
+An alarm always appears on screen: it posts to its own **Alarms** notification
+channel at high importance, with **Stop alarm** and **Open item**, whatever
+importance the reminder has. The channel itself is silent; Field Notes plays the
+sound, so there is one audible path. Opening the alarm (tapping it or **Open
+item**) also silences it, and swiping it away stops it. When the sound ends the
+same notification stays as an ordinary card without the Stop control. The older
+per-importance alarm channels were replaced by this one, so Android settings show
+a single Alarms entry. Android's DND and channel settings still decide whether it
+pops up; a phone that is locked with its screen off shows it when the screen next
+wakes. A lock-screen alarm screen that wakes the display is not part of this.
+
+The sound eases in over a fraction of a second (Sunrise over about a second) and
+fades out over under half a second at the chosen time, so it neither starts with
+a blast nor ends mid-phrase with a cut. The phone's alarm volume is raised only
+once the sound is ready and while the player is still silent, and it is restored
+after the fade. Alarm clips are whole phrases that repeat without a seam. Vibration
+pulses for as long as an alarm sounds and is cancelled with it. Later manual volume choices
 take priority. DND remains controlled by Android. Saved older sound choices and
 durations remain supported; a mode change chooses an appropriate sound for the
 new mode rather than carrying alarm audio into a notification.

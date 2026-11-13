@@ -73,7 +73,7 @@ class ReminderSoundPolicyDeviceTest {
                 val alarm=ReminderSounds.sound(app,AlertProfile(sound=tone,alarm=true))
                 assertNotEquals(cue,alarm)
                 app.contentResolver.openInputStream(cue)!!.use{assertTrue(it.readBytes().size<44+22050*2)}
-                app.contentResolver.openInputStream(alarm)!!.use{assertTrue(it.readBytes().size>=44+22050*2*4)}
+                app.contentResolver.openInputStream(alarm)!!.use{assertTrue(it.readBytes().size>=44+22050*2*3)}
             }
             assertNull(manager.getNotificationChannel(ReminderSounds.channel(app,profile)).sound)
             ActivityScenario.launch<MainActivity>(Intent(app,MainActivity::class.java).putExtra("open_page","Tasks").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).use {

@@ -1,5 +1,30 @@
 # Implementation and validation record
 
+## Development — delete navigation and visible alarms (unreleased, version unchanged)
+
+Branch `claude/workflow-bugs-ux-polish-remy0r`. No release, deployment or physical-phone
+check is claimed.
+
+Changes: deleting a project or list from inside it returns to Projects, its parent
+project or Lists instead of a task view filtered to a missing id; a container removed
+while open (including by another household member) leaves the same way with a notice;
+the delete dialog explains a non-empty container where the user taps, awaits the queued
+delete and shows a refusal inline. Alarms post to one high-importance silent Alarms channel
+(`fn-alarm-v2`, replacing the per-importance `fn-alarm-v1-*` channels) so the card appears
+on screen; opening it silences the sound; the card settles without Stop afterward; the loud
+alarm test posts the same card. Alarm clips are regenerated as whole, seamless phrases;
+playback eases in and out, raises volume while silent, and vibrates for the ring time.
+
+Automated, passed: 140 Kotlin host tests including the new landing-rule test, Android
+debug lint, compilation of the Android and instrumented-test sources, and the Rust sound tests,
+which now also check that every alarm clip is a whole number of phrases and joins its own
+start without a jump. Compiled but not run: the new instrumented test
+`alarmCardUsesOneHighImportanceSilentChannelAndSettlesWithoutStop` and the changed
+sound-length assertion, because no emulator is available in this environment. Not run:
+emulator and physical GrapheneOS checks of heads-up display, tap-to-silence, the audible
+fades and vibration, and the delete-navigation flow in the real UI. No lock-screen or
+screen-waking alarm activity exists yet.
+
 ## 0.11.6 category workflows and safe portable recovery — 2026-11-11
 
 Version 0.11.6/code 25 delivers custom household categories, revision-fenced

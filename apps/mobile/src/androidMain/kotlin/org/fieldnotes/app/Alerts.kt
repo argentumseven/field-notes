@@ -63,6 +63,8 @@ object Alerts {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .setData(Uri.parse("fieldnotes://notification/" + digest(key))).putExtra("open_record",target)
         if(channel==ISSUES||channel==SOFTWARE)intent.putExtra("open_page","Settings")
+        // Looking at a ringing reminder answers it: opening it also silences the sound.
+        if(manualSound)intent.putExtra(STOP_ALARM_EXTRA,true)
         val open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val prefs=(context.applicationContext as FieldNotesApplication).model.state.value.cache.preferences
         val publicNotice=NotificationCompat.Builder(context,channel).setSmallIcon(R.drawable.ic_field_notes)
@@ -91,6 +93,15 @@ object Alerts {
             true
         } catch (_: SecurityException) { false }
     }
+    /** Replaces a still-visible alarm card with its settled form once the sound is over: same
+     * notification, no Stop control, no new alert. A card the user already swiped away or opened
+     * stays gone. */
+    fun settle(context:Context,channel:String,key:String,title:String,text:String,target:String?,details:String,whenAt:Long,alarm:Boolean):Boolean {
+        val tag="field-notes:"+digest(key)
+        if(context.getSystemService(NotificationManager::class.java).activeNotifications.none { it.tag==tag })return false
+        return post(context,channel,key,title,text,target,details,whenAt,alarm=alarm,manualSound=false)
+    }
+    const val STOP_ALARM_EXTRA="stop_alarm"
     fun test(context: Context) = post(context, ReminderSounds.channel(context,AlertProfile()), "test:" + System.nanoTime(), "Field Notes notification test", "One short notification sound. Uses notification volume and respects Silent, Vibrate and Do Not Disturb.")
     internal fun profileTestIntent(context:Context,nonce:String="")=PendingIntent.getBroadcast(context,99,
         Intent(context,AlertReceiver::class.java).setAction("org.fieldnotes.PROFILE_TEST").setData(Uri.parse("fieldnotes://profile-test")).putExtra("nonce",nonce),
@@ -200,7 +211,7 @@ object LocalAlarms {
             val notificationKey="$binding:"+keys.joinToString("|")
             if(Alerts.post(context,channel,notificationKey,notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true,profile?.let{it.alarm||it.notificationUnmute}==true)) {
                 posted+=keys
-                if(profile?.let{it.alarm||it.notificationUnmute}==true&&!AlarmPlaybackService.start(context,keys))Alerts.post(context,channel,notificationKey,notice.title,"Audio playback needs attention · ${notice.summary}",notice.target,notice.details,notice.whenAt,false,false)
+                if(profile?.let{it.alarm||it.notificationUnmute}==true&&!AlarmPlaybackService.start(context,keys,notificationKey))Alerts.post(context,channel,notificationKey,notice.title,"Audio playback needs attention · ${notice.summary}",notice.target,notice.details,notice.whenAt,false,false)
             } else app.deliveryError.value="A reminder channel or notification permission is blocked. Open Android notification settings."
         }
         if(posted.isNotEmpty()) {

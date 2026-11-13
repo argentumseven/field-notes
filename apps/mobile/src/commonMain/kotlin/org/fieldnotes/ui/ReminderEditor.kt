@@ -116,7 +116,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                     FilterChip(p.alarm,{p=p.withDeliveryMode(true)},{Text("Alarm")})
                 }
             }
-            Text(if(p.alarm)"Alarm sound · rings until stopped or time runs out" else "Notification sound · one short sound")
+            Text(if(p.alarm)(if(p.duration==0)"Alarm · plays once and shows on screen with Stop" else "Alarm · rings for the chosen time or until you press Stop, and shows on screen") else "Notification sound · one short sound")
             val choices=if(p.alarm)alarmTones else notificationTones.filterKeys{settings.advanced||it in setOf("chime","bell","pulse")}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((tone,name) in choices)FilterChip(p.sound==tone,{p=p.copy(sound=tone)},{Text(name)})}
             if(p.sound !in choices)Text("Saved sound: ${reminderTones[p.sound] ?: p.sound}. Kept until you choose a replacement.",style=MaterialTheme.typography.bodySmall)

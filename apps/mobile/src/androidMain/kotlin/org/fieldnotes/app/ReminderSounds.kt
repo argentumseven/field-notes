@@ -14,17 +14,26 @@ import org.fieldnotes.domain.AlertProfile
  * owned by AlarmPlaybackService, independently of notification volume. */
 object ReminderSounds {
     private var preview:MediaPlayer?=null
+    /** One high-importance, silent channel for every alarm. Its audio and vibration come from
+     * AlarmPlaybackService, so the card can pop up on screen without a second sound. The earlier
+     * per-importance alarm channels defaulted to a level that never appeared on screen. */
+    internal const val ALARM_CHANNEL="fn-alarm-v2"
+    private const val OBSOLETE_ALARM_PREFIX="fn-alarm-v1-"
     fun channel(context:Context,profile:AlertProfile):String {
         val manager=context.getSystemService(NotificationManager::class.java)
-        val id=if(profile.importance=="quiet")"fn-reminder-v1-quiet" else if(profile.alarm)"fn-alarm-v1-${profile.importance}-${profile.vibrate}" else "fn-reminder-v1-${profile.importance}-${profile.sound}-${profile.volume}-${profile.vibrate}"
+        val quiet=profile.importance=="quiet"
+        val id=if(quiet)"fn-reminder-v1-quiet" else if(profile.alarm)ALARM_CHANNEL else "fn-reminder-v1-${profile.importance}-${profile.sound}-${profile.volume}-${profile.vibrate}"
         if(manager.getNotificationChannel(id)==null) {
             manager.createNotificationChannelGroup(NotificationChannelGroup("custom-reminders","Event and task reminders"))
-            val name=if(profile.importance=="quiet")"Quiet reminders" else if(profile.alarm)"${profile.importance.replaceFirstChar { it.uppercase() }} alarm reminders" else "${profile.importance.replaceFirstChar { it.uppercase() }} · ${profile.sound.replaceFirstChar { it.uppercase() }} · ${profile.volume}%"
-            manager.createNotificationChannel(NotificationChannel(id,name,when(profile.importance){"urgent"->NotificationManager.IMPORTANCE_HIGH;"quiet"->NotificationManager.IMPORTANCE_LOW;else->NotificationManager.IMPORTANCE_DEFAULT}).apply {
-                group="custom-reminders";description=if(profile.alarm)"Local alarm playback uses each reminder's chosen sound and duration. Android alarm volume, DND and profile settings apply." else "Sound level is relative to this phone's notification volume. Android and profile settings remain in control."
-                setSound(if(profile.importance=="quiet"||profile.alarm)null else sound(context,profile),AudioAttributes.Builder().setUsage(if(profile.alarm)AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT).build())
-                enableVibration(profile.vibrate&&profile.importance!="quiet");lockscreenVisibility=Notification.VISIBILITY_PRIVATE
+            val name=if(quiet)"Quiet reminders" else if(profile.alarm)"Alarms" else "${profile.importance.replaceFirstChar { it.uppercase() }} · ${profile.sound.replaceFirstChar { it.uppercase() }} · ${profile.volume}%"
+            val importance=if(quiet)NotificationManager.IMPORTANCE_LOW else if(profile.alarm||profile.importance=="urgent")NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_DEFAULT
+            manager.createNotificationChannel(NotificationChannel(id,name,importance).apply {
+                group="custom-reminders";description=if(profile.alarm)"Alarms appear on screen with Stop and Open while Field Notes plays their chosen sound. Android alarm volume, DND and profile settings apply." else "Sound level is relative to this phone's notification volume. Android and profile settings remain in control."
+                setSound(if(quiet||profile.alarm)null else sound(context,profile),AudioAttributes.Builder().setUsage(if(profile.alarm)AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT).build())
+                enableVibration(profile.vibrate&&!quiet&&!profile.alarm);lockscreenVisibility=Notification.VISIBILITY_PRIVATE
             })
+            // Old alarm channels cannot be raised in place; remove them so Settings shows one Alarms entry.
+            if(profile.alarm)manager.notificationChannels.filter { it.id.startsWith(OBSOLETE_ALARM_PREFIX) }.forEach { manager.deleteNotificationChannel(it.id) }
         }
         return id
     }

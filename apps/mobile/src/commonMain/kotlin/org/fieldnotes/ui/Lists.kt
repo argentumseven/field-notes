@@ -47,7 +47,7 @@ import org.fieldnotes.domain.*
     }
 }
 
-@Composable internal fun CollectionDialog(model:Workspace,state:WorkspaceState,record:Record?,kind:String,close:()->Unit,initialProject:String?=null,initialWork:Boolean=false,onCreated:((String)->Unit)?=null) {
+@Composable internal fun CollectionDialog(model:Workspace,state:WorkspaceState,record:Record?,kind:String,close:()->Unit,initialProject:String?=null,initialWork:Boolean=false,removed:(()->Unit)?=null,onCreated:((String)->Unit)?=null) {
     var title by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("title") ?: "")}
     var notes by rememberSaveable(record?.id){mutableStateOf(record?.data?.text("notes") ?: "")}
     var template by rememberSaveable(record?.id){mutableStateOf(if(record?.flag("items_are_tasks")==true||record==null&&initialWork)"tasks" else record?.data?.text("template","general") ?: "general")}
@@ -66,7 +66,8 @@ import org.fieldnotes.domain.*
     var perpetual by rememberSaveable { mutableStateOf(record?.data?.get("perpetual")!=JsonPrimitive(false)) }
     var busy by remember { mutableStateOf(false) };var error by remember { mutableStateOf<String?>(null) };var remove by remember { mutableStateOf(false) }
     val scope=rememberCoroutineScope();val basis=remember { state.cache.snapshot!!.basis }
-    val occupied=record!=null&&projectRecords(state.cache).any { it.record.id!=record.id&&it.record.data.text("project_id")==record.id }
+    val containedItems=if(record==null)0 else projectRecords(state.cache).count { it.record.id!=record.id&&it.record.data.text("project_id")==record.id }
+    val occupied=containedItems>0
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New $kind" else "Edit $kind")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title,{title=it.take(160)},label={Text(if(kind=="list")"List name" else "Project name")},singleLine=true,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Description")},minLines=2,modifier=Modifier.fillMaxWidth())
@@ -98,7 +99,6 @@ import org.fieldnotes.domain.*
             Text("Conversion preview: $affectedItems existing items keep their IDs, notes, categories, attachments and history. "+if(workItems)"They will become work tasks and count toward project progress."else"They will become checklist/reference items and no longer count toward work progress.",style=MaterialTheme.typography.bodyMedium)
             OutlinedTextField(conversionProof,{conversionProof=it},label={Text("Type CONVERT LIST to confirm")},singleLine=true)
         }
-        if(occupied)Text("Clear or move this collection's items before deleting it.",style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }},confirmButton={Button(shape=ControlShape,enabled=title.isNotBlank()&&!busy,onClick={busy=true;scope.launch { try {
         require(!converting||conversionProof=="CONVERT LIST"){"Review the list conversion and type CONVERT LIST."}
@@ -115,10 +115,27 @@ import org.fieldnotes.domain.*
         val id=record?.id ?: model.newId()
         model.enqueue(kind+if(record==null)".create" else ".update",id,fields,record?.revision,basis);model.requestSync();close();if(record==null)onCreated?.invoke(id)
     }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;error=e.message}finally{busy=false} }}){Text(if(record==null)"Create $kind" else "Save changes")}},dismissButton={Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        if(record!=null)SecondaryButton(onClick={remove=true},enabled=!occupied&&!busy){Text("Delete",color=MaterialTheme.colorScheme.error)}
+        // Stays tappable when the collection is not empty so the reason is shown where the user acts.
+        if(record!=null)SecondaryButton(onClick={remove=true},enabled=!busy,dangerous=true){Text("Delete",color=MaterialTheme.colorScheme.error)}
         SecondaryButton(onClick=close,enabled=!busy){Text("Cancel")}
     }})
-    if(remove&&record!=null)EditorDialog(onDismissRequest={remove=false},title={Text("Delete ${record.data.text("title")}?")},text={Text("The empty $kind will be removed from your household.")},confirmButton={Button(shape=ControlShape,onClick={model.enqueueAsync("$kind.delete",record.id,obj(),record.revision,basis);remove=false;close()}){Text("Delete $kind")}},dismissButton={SecondaryButton(onClick={remove=false}){Text("Keep it")}})
+    if(remove&&record!=null) {
+        val name=record.data.text("title").ifBlank{"this $kind"}
+        if(occupied) {
+            val things=if(kind=="project")(if(containedItems==1)"task or list" else "tasks and lists") else (if(containedItems==1)"item" else "items")
+            EditorDialog(onDismissRequest={remove=false},title={Text("Can’t delete “$name” yet")},text={Text("It still contains $containedItems $things. Move them elsewhere or delete them first, then delete the $kind.")},confirmButton={Button(shape=ControlShape,onClick={remove=false}){Text("OK")}})
+        } else EditorDialog(onDismissRequest={if(!busy)remove=false},title={Text("Delete “$name”?")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("This empty $kind is removed for everyone in your household.")
+            if(state.cache.supportsRecovery())Text("A saved version can be restored from History while it is retained.")
+            Text("If you are offline, the deletion waits in the queue and finishes when you reconnect.",style=MaterialTheme.typography.bodySmall)
+        }},confirmButton={Button(shape=ControlShape,enabled=!busy,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=MaterialTheme.colorScheme.onError),onClick={busy=true;scope.launch {
+            try {
+                // The delete is durably queued before the dialogs close; a refusal stays visible here.
+                model.enqueue("$kind.delete",record.id,obj(),record.revision,basis);model.requestSync()
+                remove=false;removed?.invoke();close()
+            }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;remove=false;error=e.message ?: "The $kind could not be queued for deletion."}finally{busy=false}
+        }}){Text(if(busy)"Deleting…" else "Delete $kind")}},dismissButton={SecondaryButton(enabled=!busy,onClick={remove=false}){Text("Keep it")}})
+    }
 }
 
 @Composable internal fun NewNoteDialog(model:Workspace,state:WorkspaceState,initialRadar:Boolean=false,device:DeviceActions=DeviceActions(),recipe:Boolean=false,close:()->Unit) {

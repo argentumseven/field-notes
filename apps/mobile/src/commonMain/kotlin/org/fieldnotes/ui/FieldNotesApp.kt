@@ -164,6 +164,8 @@ import org.fieldnotes.domain.*
     var historyTarget by remember {mutableStateOf<String?>(null)};var historyTitle by remember {mutableStateOf("")}
     var projectViews by remember {mutableStateOf<Map<String,ProjectView>>(emptyMap())}
     var activeStore by remember(project) { mutableStateOf("") }
+    // The last project/list shown, so a container removed while open still lands somewhere sensible.
+    var lastContainer by remember { mutableStateOf<Record?>(null) }
     var menu by remember { mutableStateOf(false) }; var projectsMenu by remember { mutableStateOf(false) }
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) };var eventStartClock by remember { mutableStateOf<String?>(null) }
     var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) }; var endpoint by remember { mutableStateOf(false) }
@@ -218,6 +220,21 @@ import org.fieldnotes.domain.*
     val referenceList=current?.record?.takeIf{it.kind=="task"}?.let{task->projects.firstOrNull{it.record.id==task.data.text("project_id")&&it.record.kind=="list"&&!it.record.flag("items_are_tasks")}?.record}
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.error) { state.error?.let { snackbar.showSnackbar(it); model.clearError() } }
+    // A project or list can vanish while it is open, whether deleted here or by another
+    // household member. Leave the dead screen instead of showing an empty task list.
+    val onContainerPage = page !in setOf("Calendar","History","Assignments","Lists","Projects","Collections","Notes","Later & reminders","Recipes")
+    LaunchedEffect(project,activeContainer,onContainerPage) {
+        if(project==null){lastContainer=null;return@LaunchedEffect}
+        if(activeContainer!=null){lastContainer=activeContainer;return@LaunchedEffect}
+        if(!onContainerPage)return@LaunchedEffect
+        val gone=lastContainer?.takeIf{it.id==project}
+        // One this screen never showed (restored state, or a new record still arriving) gets a moment
+        // to appear first; this block restarts and the wait is dropped if it does.
+        if(gone==null)delay(1_500)
+        val landing=gone?.let{landingAfterRemoval(it,state.cache)} ?: UnknownContainerLanding
+        navigate(landing.page,landing.container)
+        snackbar.showSnackbar(if(gone!=null)"“${gone.data.text("title")}” was removed" else "That project or list is no longer available")
+    }
     if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound,copyLocation=copy,device=device) { selected = null }
     if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null},device)
     else if (selected != null && current?.record?.kind == "task"&&referenceList==null) {
@@ -328,7 +345,11 @@ import org.fieldnotes.domain.*
         val list=projects.find { it.record.id==project&&it.record.kind=="list" }?.record
         if(list!=null&&!list.flag("items_are_tasks"))ListItemDialog(model,state,list,null,device,initialStore=activeStore.takeUnless{it=="*"}.orEmpty(),close={addTask=false}) else NewTaskDialog(model,state,taskContainer ?: project,page=="My tasks",device,onCreated={id,_->selected=id}){addTask=false}
     }
-    editingContainer?.let { c->CollectionDialog(model,state,c,c.kind,close={editingContainer=null}) }
+    editingContainer?.let { c->CollectionDialog(model,state,c,c.kind,close={editingContainer=null},removed={
+        // From inside the deleted project or list, return to its parent; the library needs no move.
+        if(project==c.id){val landing=landingAfterRemoval(c,state.cache);navigate(landing.page,landing.container)}
+        uiScope.launch{snackbar.showSnackbar("Deleted ${c.kind} “${c.data.text("title")}”")}
+    }) }
     if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock,copyLocation=copy,device=device) { addEvent = false }
     if (endpoint) TextDialog("Server endpoint", "Host:UDP port", { endpoint = false }, confirmLabel = "Update", initial = state.cache.config?.text("endpoint") ?: "", maxLength = 260) { model.updateEndpoint(it); endpoint = false; model.launch { model.sync() } }
     if (changes) ChangesSheet(model, state, { changes = false }, copy)

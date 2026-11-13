@@ -103,4 +103,31 @@ class AlarmExperienceDeviceTest {
             assertEquals(before,audio.getStreamVolume(AudioManager.STREAM_ALARM));assertEquals(beforeMuted,audio.isStreamMute(AudioManager.STREAM_ALARM))
         }finally{AlarmPlaybackService.stop(app);AlarmAudio.restoreAfterStop(app);audio.setStreamVolume(AudioManager.STREAM_ALARM,initial,0);if(initialMuted)audio.adjustStreamVolume(AudioManager.STREAM_ALARM,AudioManager.ADJUST_MUTE,0);app.model.preferences(old.preferences);instrumentation.runOnMainSync{activity.finish()}}
     }
+    @Test fun alarmCardUsesOneHighImportanceSilentChannelAndSettlesWithoutStop()=runBlocking {
+        assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
+        val instrumentation=InstrumentationRegistry.getInstrumentation();val app=instrumentation.targetContext.applicationContext as FieldNotesApplication;app.initialized.await()
+        val old=app.vault.load();val audio=app.getSystemService(AudioManager::class.java);val initial=audio.getStreamVolume(AudioManager.STREAM_ALARM);val initialMuted=audio.isStreamMute(AudioManager.STREAM_ALARM)
+        val manager=app.getSystemService(NotificationManager::class.java)
+        val channel=manager.getNotificationChannel(ReminderSounds.channel(app,AlertProfile(alarm=true,duration=5)))
+        assertEquals(ReminderSounds.ALARM_CHANNEL,channel.id)
+        assertEquals(NotificationManager.IMPORTANCE_HIGH,channel.importance)
+        assertNull(channel.sound);assertFalse(channel.shouldVibrate())
+        assertTrue(manager.notificationChannels.none{it.id.startsWith("fn-alarm-v1-")})
+        try {
+            app.model.preferences(old.preferences.copy(allowAlarmVolumeOverride=true))
+            instrumentation.runOnMainSync {assertTrue(AlarmPlaybackService.test(app))}
+            fun card()=manager.activeNotifications.firstOrNull {it.tag?.startsWith("field-notes:")==true&&it.notification.channelId==channel.id}
+            val until=System.currentTimeMillis()+45_000
+            while(System.currentTimeMillis()<until&&(card()==null||manager.activeNotifications.none {it.id==93}))delay(100)
+            val shown=checkNotNull(card()).notification
+            assertTrue("The on-screen card must offer Stop while the sound plays",shown.actions.any {it.title.toString()=="Stop alarm"})
+            assertTrue(shown.actions.any {it.title.toString()=="Open item"}||shown.contentIntent!=null)
+            shown.actions.single {it.title.toString()=="Stop alarm"}.actionIntent.send()
+            val settled=System.currentTimeMillis()+15_000
+            while(System.currentTimeMillis()<settled&&(manager.activeNotifications.any {it.id==93}||card()?.notification?.actions?.any {it.title.toString()=="Stop alarm"}!=false))delay(100)
+            assertTrue("Playback controls end with the sound",manager.activeNotifications.none {it.id==93})
+            val after=checkNotNull(card()) {"The card stays after Stop"}.notification
+            assertTrue("A finished alarm no longer offers Stop",after.actions.orEmpty().none {it.title.toString()=="Stop alarm"})
+        }finally{AlarmPlaybackService.stop(app);AlarmAudio.restoreAfterStop(app);audio.setStreamVolume(AudioManager.STREAM_ALARM,initial,0);if(initialMuted)audio.adjustStreamVolume(AudioManager.STREAM_ALARM,AudioManager.ADJUST_MUTE,0);app.model.preferences(old.preferences);manager.cancelAll()}
+    }
 }

@@ -210,10 +210,46 @@ mod tests {
                 assert_eq!(&cue[..4], b"RIFF");
                 assert_eq!(&alarm[..4], b"RIFF");
                 assert!(cue.len() < 44 + 22050 * 2);
-                assert!(alarm.len() >= 44 + 22050 * 2 * 4);
+                assert!(alarm.len() >= 44 + 22050 * 2 * 3);
                 assert_ne!(cue, alarm);
             }
         }
         assert!(super::get("../alarm_siren_100.wav").is_none());
+    }
+
+    fn samples(wav: &[u8]) -> Vec<i32> {
+        wav[44..]
+            .chunks_exact(2)
+            .map(|pair| i16::from_le_bytes([pair[0], pair[1]]) as i32)
+            .collect()
+    }
+
+    /// Alarms repeat for their whole ring time. Each clip must therefore be a whole number of its
+    /// own phrases and join its own start without a jump, or every repeat would tick or stumble.
+    #[test]
+    fn alarm_clips_repeat_without_a_seam() {
+        for (tone, period) in [
+            ("chime", 1.5),
+            ("bell", 1.5),
+            ("pulse", 1.5),
+            ("beacon", 1.5),
+            ("marimba", 1.5),
+            ("orbit", 2.0),
+            ("sunrise", 1.5),
+            ("siren", 1.25),
+        ] {
+            for level in [25, 50, 75, 100] {
+                let clip = samples(super::get(&format!("alarm_{tone}_{level}.wav")).unwrap());
+                let phrases = clip.len() as f64 / 22050.0 / period;
+                assert!(
+                    (phrases - phrases.round()).abs() < 1e-6,
+                    "{tone} is {phrases} phrases long"
+                );
+                let largest_step = clip.windows(2).map(|pair| (pair[1] - pair[0]).abs()).max().unwrap();
+                let seam = (clip[0] - clip[clip.len() - 1]).abs();
+                assert!(seam <= largest_step, "{tone}@{level}: seam step {seam} > {largest_step}");
+                assert!(clip[0].abs() <= largest_step, "{tone}@{level} starts away from silence");
+            }
+        }
     }
 }
