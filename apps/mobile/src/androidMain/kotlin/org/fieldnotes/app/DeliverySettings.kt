@@ -59,9 +59,11 @@ object DeliverySettings {
     }
     suspend fun recheck(context:Context) {
         val app=context.applicationContext as FieldNotesApplication
-        app.deliveryError.value=null
-        try { AlarmAudio.restore(context);NotificationAudio.restore(context);LocalAlarms.reconcile(context,true);problem(context)?.let {app.deliveryError.value=it} }
-        catch(_:Exception){app.deliveryError.value="Delivery checks could not complete. Check storage and Android alarm permissions."}
+        try { AlarmAudio.restore(context);NotificationAudio.restore(context);if(!LocalAlarms.reconcileSafely(context,true))return
+            val problem=problem(context)
+            if(problem!=null)app.deliveryError.value=problem
+            else app.deliveryError.compareAndSet("Android notifications are blocked. Enable them so reminders and alarm controls can be shown.",null) }
+        catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;app.deliveryError.value=org.fieldnotes.domain.SCHEDULING_FAILURE}
     }
     fun pin(context:Context){
         if(!UpcomingWidget.pin(context))Toast.makeText(context,"Open your launcher's widget picker and choose Field Notes · Upcoming.",Toast.LENGTH_LONG).show()

@@ -12,14 +12,14 @@ import kotlinx.serialization.json.*
 }
 @Serializable data class ReminderWindow(val id:String,val weekdays:List<Int> = emptyList(),val starts_on:String,val ends_on:String="",val from:String="09:00",val until:String="18:00",val every_minutes:Int=60,val zone:String,
     val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true) { val profile get()=AlertProfile(importance,sound,volume,vibrate) }
-@Serializable data class ReminderSet(val alerts:List<ReminderAlert> = emptyList(),val repeat:ReminderWindow?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val timing_version:Int?=null)
-fun reminderSet(record:Record):ReminderSet? = (record.data["reminder_schedule_rules"] ?: record.data["reminder_timing_rules"] ?: if(record.data.containsKey("reminder_rules"))record.data["reminder_rules"] else record.data["reminders"])?.takeUnless { it==JsonNull }?.let { runCatching { WireJson.decodeFromJsonElement<ReminderSet>(it) }.getOrNull() }
+@Serializable data class ReminderSet(val alerts:List<ReminderAlert> = emptyList(),val repeat:ReminderWindow?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val timing_version:Int?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val interval:ReminderInterval?=null)
+fun reminderSet(record:Record):ReminderSet? = (record.data["reminder_interval_rules"] ?: record.data["reminder_schedule_rules"] ?: record.data["reminder_timing_rules"] ?: if(record.data.containsKey("reminder_rules"))record.data["reminder_rules"] else record.data["reminders"])?.takeUnless { it==JsonNull }?.let { runCatching { WireJson.decodeFromJsonElement<ReminderSet>(it) }.getOrNull() }
 fun reminderData(value:ReminderSet)=WireJson.encodeToJsonElement(value).jsonObject
 fun validateReminders(value:ReminderSet) {
     require(value.alerts.size<=8) { "Use up to eight reminders." }
-    require(value.timing_version==null||value.timing_version in 1..2){"Update the app for this reminder timing."}
+    require(value.timing_version==null||value.timing_version in 1..3){"Update the app for this reminder timing."}
     fun profile(p:AlertProfile) { require(p.importance in setOf("quiet","normal","urgent") && p.sound in setOf("chime","bell","pulse") && p.volume in setOf(25,50,75,100)) { "Choose a sound and importance." } }
-    value.alerts.forEach { require(it.minutes_before in 0..43200) { "Choose a valid reminder time." };it.lead_time?.let{lead->require(value.timing_version in 1..2&&it.minutes_before==0);validateReminderLead(lead)};it.day_time?.let{day->require(value.timing_version==2&&it.minutes_before==0&&it.lead_time==null);validateReminderDayTime(day)};profile(it.profile) }
+    value.alerts.forEach { require(it.minutes_before in 0..43200) { "Choose a valid reminder time." };it.lead_time?.let{lead->require(value.timing_version in 1..3&&it.minutes_before==0);validateReminderLead(lead)};it.day_time?.let{day->require(value.timing_version in 2..3&&it.minutes_before==0&&it.lead_time==null);validateReminderDayTime(day)};profile(it.profile) }
     value.repeat?.let { r ->
         val start=LocalDate.parse(r.starts_on);r.ends_on.takeIf { it.isNotBlank() }?.let { require(LocalDate.parse(it)>=start) { "Last day must follow first day." } }
         TimeZone.of(r.zone);LocalTime.parse(r.until);LocalTime.parse(r.from)
@@ -27,7 +27,8 @@ fun validateReminders(value:ReminderSet) {
         require(r.weekdays.size<=7&&r.weekdays.toSet().size==r.weekdays.size&&r.weekdays.all { it in 1..7 })
         profile(r.profile)
     }
-    val ids=value.alerts.map { it.id }+listOfNotNull(value.repeat?.id)
+    value.interval?.let { require(value.timing_version==3){"Update the app for repeating intervals."};require(value.repeat==null){"Choose a repeat interval or a time window."};validateReminderInterval(it);profile(it.profile) }
+    val ids=value.alerts.map { it.id }+listOfNotNull(value.repeat?.id,value.interval?.id)
     require(ids.distinct().size==ids.size) { "Reminder IDs must be distinct." }
 }
 /** Only the latest missed repeat occurrence is caught up; a long disconnection
@@ -70,6 +71,7 @@ fun customAlerts(record:Record, now:Instant, deviceZone:TimeZone):List<LocalAler
         }
         missed?.let { result+=it };result+=future
     }
+    rules.interval?.let { result+=intervalAlerts(record,it,now) }
     return result
 }
 

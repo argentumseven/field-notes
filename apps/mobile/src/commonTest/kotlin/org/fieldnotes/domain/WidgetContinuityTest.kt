@@ -36,7 +36,7 @@ class WidgetContinuityTest {
         val changed=reminderData(ReminderSet(listOf(ReminderAlert("alert",120))))
         val empty=reminderData(ReminderSet())
         for(kind in listOf("task","event","note")){
-            val item=Record("item",kind,1,obj("title" to "Original".j(),"reminders" to empty,"reminder_rules" to empty,"reminder_timing_rules" to old,"reminder_schedule_rules" to old))
+            val item=Record("item",kind,1,obj("title" to "Original".j(),"reminders" to empty,"reminder_rules" to empty,"reminder_timing_rules" to old,"reminder_schedule_rules" to old,"reminder_interval_rules" to old))
             val cache=Cache(snapshot=Snapshot(1,"synthetic",1,1,listOf(item),Actor("owner","Owner","owner","session")))
             fun projected(data:JsonObject)=projectRecords(cache.copy(outbox=listOf(Pending(Command("operation","synthetic",1,"$kind.update",item.id,1,data))))).single().record
             assertEquals(old,reminderData(reminderSet(projected(obj("title" to "Amended".j())))!!))

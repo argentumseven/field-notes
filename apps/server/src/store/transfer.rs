@@ -184,7 +184,8 @@ fn content(
     }
     if let Some(rules) = record
         .data
-        .get("reminder_schedule_rules")
+        .get("reminder_interval_rules")
+        .or_else(|| record.data.get("reminder_schedule_rules"))
         .or_else(|| record.data.get("reminder_timing_rules"))
         .or_else(|| record.data.get("reminder_rules"))
     {
@@ -259,6 +260,7 @@ fn content_types(record: &Record) -> Result<()> {
                 .is_some_and(|values| values.iter().all(Value::is_string)),
             "recurrence"
             | "reminder_rules"
+            | "reminder_interval_rules"
             | "reminder_schedule_rules"
             | "reminder_timing_rules"
             | "reminder_options" => value.is_null() || value.is_object(),
@@ -438,6 +440,7 @@ impl Store {
                             | "size"
                             | "original_sha256"
                             | "reminder_rules"
+                            | "reminder_interval_rules"
                             | "reminder_schedule_rules"
                             | "reminder_timing_rules"
                             | "imported_from"

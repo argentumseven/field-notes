@@ -60,7 +60,7 @@ class PrivateUpdatesService:Service(){
                 wake?.acquire(120_000)
                 app.model.poll()
                 val after=app.model.state.value
-                try { LocalAlarms.reconcile(this@PrivateUpdatesService) } catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention. Open Field Notes."}
+                LocalAlarms.reconcileSafely(this@PrivateUpdatesService)
                 if(after.online||after.cache.compatibility?.blocked==true)app.updates.checkForUpdate(automatic=true)
                 val status=when {after.cache.compatibility?.blocked==true->"App update required · saved work retained";after.problem!=null->"Needs attention · ${after.problem}";after.online->"Connected · ${after.cache.outbox.size} queued · private sync active";else->"Server unavailable · cached reminders continue · automatic retry"}
                 getSystemService(NotificationManager::class.java).notify(90,NotificationCompat.Builder(this@PrivateUpdatesService,Alerts.CONNECTION).setSmallIcon(R.drawable.ic_field_notes).setContentTitle("Field Notes background updates").setContentText(status).setStyle(NotificationCompat.BigTextStyle().bigText(status)).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setVisibility(NotificationCompat.VISIBILITY_SECRET).addAction(0,"Stop background mode",stop).build())
@@ -93,8 +93,8 @@ class StartupReceiver:BroadcastReceiver(){
                 val cache=app.vault.load()
                 if(cache.token!=null&&!cache.preferences.connectionPaused&&cache.preferences.liveUpdates&&!PrivateUpdatesService.start(context))app.deliveryError.value="Open Field Notes to restart background updates."
                 CatchUpWorker.schedule(context,cache.preferences)
-                LocalAlarms.reconcile(context,true);CalendarWidget.refresh(context)
-            }catch(_:Exception){app.deliveryError.value="Open Field Notes to restore reminder scheduling."}
+                LocalAlarms.reconcileSafely(context,true);CalendarWidget.refresh(context)
+            }catch(e:Exception){if(e is kotlinx.coroutines.CancellationException)throw e;app.deliveryError.value="Background refresh could not finish. Open Settings → Connection & background to check refresh mode. Your saved content is kept."}
             finally{pending.finish()}
         }
     }

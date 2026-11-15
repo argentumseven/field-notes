@@ -1,11 +1,12 @@
 use super::*;
 
 pub(super) fn extended_timing(rules: &Value) -> bool {
-    rules["alerts"].as_array().is_some_and(|alerts| {
-        alerts
-            .iter()
-            .any(|a| a.get("lead_time").is_some() || a.get("day_time").is_some())
-    })
+    !rules["interval"].is_null()
+        || rules["alerts"].as_array().is_some_and(|alerts| {
+            alerts
+                .iter()
+                .any(|a| a.get("lead_time").is_some() || a.get("day_time").is_some())
+        })
 }
 
 pub(super) fn validate_lead(alert: &Value, version: &Value) -> Result<()> {
@@ -22,7 +23,7 @@ pub(super) fn validate_lead(alert: &Value, version: &Value) -> Result<()> {
         Some("years") => 10,
         _ => return fail(400, "Choose minutes, hours, days, weeks, months or years"),
     };
-    if !matches!(version.as_i64(), Some(1 | 2))
+    if !matches!(version.as_i64(), Some(1..=3))
         || alert["minutes_before"].as_i64() != Some(0)
         || !lead["amount"]
             .as_i64()
@@ -52,7 +53,7 @@ pub(super) fn validate_day_time(alert: &Value, version: &Value) -> Result<()> {
     };
     fields(day, &["days_before", "time", "zone"])?;
     let time = day["time"].as_str().unwrap_or("");
-    if version.as_i64() != Some(2)
+    if !matches!(version.as_i64(), Some(2 | 3))
         || alert["minutes_before"].as_i64() != Some(0)
         || alert.get("lead_time").is_some()
         || !day["days_before"]
@@ -72,12 +73,27 @@ pub(super) fn validate_day_time(alert: &Value, version: &Value) -> Result<()> {
     }
     Ok(())
 }
+/// Existing day/time clients receive their full supported rules, never interval fields.
+pub(super) fn schedule_v2_rules(canonical: &Value) -> Value {
+    let mut value = canonical.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("interval");
+    }
+    if has_day_time(&value) {
+        value["timing_version"] = json!(2);
+    } else if extended_timing(&value) {
+        value["timing_version"] = json!(1);
+    } else if let Some(object) = value.as_object_mut() {
+        object.remove("timing_version");
+    }
+    value
+}
 /// Projection for 0.10's strict timing-v1 scheduler.
 pub(super) fn timing_v1_rules(canonical: &Value) -> Value {
     if !canonical.is_object() {
         return canonical.clone();
     }
-    let mut value = canonical.clone();
+    let mut value = schedule_v2_rules(canonical);
     if let Some(alerts) = value["alerts"].as_array_mut() {
         alerts.retain(|a| a.get("day_time").is_none())
     }

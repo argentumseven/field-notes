@@ -167,7 +167,7 @@ async function newStandaloneTask() {
             byId(nodes.project_id.value)?.data.category || "general";
         classification.refresh();
       };
-      FieldReminders.controls(
+      const reminderControls = FieldReminders.controls(
         $("#dialog-body"),
         reminders,
         () =>
@@ -178,7 +178,11 @@ async function newStandaloneTask() {
           reminders = v;
           reminderDirty = true;
         },
+        null,
+        () => !!(nodes.due.value || nodes.planned_for.value),
       );
+      for (const date of [nodes.due, nodes.planned_for])
+        date.addEventListener("input", reminderControls.refresh);
     },
   );
 }
@@ -216,7 +220,7 @@ function noteFollowUpControls(parent, initial = {}, changed = () => {}) {
   for (const [days, label] of [
     [1, "Tomorrow"],
     [7, "In a week"],
-    [null, "Someday · no reminder"],
+    [null, "Someday · no date"],
   ])
     quick.append(
       button(label, () => {
@@ -234,7 +238,7 @@ function noteFollowUpControls(parent, initial = {}, changed = () => {}) {
     el(
       "p",
       "muted",
-      "An idea can stay undated. A reminder brings it back without blocking calendar time. Everyone receives new reminders by default.",
+      "An idea can stay undated. Use Reminders & sound for repeating nudges without a date. Clearing the date keeps any saved repeat interval. Everyone receives new reminders by default.",
     ),
   );
   const render = () => {
@@ -480,14 +484,17 @@ function renderNotes(root) {
             new Date(n.data.updated_at * 1000).toLocaleDateString(),
         ),
       );
+      const interval = FieldReminders.rulesFor(n)?.interval;
       if (n.data.on_radar)
         row.append(
           el(
             "span",
             "badge",
-            n.data.remind_at
-              ? "Remind " + new Date(n.data.remind_at * 1000).toLocaleString()
-              : "Someday · no reminder",
+            interval
+              ? `Repeat every ${interval.amount} ${interval.unit}`
+              : n.data.remind_at
+                ? "Remind " + new Date(n.data.remind_at * 1000).toLocaleString()
+                : "Someday · no reminder",
           ),
         );
       row.append(historyNode(n));
@@ -643,7 +650,10 @@ function renderNoteDetail(note) {
                 : {}),
               pinned: d.pinned,
               category: d.category,
-              ...(note.data.category?.startsWith("custom:") && d.category !== note.data.category ? {category_override:true} : {}),
+              ...(note.data.category?.startsWith("custom:") &&
+              d.category !== note.data.category
+                ? { category_override: true }
+                : {}),
               ...follow.value(),
             },
             d.baseRevision,

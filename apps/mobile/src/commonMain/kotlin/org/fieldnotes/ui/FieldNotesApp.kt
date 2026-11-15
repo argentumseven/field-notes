@@ -168,9 +168,9 @@ import org.fieldnotes.domain.*
     var lastContainer by remember { mutableStateOf<Record?>(null) }
     var menu by remember { mutableStateOf(false) }; var projectsMenu by remember { mutableStateOf(false) }
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) };var eventStartClock by remember { mutableStateOf<String?>(null) }
-    var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) }; var endpoint by remember { mutableStateOf(false) }
+    var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) };var settingsFacet by remember { mutableStateOf<SettingsFacet?>(null) }; var endpoint by remember { mutableStateOf(false) }
     LaunchedEffect(requestedPage,navigationSequence) {
-        if(requestedPage=="Settings"){settings=true;selected=null}
+        if(requestedPage?.startsWith("Settings")==true){settingsFacet=SettingsFacet.entries.find{it.name==requestedPage.substringAfter("/","")};settings=true;selected=null}
         if(requestedPage in listOf("Focus","Tasks","Calendar","Assignments","Notes")) {
             page=requestedPage!!;project=null;query=""
             // Retain an open event form; task/note drafts already persist independently.
@@ -250,7 +250,7 @@ import org.fieldnotes.domain.*
         OutlinedIconButton(shape=ControlShape,onClick = { model.requestSync() }, enabled = !state.syncing) { Icon(Icons.Outlined.Refresh, "Sync now") }
         Box { OutlinedIconButton(shape=ControlShape,onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Workspace menu") }; DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(text = { Text("Retained changes (${state.cache.conflicts.size + state.cache.drafts.size})") }, onClick = { menu = false; changes = true })
-            DropdownMenuItem(text = { Text("Settings & widgets") }, onClick = { menu = false; settings = true })
+            DropdownMenuItem(text = { Text("Settings & widgets") }, onClick = { menu = false; settingsFacet=null;settings = true })
             if (writable) {
                 DropdownMenuItem(text={Text("New task")},enabled=!workClosed,onClick={menu=false;addTask=true})
                 DropdownMenuItem(text={Text("New list")},onClick={menu=false;addList=true})
@@ -262,7 +262,7 @@ import org.fieldnotes.domain.*
         } }
     }) }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { NavigationBar(tonalElevation = 0.dp) {
         listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = navigationPage==label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
-    } }, floatingActionButton = { if (writable&&page!="History"&&!workClosed&&(page!="Recipes"||state.cache.supportsPlannerDetails())) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders","Recipes"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Recipes" -> "New recipe"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
+    } }, floatingActionButton = { if (writable&&page !in setOf("History","Calendar")&&!workClosed&&(page!="Recipes"||state.cache.supportsPlannerDetails())) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders","Recipes"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Recipes" -> "New recipe"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(horizontal = 18.dp)) {
             val workspaceHeader:@Composable ()->Unit={
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp).testTag("workspace-heading"),maxLines=2,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -278,17 +278,17 @@ import org.fieldnotes.domain.*
             if(issue!=null||compat?.let{it.blocked||it.warning.isNotBlank()||it.version=="legacy"||it.recommendedClient>CURRENT_CLIENT_CODE}==true)OutlinedCard(Modifier.fillMaxWidth().padding(vertical=6.dp)) {Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
                 Text(if(issue!=null)"Needs attention" else "Version compatibility",style=MaterialTheme.typography.titleSmall)
                 Text(issue ?: compat!!.message,style=MaterialTheme.typography.bodySmall)
-                SecondaryButton(onClick={settings=true}){Text("Review settings and updates")}
+                SecondaryButton(onClick={settingsFacet=if(issue!=null)settingsFacetForIssue(issue)else SettingsFacet.UPDATES;settings=true}){Text(if(issue!=null&&settingsFacetForIssue(issue)==SettingsFacet.REMINDERS)"Review reminder setup" else "Review relevant settings")}
                 if(issue==device.warning)device.dismissDeliveryIssue?.let{dismiss->SecondaryButton(onClick=dismiss){Text("Dismiss alert")}}
             }}
             if (state.cache.conflicts.isNotEmpty()) SecondaryButton(onClick = { changes = true }) { Text("${state.cache.conflicts.size} changes need review") }
-            if(state.cache.recoveryPending!=null)SecondaryButton(onClick={settings=true}){Text("Recovery result needs review")}
+            if(state.cache.recoveryPending!=null)SecondaryButton(onClick={settingsFacet=SettingsFacet.DATA;settings=true}){Text("Recovery result needs review")}
             else if(state.cache.recoveryNotice.isNotBlank())Text(state.cache.recoveryNotice)
-            if(device.update.available)SecondaryButton(onClick={settings=true}){Text("App update ${device.update.offered} available")}
+            if(device.update.available)SecondaryButton(onClick={settingsFacet=SettingsFacet.UPDATES;settings=true}){Text("App update ${device.update.offered} available")}
             }
-            if(!scrollingHeader)workspaceHeader()
+            if(!scrollingHeader&&page!="Calendar")workspaceHeader()
             bodyStates.SaveableStateProvider(page+":"+project.orEmpty()) {
-            if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences(state.cache.preferences.copy(federalHolidays=on))}})
+            if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences(state.cache.preferences.copy(federalHolidays=on))}},header=workspaceHeader,newEvent=if(writable)({eventStartClock=null;addEvent=true})else null)
             else if(page=="History") HistoryScreen(model,state,device.use24Hour,historyTarget,historyTitle,{historyTarget=null;historyTitle=""}){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
             else if(page=="Assignments") {
                 OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(top=12.dp),label={Text("Find assigned work")},singleLine=true)
@@ -353,61 +353,7 @@ import org.fieldnotes.domain.*
     if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock,copyLocation=copy,device=device) { addEvent = false }
     if (endpoint) TextDialog("Server endpoint", "Host:UDP port", { endpoint = false }, confirmLabel = "Update", initial = state.cache.config?.text("endpoint") ?: "", maxLength = 260) { model.updateEndpoint(it); endpoint = false; model.launch { model.sync() } }
     if (changes) ChangesSheet(model, state, { changes = false }, copy)
-    if (settings) ModalBottomSheet(onDismissRequest = { settings = false }) {
-        Column(Modifier.fillMaxWidth().heightIn(max=720.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
-            Text("Settings",Modifier.weight(1f),style=MaterialTheme.typography.titleLarge)
-            SecondaryButton(onClick={settings=false}){Text("Close")}
-        }
-        HorizontalDivider()
-        Column(Modifier.fillMaxWidth().weight(1f).plannerScroll().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            RecoveryPendingCard(model,state)
-            ConnectionControls(model,state); Text("${actor.name} · ${actor.role}"); Text("Server: ${state.cache.config?.text("endpoint")}")
-            SecondaryButton(onClick = { endpoint = true },modifier=Modifier.fillMaxWidth()) { Text("Edit server endpoint") }
-            if(device.androidDelivery){AppUpdatesCard(device);DataTransferCard(state.cache,device)}
-            if(device.androidDelivery)SettingSwitch("Automatically prepare app updates","Download and verify updates from this paired server in the background. Android still asks before installation; interrupted transfers resume.",state.cache.preferences.autoDownloadUpdates){val p=state.cache.preferences.copy(autoDownloadUpdates=it);model.launch{model.preferences(p)}}
-            if(device.androidDelivery){
-                Text("Alerts and home screen",style=MaterialTheme.typography.titleMedium)
-                Text(device.status,style=MaterialTheme.typography.bodySmall)
-                device.dismissDeliveryIssue?.let{dismiss->SecondaryButton(onClick=dismiss){Text("Dismiss delivery alert")}}
-                state.error?.let { ErrorText(it) }
-                ViewChoice("Background updates",backgroundUpdateMode(state.cache.preferences),listOf("live" to "Live · fast updates","periodic" to "Periodic · save battery","manual" to "Manual")){mode->val p=state.cache.preferences.withBackgroundUpdateMode(mode);model.launch { model.preferences(p);background(p) }}
-                Text(when(backgroundUpdateMode(state.cache.preferences)){"live"->"Notes, reminders and widgets update through the private background connection. Android shows an ongoing notification; allow notifications to start it.";"periodic"->"Notes and widgets catch up automatically. Android schedules checks at 15-minute minimum intervals and may delay them to save battery.";else->"Widgets show saved data. Open Field Notes or tap the widget's update status to sync."},style=MaterialTheme.typography.bodySmall)
-                SecondaryButton(onClick=device.testAlert,modifier=Modifier.fillMaxWidth()){Text("Test notification sound")}
-                SecondaryButton(onClick=device.profileTest,modifier=Modifier.fillMaxWidth()){Text("Test in another profile (30 s)")}
-                SecondaryButton(onClick=device.notificationSettings,modifier=Modifier.fillMaxWidth()){Text("Notification sound settings")}
-                SecondaryButton(onClick=device.recheckDelivery,modifier=Modifier.fillMaxWidth()){Text("Check reminder delivery again")}
-                Text("Loud alarm reminders",style=MaterialTheme.typography.titleMedium)
-                SettingSwitch("Allow temporary alarm-volume control","For alarm reminders, raise and restore this phone's alarm volume. Manual changes take priority. Stop the alarm before force-stop or direct uninstall; Android cannot run restoration afterward.",state.cache.preferences.allowAlarmVolumeOverride){val enabled=it;model.launch{model.preferences{it.copy(allowAlarmVolumeOverride=enabled)}}}
-                SettingSwitch("Allow temporary notification-volume control","Only for a reminder that requests it. Restores the previous level and respects Silent, Vibrate and DND.",state.cache.preferences.allowNotificationVolumeOverride){val enabled=it;model.launch{model.preferences{it.copy(allowNotificationVolumeOverride=enabled)}}}
-                SecondaryButton(onClick=device.testLoudAlarm,modifier=Modifier.fillMaxWidth(),enabled=state.cache.preferences.allowAlarmVolumeOverride){Text("Test a loud alarm (5 s)")}
-                SecondaryButton(onClick=device.stopAlarm,modifier=Modifier.fillMaxWidth()){Text("Stop reminder sound and restore volume")}
-                SecondaryButton(onClick=device.soundSettings,modifier=Modifier.fillMaxWidth()){Text("Android alarm volume")}
-                SecondaryButton(onClick=device.dndSettings,modifier=Modifier.fillMaxWidth()){Text("Do Not Disturb exceptions")}
-                SecondaryButton(onClick=device.alarmSettings,modifier=Modifier.fillMaxWidth()){Text("Allow precise reminders")}
-                SecondaryButton(onClick=device.batterySettings,modifier=Modifier.fillMaxWidth()){Text("Background battery settings")}
-                SecondaryButton(onClick={profileHelp=true},modifier=Modifier.fillMaxWidth()){Text("Alerts in other GrapheneOS profiles")}
-            }
-            Text("Appearance",style=MaterialTheme.typography.titleMedium)
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(theme in listOf("system","light","dark"))FilterChip(state.cache.preferences.theme==theme,{model.launch { model.preferences(state.cache.preferences.copy(theme=theme)) }},{Text(theme.replaceFirstChar { it.uppercase() })})}
-            SettingSwitch("Shared additions","Name the person and item when someone adds a task, note, event or list item. Bulk additions use one expandable alert; list settings can mute its item alerts.",state.cache.preferences.sharedAdditions){val p=state.cache.preferences.copy(sharedAdditions=it);model.launch{model.preferences(p)}}
-            Text("Live refresh while open · checks every 3 seconds. Returning to the app checks immediately. Pause the connection to work offline.",style=MaterialTheme.typography.bodySmall)
-            Text("Visibility and app lock",style=MaterialTheme.typography.titleMedium)
-            Text("App locking, notification details and home-screen details are independent.",style=MaterialTheme.typography.bodySmall)
-            SettingSwitch("Require a credential to open the app","Optional device-credential check. Reminders and widgets keep their own visibility choices.",state.cache.preferences.appLock){val p=state.cache.preferences.copy(appLock=it);model.launch{model.preferences(p)}}
-            if(state.cache.preferences.appLock)FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(minutes in listOf(1,5,15,30))FilterChip(state.cache.preferences.lockMinutes==minutes,{model.launch{model.preferences(state.cache.preferences.copy(lockMinutes=minutes))}},{Text("$minutes min")})}
-            SettingSwitch("Detailed reminder notifications","Show the title, schedule, person, notes and activity in the notification shade.",state.cache.preferences.notificationTitles){val p=state.cache.preferences.copy(notificationTitles=it,visibilityChoiceSeen=true);model.launch{model.preferences(p)}}
-            SettingSwitch("Notification details on the lock screen","Show full reminder contents while this profile's device is locked. Android's lock-screen settings also apply.",state.cache.preferences.notificationOnLockScreen){val p=state.cache.preferences.copy(notificationOnLockScreen=it,notificationTitles=it||state.cache.preferences.notificationTitles);model.launch{model.preferences(p)}}
-            SettingSwitch("Task and calendar reminders", "Use each item’s Reminders controls for multiple alerts, recurring windows and sound. Cached reminders also work offline.", state.cache.preferences.reminders) { val p = state.cache.preferences.copy(reminders = it); model.launch { model.preferences(p); background(p) } }
-            SettingSwitch("Show schedules in home-screen widgets", "Display event and task titles without opening Field Notes. Your launcher receives those title copies.", state.cache.preferences.widgetTitles) { val p = state.cache.preferences.copy(widgetTitles = it,visibilityChoiceSeen=true); model.launch { model.preferences(p); background(p) } }
-            SettingSwitch("Widget details while the device is locked","Keep schedule details visible on a locked device; launchers can retain previously displayed copies.",state.cache.preferences.widgetOnLockScreen){val p=state.cache.preferences.copy(widgetOnLockScreen=it,widgetTitles=it||state.cache.preferences.widgetTitles);model.launch{model.preferences(p)}}
-            SettingSwitch("Include everyone's appointments in widgets","Off shows your reminders. On shows the shared household calendar, without sending you their alarms.",state.cache.preferences.widgetHousehold){val p=state.cache.preferences.copy(widgetHousehold=it);model.launch{model.preferences(p)}}
-            Text("Widgets update automatically when background sync receives a change. Tap a day in Calendar or Week to open that day's timeline. The status shows when data last synced; tap it to sync now. Paused connections and stopped profiles stay stopped.", style = MaterialTheme.typography.bodySmall)
-            if(device.androidDelivery){SecondaryButton(onClick=device.addWeekWidget,modifier=Modifier.fillMaxWidth()){Text("Add Week to home screen")};SecondaryButton(onClick=device.addCalendarWidget,modifier=Modifier.fillMaxWidth()){Text("Add Calendar to home screen")};SecondaryButton(onClick=device.addUpcomingWidget,modifier=Modifier.fillMaxWidth()){Text("Add Upcoming to home screen")};SecondaryButton(onClick={removeInstallation=true},modifier=Modifier.fillMaxWidth(),dangerous=true){Text("Revoke this installation and uninstall")}}
-            Spacer(Modifier.height(24.dp))
-        }
-        }
-    }
+    if(settings)WorkspaceSettings(model,state,device,settingsFacet,{settingsFacet=it},{settings=false},background,{endpoint=true},{profileHelp=true},{removeInstallation=true})
     if(profileHelp)EditorDialog(onDismissRequest={profileHelp=false},title={Text("GrapheneOS profile alerts")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)){
         Text("Leave the Field Notes profile running and allow it to run in the background. In that profile, enable GrapheneOS notification forwarding to the active profile.")
         Text("Use the 30-second profile test, switch profiles before it fires, then check the receiving profile's forwarded-notification sound and Do Not Disturb settings. Forwarding hides task contents.")
@@ -431,7 +377,7 @@ import org.fieldnotes.domain.*
         Icon(Icons.Outlined.KeyboardArrowRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant)
     }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
-@Composable private fun TaskScreen(model: Workspace, state: WorkspaceState, visible: VisibleRecord, back: () -> Unit, attach: (String) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions=DeviceActions(),openContainer:((String)->Unit)?=null) {
+@Composable internal fun TaskScreen(model: Workspace, state: WorkspaceState, visible: VisibleRecord, back: () -> Unit, attach: (String) -> Unit, image: @Composable (VisibleRecord) -> Unit,device:DeviceActions=DeviceActions(),openContainer:((String)->Unit)?=null) {
     var reminderDialog by remember { mutableStateOf(false) }
     val task = visible.record
     val draft = state.cache.drafts[task.id]
@@ -441,6 +387,7 @@ import org.fieldnotes.domain.*
     var category by remember(task.id){mutableStateOf((draft?.data?:task.data).text("category","general"))}
     var itemCategory by remember(task.id){mutableStateOf((draft?.data?:task.data).text("item_category"))}
     var container by remember(task.id) { mutableStateOf((draft?.data?:task.data).text("project_id")) }
+    var prioritySaving by remember(task.id){mutableStateOf(false)}
     var priority by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("priority", 3).toInt()) }
     var planned by remember(task.id) { mutableStateOf((draft?.data ?: task.data).text("planned_for")) }
     var effort by remember(task.id) { mutableStateOf((draft?.data ?: task.data).number("estimate_minutes").toString()) }
@@ -493,7 +440,17 @@ import org.fieldnotes.domain.*
             if(state.cache.supportsItemContexts()||task.data.containsKey("item_category"))item{ItemCategoryPicker(categoryContext,itemCategory,writable&&!saving&&!staleWorkspace&&state.cache.supportsItemContexts()){itemCategory=it;retain()}}
             item { DateField("Due date", due, writable && !saving && !staleWorkspace) { due = it; retain() } }
             item { DateField("Planned day", planned, writable && !saving && !staleWorkspace) { planned = it; retain() } }
-            item { Text("Priority", style = MaterialTheme.typography.labelLarge); FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { (1..4).forEach { p -> FilterChip(selected = priority == p, onClick = { priority = p; retain() }, label = { Text(priorityName(p)) }, enabled = writable && !saving && !staleWorkspace) } } }
+            item { Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("Priority",style=MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(p in 1..4)FilterChip(priority==p,{
+                    if(priority!=p||task.data.number("priority",3).toInt()!=p){val previous=priority;priority=p;prioritySaving=true;model.launch {
+                        try{model.setTaskPriority(task.id,p,basis);model.requestSync()}
+                        catch(e:Exception){priority=previous;throw e}
+                        finally{prioritySaving=false}
+                    }}
+                },{Text(priorityName(p))},enabled=writable&&!saving&&!prioritySaving&&!staleWorkspace)}
+                Text(if(prioritySaving)"Saving priority…" else if(visible.pending)"Priority saved on this phone · waiting for sync" else "Applies immediately. Other detail edits still use Save details.",style=MaterialTheme.typography.bodySmall)
+            }}
             item { OutlinedTextField(if (effort == "0") "" else effort, { if (it.length <= 3 && (it.isEmpty() || it.toIntOrNull() in 0..480)) { effort = it; retain() } }, Modifier.fillMaxWidth(), label = { Text("Estimate · minutes (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, enabled = writable && !saving && !staleWorkspace) }
             item { SettingSwitch("Pin in Focus", "Pinned tasks come before the score order.", pinned) { if (writable && !staleWorkspace) { pinned = it; retain() } }; SettingSwitch("Blocked", "Hide from Focus until unblocked.", blocked) { if (writable && !staleWorkspace) { blocked = it; retain() } } }
             item { val rank = rankTask(task, Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date, Clock.System.now().epochSeconds, state.cache.snapshot.actor.user_id); Text("Saved Focus score ${rank.score}" + if (!rank.eligible) " · excluded from Focus" else "", style = MaterialTheme.typography.titleSmall); Text(rank.reasons.joinToString(" · "), style = MaterialTheme.typography.bodySmall) }
@@ -585,7 +542,7 @@ import org.fieldnotes.domain.*
     }
 }
 @Composable private fun ErrorText(text: String) { Text(text, Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.error) }
-@Composable private fun SettingSwitch(title: String, detail: String, enabled: Boolean, change: (Boolean) -> Unit) { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(detail, style = MaterialTheme.typography.bodySmall) }; Switch(enabled, change,modifier=Modifier.semantics{contentDescription=title}) } }
+@Composable internal fun SettingSwitch(title: String, detail: String, enabled: Boolean, change: (Boolean) -> Unit) { Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(detail, style = MaterialTheme.typography.bodySmall) }; Switch(enabled, change,modifier=Modifier.semantics{contentDescription=title}) } }
 @Composable private fun TextDialog(title: String, label: String, close: () -> Unit, confirmLabel: String = "Create", initial: String = "", maxLength: Int = 160, submit: suspend (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf(initial) }
     var busy by remember { mutableStateOf(false) }
@@ -601,7 +558,7 @@ import org.fieldnotes.domain.*
     EditorDialog(onDismissRequest=close,title={Text(title)},text={Column { Text(detail);extra() }},confirmButton={Button(shape=ControlShape,onClick=submit,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error,contentColor=MaterialTheme.colorScheme.onError)){Text(when(expected){"DELETE"->"Delete";"REVOKE"->"Revoke and remove";"REENROLL"->"Set up again";else->"Discard"})}},dismissButton={SecondaryButton(onClick=close){Text("Keep it")}})
 }
 
-@Composable private fun ConnectionControls(model:Workspace,state:WorkspaceState){
+@Composable internal fun ConnectionControls(model:Workspace,state:WorkspaceState){
     Text(if(state.connectionPaused)"Private connection paused" else "Private connection",style=MaterialTheme.typography.titleMedium)
     Text("Pausing keeps pairing keys, queued edits and cached reminders. Already transmitted requests may have reached home.",style=MaterialTheme.typography.bodySmall)
     SecondaryButton(onClick={model.launch { if(state.connectionPaused)model.resumeConnection() else model.pauseConnection() }}){Text(if(state.connectionPaused)"Resume saved connection" else "Pause private connection")}

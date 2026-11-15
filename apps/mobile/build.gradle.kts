@@ -25,6 +25,10 @@ kotlin {
             implementation(kotlin("test"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
         }
+        getByName("hostTest").dependencies {
+            implementation("org.jetbrains.compose.ui:ui-test-desktop:1.8.2")
+            runtimeOnly(compose.desktop.currentOs)
+        }
         androidInstrumentedTest.dependencies {
             implementation("androidx.test:runner:1.6.2")
             implementation("androidx.test.ext:junit:1.2.1")
@@ -45,7 +49,7 @@ android {
     namespace = "org.fieldnotes.app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
-    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 26; versionName = "0.11.7"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
+    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 27; versionName = "0.11.8"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     sourceSets["main"].jniLibs.srcDir("src/androidMain/jniLibs")
     packaging { jniLibs.useLegacyPackaging = false; resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -68,6 +72,11 @@ dependencyLocking { lockAllConfigurations() }
 // Exercise the exact JVM/Android JNI adapter against a disposable real server.
 val hostUnit = tasks.named<Test>("hostTest") {
     exclude("**/NativeStackTest.class")
+    systemProperty("skiko.data.path",layout.buildDirectory.dir("skiko-test-cache").get().asFile.absolutePath)
+    val testCache=layout.buildDirectory.dir("host-test-cache")
+    doFirst { testCache.get().asFile.mkdirs() }
+    environment("XDG_CACHE_HOME",testCache.get().asFile.absolutePath)
+    environment("FONTCONFIG_FILE",file("src/hostTest/resources/fontconfig.xml").absolutePath)
 }
 tasks.register<Test>("nativeIntegrationTest") {
     dependsOn("hostTestClasses")

@@ -40,8 +40,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
     val scroll=rememberScrollState()
     Column(modifier.heightIn(max=580.dp).visibleScrollbar(scroll).verticalScroll(scroll).padding(end=12.dp),verticalArrangement=verticalArrangement,content=content)
 }
-@Composable internal fun VisibleLazyColumn(modifier:Modifier=Modifier,contentPadding:PaddingValues=PaddingValues(0.dp),verticalArrangement:Arrangement.Vertical=Arrangement.Top,hideKeyboardOnDrag:Boolean=false,content:LazyListScope.()->Unit) {
-    val state=rememberLazyListState();val rail=MaterialTheme.colorScheme.outlineVariant;val thumb=MaterialTheme.colorScheme.onSurfaceVariant
+@Composable internal fun VisibleLazyColumn(modifier:Modifier=Modifier,contentPadding:PaddingValues=PaddingValues(0.dp),verticalArrangement:Arrangement.Vertical=Arrangement.Top,hideKeyboardOnDrag:Boolean=false,state:LazyListState=rememberLazyListState(),content:LazyListScope.()->Unit) {
+    val rail=MaterialTheme.colorScheme.outlineVariant;val thumb=MaterialTheme.colorScheme.onSurfaceVariant
     val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(state,hideKeyboardOnDrag,focus,keyboard){
         if(hideKeyboardOnDrag)state.interactionSource.interactions.collect { interaction ->

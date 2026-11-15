@@ -150,8 +150,16 @@ async function collectionEditor(kind, record, defaults = {}) {
           },
         ]
       : []),
-    ...(record && isList && records("task").some(t=>t.data.project_id===record.id)
-      ? [{key:"conversion_confirmation",label:"For changing work-task status: type CONVERT LIST",required:false}]
+    ...(record &&
+    isList &&
+    records("task").some((t) => t.data.project_id === record.id)
+      ? [
+          {
+            key: "conversion_confirmation",
+            label: "For changing work-task status: type CONVERT LIST",
+            required: false,
+          },
+        ]
       : []),
     ...(record
       ? [
@@ -187,18 +195,27 @@ async function collectionEditor(kind, record, defaults = {}) {
         render();
         return;
       }
-      const direct = record && isList
-        ? records("task").filter((t) => t.data.project_id === record.id)
-        : [];
-      if (record && isList && direct.length &&
-          Boolean(v.items_are_tasks) !== Boolean(record.data.items_are_tasks) &&
-          v.conversion_confirmation !== "CONVERT LIST")
-        throw Error("Review the change in task visibility and type CONVERT LIST.");
+      const direct =
+        record && isList
+          ? records("task").filter((t) => t.data.project_id === record.id)
+          : [];
+      if (
+        record &&
+        isList &&
+        direct.length &&
+        Boolean(v.items_are_tasks) !== Boolean(record.data.items_are_tasks) &&
+        v.conversion_confirmation !== "CONVERT LIST"
+      )
+        throw Error(
+          "Review the change in task visibility and type CONVERT LIST.",
+        );
       const data = {
         title: v.title,
         category: v.category,
-        ...(record?.data.category?.startsWith("custom:") && v.category !== record.data.category
-          ? { category_override: true } : {}),
+        ...(record?.data.category?.startsWith("custom:") &&
+        v.category !== record.data.category
+          ? { category_override: true }
+          : {}),
         notes: v.notes,
         ...(isList
           ? {
@@ -235,17 +252,29 @@ async function collectionEditor(kind, record, defaults = {}) {
     (nodes) => {
       if (isList) {
         if (record) {
-          const affected = records("task").filter(t=>t.data.project_id===record.id);
+          const affected = records("task").filter(
+            (t) => t.data.project_id === record.id,
+          );
           if (affected.length) {
-            const preview=el("p","muted","");
-            const show=()=>{
-              const changed=nodes.items_are_tasks.checked !== Boolean(record.data.items_are_tasks);
-              preview.textContent=changed
-                ? "Conversion preview: "+affected.length+" existing items keep their IDs, notes, categories and attachments, but "+(nodes.items_are_tasks.checked?"will enter Tasks and project work progress.":"will become checklist/reference items and leave work progress.")+" Existing in-progress work must be released first. Type CONVERT LIST before saving."
+            const preview = el("p", "muted", "");
+            const show = () => {
+              const changed =
+                nodes.items_are_tasks.checked !==
+                Boolean(record.data.items_are_tasks);
+              preview.textContent = changed
+                ? "Conversion preview: " +
+                  affected.length +
+                  " existing items keep their IDs, notes, categories and attachments, but " +
+                  (nodes.items_are_tasks.checked
+                    ? "will enter Tasks and project work progress."
+                    : "will become checklist/reference items and leave work progress.") +
+                  " Existing in-progress work must be released first. Type CONVERT LIST before saving."
                 : "Changing the list's type or visible fields does not erase item data.";
             };
-            nodes.items_are_tasks.addEventListener("change",show);
-            nodes.template.addEventListener("change",()=>setTimeout(show,0));
+            nodes.items_are_tasks.addEventListener("change", show);
+            nodes.template.addEventListener("change", () =>
+              setTimeout(show, 0),
+            );
             nodes.items_are_tasks.after(preview);
             show();
           }
@@ -480,18 +509,31 @@ async function unbundleWorkList(list) {
     t,
     ...state.snapshot.records.filter((r) => r.data.task_id === t.id),
   ]);
-  const basis = {epoch:state.snapshot.epoch,generation:state.snapshot.generation};
+  const basis = {
+    epoch: state.snapshot.epoch,
+    generation: state.snapshot.generation,
+  };
   await formDialog(
     "Unbundle work list · " + list.data.title,
-    "Release " + tasks.length + " tasks to Inbox, preserving their titles, categories, comments, attachments, dates and completion states. The list itself stays as an empty list. You can separately delete the list afterward. No records are deleted.",
-    [{key:"confirmation",label:"Type UNBUNDLE"}],
+    "Release " +
+      tasks.length +
+      " tasks to Inbox, preserving their titles, categories, comments, attachments, dates and completion states. The list itself stays as an empty list. You can separately delete the list afterward. No records are deleted.",
+    [{ key: "confirmation", label: "Type UNBUNDLE" }],
     async (v) => {
-      if (v.confirmation !== "UNBUNDLE") throw Error("Type UNBUNDLE to release tasks.");
-      await mutate("list.unbundle",list.id,
-        {contents:children.map((r)=>({id:r.id,revision:r.revision}))},list.revision,basis);
-      notice("Tasks released to Inbox. The empty list remains and can be deleted separately.");
+      if (v.confirmation !== "UNBUNDLE")
+        throw Error("Type UNBUNDLE to release tasks.");
+      await mutate(
+        "list.unbundle",
+        list.id,
+        { contents: children.map((r) => ({ id: r.id, revision: r.revision })) },
+        list.revision,
+        basis,
+      );
+      notice(
+        "Tasks released to Inbox. The empty list remains and can be deleted separately.",
+      );
     },
-    "Release tasks"
+    "Release tasks",
   );
 }
 function safeShoppingLink(value) {
@@ -607,7 +649,13 @@ function renderChecklist(root, list) {
       ),
       button("List settings", () => editCollection(list)),
       ...(list.data.items_are_tasks && all.length
-        ? [button("Unbundle tasks", () => unbundleWorkList(list).catch((e)=>{if(e?.name!=="DialogCanceled")notice(e.message)}))]
+        ? [
+            button("Unbundle tasks", () =>
+              unbundleWorkList(list).catch((e) => {
+                if (e?.name !== "DialogCanceled") notice(e.message);
+              }),
+            ),
+          ]
         : []),
       clear,
       ...(list.data.perpetual !== false ? [reuse] : []),
@@ -1069,11 +1117,14 @@ async function editListItem(list, record, initialStore = "") {
             "danger",
           ),
         );
-      if (mayWrite() && list.data.template !== "groceries")
-        FieldReminders.controls(
+      if (mayWrite() && list.data.template !== "groceries") {
+        const reminderControls = FieldReminders.controls(
           body,
           reminders,
-          () => d.due || d.planned_for || FieldPlanning.localDay(),
+          () =>
+            (nodes.due?.value ?? d.due) ||
+            (nodes.planned_for?.value ?? d.planned_for) ||
+            FieldPlanning.localDay(),
           (v) => {
             reminders = v;
             reminderDirty = true;
@@ -1085,7 +1136,15 @@ async function editListItem(list, record, initialStore = "") {
               reminderOptions = v;
             },
           },
+          () =>
+            !!(
+              (nodes.due?.value ?? d.due) ||
+              (nodes.planned_for?.value ?? d.planned_for)
+            ),
         );
+        for (const date of [nodes.due, nodes.planned_for])
+          date?.addEventListener("input", reminderControls.refresh);
+      }
       if (safeShoppingLink(d.link_url))
         body.append(
           button("Open link in browser", () =>

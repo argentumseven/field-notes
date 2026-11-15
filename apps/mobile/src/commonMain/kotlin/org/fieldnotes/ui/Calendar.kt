@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -18,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.drawBehind
@@ -42,9 +44,17 @@ import org.fieldnotes.domain.*
         DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { Button(shape=ControlShape,onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { SecondaryButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
     }
 }
-@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit,federalHolidays:Boolean=false,holidayChange:(Boolean)->Unit={}) {
+@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit,federalHolidays:Boolean=false,holidayChange:(Boolean)->Unit={},header:@Composable ()->Unit={},newEvent:(()->Unit)?=null) {
     val selected=LocalDate.parse(selectedDate);val records=rows.map { it.record }
     val month=LocalDate(selected.year,selected.monthNumber,1);val weekStart=selected.minus(selected.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY)
+    val entries=calendarEntries(records,selected,zone)
+    var calendarOptions by rememberSaveable{mutableStateOf(false)}
+    val scroll=rememberLazyListState();val scope=rememberCoroutineScope();val density=LocalDensity.current
+    // Alerts, navigation, the month grid and entries share one scroll viewport.
+    // No floating control can cover a day cell or a timeline entry.
+    VisibleLazyColumn(Modifier.fillMaxSize().testTag("calendar-content"),contentPadding=PaddingValues(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(8.dp),state=scroll) {
+        item("workspace-header"){header()}
+        item("calendar-controls"){Column {
     Row(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
         Column(Modifier.weight(1f)){Text(if(view=="Month")selected.month.name.lowercase().replaceFirstChar { it.uppercase() }+" ${selected.year}" else selected.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() },style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary);Text(friendlyDate(selected),style=MaterialTheme.typography.titleLarge)}
         OutlinedIconButton(shape=ControlShape,onClick={selectDate(if(view=="Month")month.minus(1,DateTimeUnit.MONTH).toString() else selected.minus(if(view=="Week")7 else 1,DateTimeUnit.DAY).toString())}){Icon(Icons.Outlined.KeyboardArrowLeft,"Previous ${if(view=="Month")"month" else if(view=="Week")"week" else "day"}")}
@@ -53,10 +63,12 @@ import org.fieldnotes.domain.*
     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
         for(mode in listOf("Day","Week","Month","Agenda"))FilterChip(view==mode,{selectView(mode)},{Text(mode)})
     }
-    var calendarOptions by rememberSaveable{mutableStateOf(false)}
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){SecondaryButton(onClick={calendarOptions=!calendarOptions}){Text("Calendar options "+if(calendarOptions)"▴"else"▾")};SecondaryButton(onClick={selectDate(today.toString())}){Text("Today")}}
     if(calendarOptions)Row(verticalAlignment=Alignment.CenterVertically){Switch(federalHolidays,holidayChange,modifier=Modifier.semantics{contentDescription="Show US federal holidays"});Text("US federal holidays")}
 
+            newEvent?.let {create->Button(shape=ControlShape,onClick=create,modifier=Modifier.testTag("calendar-new-event")){Text("New event")}}
+        }}
+        item("calendar-days"){Column {
     if(view=="Month") {
         val first=month.minus(month.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY);val border=MaterialTheme.colorScheme.outlineVariant
         Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
@@ -80,13 +92,19 @@ import org.fieldnotes.domain.*
         }}
     }
     for(holiday in holidaysOn(selected,federalHolidays))Text(holiday,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge)
-    val entries=calendarEntries(records,selected,zone)
-    if(view=="Day") {
-        val floating=entries.filter { it.startsAt==null || it.windowLabel!=null }
-        if(floating.isNotEmpty())Row(Modifier.fillMaxWidth().padding(vertical=4.dp).horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){floating.forEach { entry->AssistChip(onClick={open(entry.record.id)},label={Text(entry.record.data.text("title")+" · "+(entry.windowLabel ?: entry.labels.joinToString(" · ")))})}}
-        Text("Scroll the timeline · tap a time to add an event",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(vertical=4.dp))
-        DayTimeline(records,selected,zone,createAt,open)
-    } else if(view=="Week")VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        }}
+        if(view=="Day") {
+            item("floating-items") {
+                val floating=entries.filter { it.startsAt==null||it.windowLabel!=null }
+                if(floating.isNotEmpty())Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){floating.forEach {entry->AssistChip(onClick={open(entry.record.id)},label={Text(entry.record.data.text("title")+" · "+(entry.windowLabel ?: entry.labels.joinToString(" · ")))})}}
+                Text("Scroll the day · tap a time to add an event",style=MaterialTheme.typography.labelSmall)
+                SecondaryButton(onClick={
+                    val now=Clock.System.now();val minute=if(selected==now.toLocalDateTime(zone).date)((now-selected.atStartOfDayIn(zone)).inWholeMinutes-30).coerceAtLeast(0)else 7*60L
+                    scope.launch{scroll.scrollToItem(4,with(density){(minute/60f*56).dp.roundToPx()})}
+                }){Text(if(selected==today)"Jump to current time"else"Jump to morning")}
+            }
+            item("day-timeline"){DayTimeline(records,selected,zone,createAt,open)}
+        } else if(view=="Week") {
         for(i in 0..6){val day=weekStart.plus(i,DateTimeUnit.DAY);val items=calendarEntries(records,day,zone);val start=day.atStartOfDayIn(zone).epochSeconds;val end=day.plus(1,DateTimeUnit.DAY).atStartOfDayIn(zone).epochSeconds
             item(day.toString()){OutlinedCard(onClick={selectDate(day.toString());selectView("Day")},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
                 Row(Modifier.fillMaxWidth()){Text(day.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }+" · ${day.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }} ${day.dayOfMonth}",Modifier.weight(1f),style=MaterialTheme.typography.titleSmall);Text("Open day ›",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)}
@@ -96,21 +114,20 @@ import org.fieldnotes.domain.*
                 if(items.size>4)Text("${items.size-4} more · open day",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
             }}}
         }
-    } else VisibleLazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=90.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        } else {
         if(entries.isEmpty())item{Text("No scheduled items. Add an event here, or leave tasks undated in Tasks.",Modifier.padding(vertical=20.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)}
         items(entries,key={it.record.id+":"+it.record.data.text("occurrence_date")}){entry->OutlinedCard(onClick={open(entry.record.id)},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){RecordBadges(entry.record);Text(calendarEntryLabel(entry,zone),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelLarge);Text(entry.record.data.text("title"),style=MaterialTheme.typography.titleMedium)}}}
+        }
     }
 }
-@Composable private fun ColumnScope.DayTimeline(records:List<Record>,day:LocalDate,zone:TimeZone,createAt:(String)->Unit,open:(String)->Unit) {
+@Composable private fun DayTimeline(records:List<Record>,day:LocalDate,zone:TimeZone,createAt:(String)->Unit,open:(String)->Unit) {
     val start=day.atStartOfDayIn(zone);val length=dayLengthMinutes(day,zone);val blocks=dayBlocks(records,day,zone)
-    val scroll=rememberScrollState();val density=androidx.compose.ui.platform.LocalDensity.current
-    LaunchedEffect(day){val minute=(blocks.firstOrNull()?.from?.minus(60) ?: 7*60.0).coerceAtLeast(0.0);scroll.scrollTo(with(density){(minute/60*56).dp.roundToPx()})}
-    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).visibleScrollbar(scroll).verticalScroll(scroll).padding(end=8.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(end=8.dp)) {
         val gutter=56.dp;val available=maxWidth-gutter;val totalHeight=(length/60f*56).dp
         Box(Modifier.fillMaxWidth().height(totalHeight+90.dp).padding(bottom=4.dp)) {
             for(minute in 0 until length step 60) {
                 val time=(start+minute.minutes).toLocalDateTime(zone).time
-                Row(Modifier.offset(y=(minute/60f*56).dp).fillMaxWidth().height(56.dp).clickable { createAt(time.toString().take(5)) }) {
+                Row(Modifier.offset(y=(minute/60f*56).dp).fillMaxWidth().height(56.dp).testTag("calendar-time-$minute").clickable { createAt(time.toString().take(5)) }) {
                     Text(friendlyTime(time).replace(":00",""),Modifier.width(gutter).padding(top=4.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     HorizontalDivider(Modifier.padding(top=8.dp),color=MaterialTheme.colorScheme.outlineVariant)
                 }

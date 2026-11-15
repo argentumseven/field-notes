@@ -1149,6 +1149,11 @@ async function sendCommand(command) {
   }
 }
 async function mutate(action, target, data, revision, basis = null) {
+  if (data.reminders?.interval)
+    data = {
+      ...data,
+      reminders: FieldReminders.forSave(data.reminders, byId(target)),
+    };
   const c = {
     operation_id: uuid(),
     epoch: basis?.epoch ?? state.snapshot.epoch,
@@ -1367,7 +1372,11 @@ function renderDetail() {
   );
   container.disabled = !mayWrite();
   detail.append(
-    el("p", "muted", "Choose another project to move this task, or No project or list to unbundle it. Save details to apply."),
+    el(
+      "p",
+      "muted",
+      "Choose another project to move this task, or No project or list to unbundle it. Save details to apply.",
+    ),
   );
   container.addEventListener("input", () => dirty());
   const dirty = () =>
@@ -1482,7 +1491,10 @@ function renderDetail() {
                 project_id: d.project_id,
                 notes: d.notes,
                 category: d.category,
-                ...(task.data.category?.startsWith("custom:") && d.category !== task.data.category ? {category_override:true} : {}),
+                ...(task.data.category?.startsWith("custom:") &&
+                d.category !== task.data.category
+                  ? { category_override: true }
+                  : {}),
                 item_category: d.item_category,
                 assignee: d.assignee,
                 due: d.due,

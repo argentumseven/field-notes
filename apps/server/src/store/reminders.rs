@@ -41,10 +41,10 @@ impl Store {
         let Some(value) = data.get("reminders") else {
             return Ok(());
         };
-        fields(value, &["alerts", "repeat", "timing_version"])?;
+        fields(value, &["alerts", "repeat", "interval", "timing_version"])?;
         if value
             .get("timing_version")
-            .is_some_and(|v| !matches!(v.as_i64(), Some(1 | 2)))
+            .is_some_and(|v| !matches!(v.as_i64(), Some(1..=3)))
         {
             return fail(400, "Unsupported reminder timing version");
         }
@@ -138,6 +138,51 @@ impl Store {
             let zone = text(rule, "zone", 80)?;
             if zone.parse::<chrono_tz::Tz>().is_err() {
                 return fail(400, "Unknown reminder timezone");
+            }
+        }
+        if !value["interval"].is_null() {
+            let rule = &value["interval"];
+            fields(
+                rule,
+                &[
+                    "id",
+                    "amount",
+                    "unit",
+                    "anchor_at",
+                    "zone",
+                    "importance",
+                    "sound",
+                    "volume",
+                    "vibrate",
+                ],
+            )?;
+            profile(rule)?;
+            if value["timing_version"] != 3
+                || !value["repeat"].is_null()
+                || !ids.insert(rule["id"].as_str().unwrap())
+            {
+                return fail(400,"Choose one distinct repeating interval or time window, using the updated reminder format");
+            }
+            let maximum = match rule["unit"].as_str() {
+                Some("minutes") => 5_270_400,
+                Some("hours") => 87_840,
+                Some("days") => 3660,
+                Some("weeks") => 522,
+                Some("months") => 120,
+                Some("years") => 10,
+                _ => return fail(400, "Choose minutes, hours, days, weeks, months or years"),
+            };
+            if !rule["amount"]
+                .as_i64()
+                .is_some_and(|n| (1..=maximum).contains(&n))
+                || !rule["anchor_at"]
+                    .as_i64()
+                    .is_some_and(|n| (1..=4_102_444_800).contains(&n))
+                || rule["zone"]
+                    .as_str()
+                    .is_none_or(|z| z.len() > 80 || z.parse::<chrono_tz::Tz>().is_err())
+            {
+                return fail(400,"Choose a positive repeat interval, valid start time and timezone (up to ten years)");
             }
         }
         let mut canonical = value.clone();

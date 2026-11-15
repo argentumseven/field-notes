@@ -68,6 +68,6 @@ fun playbackOptions(profile:AlertProfile)=ReminderPlayback(profile.sound,profile
 fun legacyTone(tone:String)=tone.takeIf { it in setOf("chime","bell","pulse") } ?: "chime"
 fun ReminderPlayback.applyTo(base:AlertProfile)=base.copy(sound=tone.ifBlank { base.sound },duration=duration_seconds,alarm=alarm,unmute=unmute,alarmVolume=alarm_volume,notificationUnmute=notification_unmute&&!alarm,notificationVolume=notification_volume)
 fun prunedReminderOptions(value:ReminderOptions,rules:ReminderSet):ReminderOptions {
-    val ids=rules.alerts.map { it.id }.toSet()+listOfNotNull(rules.repeat?.id)
+    val ids=rules.alerts.map { it.id }.toSet()+listOfNotNull(rules.repeat?.id,rules.interval?.id)
     return value.copy(playback=value.playback.filterKeys { it in ids })
 }

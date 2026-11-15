@@ -17,14 +17,14 @@ import org.fieldnotes.domain.*
     OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment=Alignment.CenterVertically){Switch(onRadar,{changed(it,if(it)at else 0)},enabled=enabled);Text("Keep in Later & reminders",Modifier.padding(start=8.dp))}
         if(onRadar) {
-            Text("An idea can stay undated. A reminder brings it back without blocking calendar time.",style=MaterialTheme.typography.bodySmall)
+            Text("An idea can stay undated. Use Reminders & sound for repeating nudges without a date. Clearing the date keeps any saved repeat interval.",style=MaterialTheme.typography.bodySmall)
             Row(verticalAlignment=Alignment.CenterVertically){Switch(at>0,{changed(true,if(it)scheduledInstant(local.date.toString(),local.time.toString().take(5),zone) else 0)},enabled=enabled);Text("Remind me",Modifier.padding(start=8.dp))}
             if(at>0){DateField("Remind on",local.date.toString(),enabled,clearable=false){set(it,local.time.toString().take(5))};TimeField("At",local.time.toString().take(5),use24Hour,enabled){set(local.date.toString(),it)}}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 for((days,title) in listOf(1 to "Tomorrow",7 to "In a week"))SecondaryButton(onClick={set(now.toLocalDateTime(zone).date.plus(days,DateTimeUnit.DAY).toString(),if(at>0)local.time.toString().take(5) else "09:00")},enabled=enabled){Text(title)}
-                SecondaryButton(onClick={changed(true,0)},enabled=enabled){Text("Someday · no reminder")}
+                SecondaryButton(onClick={changed(true,0)},enabled=enabled){Text("Someday · no date")}
             }
-            Text(if(at>0)"Reminder time is local · ${zone.id.replace('_',' ')}" else "Undated idea · no alarm scheduled",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if(at>0)"Reminder time is local · ${zone.id.replace('_',' ')}" else "Undated idea · repeating nudges use Reminders & sound",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         problem?.let{Text(it,color=MaterialTheme.colorScheme.error)}
     } }

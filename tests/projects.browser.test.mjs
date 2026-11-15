@@ -234,9 +234,7 @@ test("the shared recipient picker keeps multi-select open, saves across all remi
       await alex.check();
       await sophia.check();
       if (record.kind === "task")
-        await page
-          .getByRole("button", { name: "Add reminder", exact: true })
-          .click();
+        await page.getByLabel("Repeat every interval", { exact: true }).check();
       await page
         .getByRole("button", { name: "Save reminders", exact: true })
         .click();
@@ -249,11 +247,22 @@ test("the shared recipient picker keeps multi-select open, saves across all remi
           saved.data.reminder_options.audience.people.sort(),
           [s.person("Alex"), s.person("Sophia")].sort(),
         );
-        assert.equal(
-          saved.data.reminders.alerts.length,
-          token === s.owner ? 0 : 1,
-          "only selected people receive projected rules",
-        );
+        if (record.kind === "task") {
+          assert.equal(
+            saved.data.reminder_interval_rules.interval.unit,
+            "hours",
+          );
+          assert.equal(
+            saved.data.reminders.alerts.length,
+            0,
+            "older clients receive no relative-date alert for an undated interval",
+          );
+        } else
+          assert.equal(
+            saved.data.reminders.alerts.length,
+            token === s.owner ? 0 : 1,
+            "only selected people receive projected rules",
+          );
       }
       await page.evaluate((id) => {
         void FieldReminders.edit(byId(id)).catch(() => {});

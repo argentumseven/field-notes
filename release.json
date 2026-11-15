@@ -1,6 +1,6 @@
 {
-  "version": "0.11.7",
-  "android_version_code": 26,
+  "version": "0.11.8",
+  "android_version_code": 27,
   "protocol": 1,
   "schema": 2,
   "channel": "development",

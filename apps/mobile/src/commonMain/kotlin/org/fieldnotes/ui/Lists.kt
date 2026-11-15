@@ -264,7 +264,8 @@ import org.fieldnotes.domain.*
 private val itemKeys=setOf("project_id","title","notes","quantity","store","category","item_category","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
 private fun itemEditingData(data:JsonObject):JsonObject {
     val fields=data.filterKeys { it in itemKeys }
-    return if(data.containsKey("reminder_timing_rules")||data.containsKey("reminder_rules"))JsonObject((fields-"reminders")+listOfNotNull((data["reminder_timing_rules"] ?: data["reminder_rules"])?.takeUnless { it==JsonNull }?.let { "reminders" to it }).toMap()) else JsonObject(fields)
+    val canonical=data["reminder_interval_rules"] ?: data["reminder_schedule_rules"] ?: data["reminder_timing_rules"] ?: data["reminder_rules"]
+    return if(canonical!=null)JsonObject((fields-"reminders")+mapOf("reminders" to canonical))else JsonObject(fields)
 }
 private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let { WireJson.decodeFromJsonElement<ReminderSet>(it) } ?: ReminderSet(if(data.text("due").isNotBlank())listOf(ReminderAlert(id,0)) else emptyList())
 @Composable internal fun ListItemDialog(model:Workspace,state:WorkspaceState,list:Record,visible:VisibleRecord?,device:DeviceActions,attach:(String)->Unit={},image:@Composable (VisibleRecord)->Unit={},initialStore:String="",close:()->Unit) {
@@ -276,6 +277,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
     var removing by remember {mutableStateOf<Pair<Basis,Record>?>(null)}
     val data=WireJson.parseToJsonElement(dataJson).jsonObject;val fields=listFields(list);val scope=rememberCoroutineScope();val writable=state.cache.snapshot!!.actor.role!="viewer"&&basis==state.cache.snapshot.basis
     fun set(field:String,value:JsonElement) { val next=JsonObject(WireJson.parseToJsonElement(dataJson).jsonObject+(field to value));dataJson=next.toString();dirty=true;if(record!=null)model.launch { model.saveDraft(id,revision,next,basis) } }
+    LaunchedEffect(draft?.revision){if(dirty&&draft!=null&&draft.dependsOn==null)revision=draft.revision}
     LaunchedEffect(record?.revision,visible?.pending){if(record!=null&&!dirty){dataJson=itemEditingData(record.data).toString();revision=record.revision}}
     EditorDialog(onDismissRequest=close,title={Text(if(record==null)"New item" else "List item")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text(list.data.text("title"),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
@@ -294,7 +296,16 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         if("notes" in fields)OutlinedTextField(data.text("notes"),{set("notes",it.take(16384).j())},label={Text("Notes")},minLines=3,enabled=writable,modifier=Modifier.fillMaxWidth())
         if("due" in fields)DateField("Due date · optional",data.text("due"),writable){set("due",it.j())}
         if("planned_for" in fields)DateField("Planned day · optional",data.text("planned_for"),writable){set("planned_for",it.j())}
-        if("priority" in fields)FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)){for(p in 1..4)FilterChip(data.number("priority",3).toInt()==p,{set("priority",p.j())},{Text(priorityName(p))},enabled=writable)}
+        if("priority" in fields)Column {
+            Text("Priority",style=MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)){for(p in 1..4)FilterChip(data.number("priority",3).toInt()==p,{
+                if(record==null)set("priority",p.j())else if(data.number("priority",3).toInt()!=p||record.data.number("priority",3).toInt()!=p){
+                    val previous=dataJson;dataJson=JsonObject(data+("priority" to p.j())).toString();busy=true
+                    model.launch{try{model.setTaskPriority(id,p,basis);model.requestSync()}catch(e:Exception){dataJson=previous;error=e.message}finally{busy=false}}
+                }
+            },{Text(priorityName(p))},enabled=writable&&!busy)}
+            if(record!=null)Text("Applies immediately · queues safely offline",style=MaterialTheme.typography.bodySmall)
+        }
         if("estimate_minutes" in fields)OutlinedTextField(data.number("estimate_minutes").takeIf { it>0 }?.toString() ?: "",{set("estimate_minutes",(it.toIntOrNull() ?: 0).j())},label={Text("Effort · minutes")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=writable)
         if("assignee" in fields) {
             var menu by remember { mutableStateOf(false) }
@@ -309,7 +320,7 @@ private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let 
         }
         val rules=itemReminderRules(data,id)
         if(writable&&list.data.text("template")!="groceries")ReminderEditor(rules,Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,model::newId,device.use24Hour,device.previewSound,
-            reminderEditorSettings(model,state,reminderOptions(Record(id,"task",revision,data)) ?: ReminderOptions(),true,device){set("reminder_options",reminderOptionsData(it))}){set("reminders",reminderData(it))}
+            reminderEditorSettings(model,state,reminderOptions(Record(id,"task",revision,data)) ?: ReminderOptions(),true,device){set("reminder_options",reminderOptionsData(it))}.copy(anchored=hasReminderAnchor(Record(id,"task",revision,data)))){set("reminders",reminderData(it))}
         if(record!=null) {
             Text(recordHistory(state.cache,record,TimeZone.currentSystemDefault()),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(writable){OutlinedTextField(comment,{comment=it.take(8192)},label={Text("Add a comment")},minLines=2);SecondaryButton(onClick={model.enqueueAsync("comment.create",model.newId(),obj("task_id" to id.j(),"body" to comment.j()),null,basis);comment=""},enabled=comment.isNotBlank()){Text("Post comment")}}

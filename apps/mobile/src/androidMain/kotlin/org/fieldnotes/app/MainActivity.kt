@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
         app.updates.installerReturned()
         WidgetVisibility.transition(this)
         lifecycleScope.launch { val status=withContext(Dispatchers.IO){DeliverySettings.summary(this@MainActivity) to DeliverySettings.problem(this@MainActivity)};deliveryStatus=status.first;deliveryWarning=status.second }
-        app.scope.launch { try{LocalAlarms.reconcile(this@MainActivity,true)}catch(_:Exception){app.deliveryError.value="Reminder scheduling needs attention."} }
+        app.scope.launch { LocalAlarms.reconcileSafely(this@MainActivity,true) }
         lifecycleScope.launch {
             app.initialized.await()
             val prefs=app.model.state.value.cache.preferences
@@ -255,7 +255,7 @@ class MainActivity : ComponentActivity() {
                             catch(_:Exception){app.deliveryError.value="Background scheduling could not be updated. Review delivery settings; cached work is kept."}
                         }
                         if(preferences.liveUpdates)PrivateUpdatesService.start(this)else PrivateUpdatesService.stop(this)
-                        app.scope.launch { LocalAlarms.reconcile(this@MainActivity,true) }
+                        app.scope.launch { LocalAlarms.reconcileSafely(this@MainActivity,true) }
                         if ((preferences.backgroundSync || preferences.reminders) && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                     },
                     registerBack = { back = it },

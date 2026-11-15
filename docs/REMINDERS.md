@@ -1,5 +1,55 @@
 # Reminders and sound
 
+## Repeating nudges without dates — 0.11.8
+
+Open **Reminders & sound** on a task, note or non-grocery list item and turn on
+**Repeat every interval**. Choose an amount and Minutes, Hours, Days, Weeks,
+Months or Years. A due date, planned day or event start is not required. The
+first nudge is one interval after saving, including a save made offline. The
+same cadence survives sync, retries and restarts. Changing its amount, unit or
+timezone starts a new cadence when saved; changing sound or importance keeps
+the existing start time.
+
+Minutes through weeks count elapsed time. Months and years keep the original
+calendar day and local clock where possible: January 31 repeats on February 28
+and then March 31. Only the latest missed nudge is caught up after a gap. Long
+intervals are scheduled even beyond the calendar's eight-day reminder horizon.
+Completing a task stops its nudges. Turn off the interval and save to stop it
+without completing the task. Notes with repeating reminders stay in Later &
+reminders; removing them from that view pauses their reminders.
+
+Undated items explain this choice and disable adding reminders relative to a
+missing date. Existing date-relative reminders remain paused until a date is
+added. A repeat interval and a repeating time window are alternative modes;
+date-relative alerts can coexist with either. All modes retain their existing
+recipient, sound, notification privacy and per-phone reminder preferences.
+
+Update the paired server and Android app to 0.11.8 for interval controls. Older
+apps continue to read compatible reminder fields and edit ordinary task details.
+The server refuses an older reminder editor's attempt to erase an interval.
+Content export/import and content-checkpoint restoration keep the complete rule,
+including its original start time. No pairing reset is needed.
+
+## Settings and scheduling repair — 0.11.8
+
+The Android Settings menu opens separate pages for Reminders, Sound & alarms,
+Notifications, Widgets, Appearance, Privacy, Connection & background, App updates,
+Data & recovery, and Account & installation. Each page has a Settings back button
+and its own scroll area.
+
+A **Needs attention** scheduling warning concerns Android's ability to schedule
+or display saved reminders; it does not mean the task itself is lost. Tap
+**Review reminder setup** to open **Settings → Reminders**. Follow the numbered
+notification/precise-reminder permission checks, tap **Retry reminder scheduling**,
+then **Test notification**. Storage failures explain that storage must be freed.
+Recovered scheduling failures clear automatically after a successful check;
+unrelated sound and volume warnings stay available for review. A malformed item
+schedule names the affected item and its Reminders & sound control.
+
+Android can delay inexact alarms, background work and stopped-profile delivery.
+These settings do not override Android or GrapheneOS restrictions. Cached local
+reminders do not wait for a server connection.
+
 ## Notification or alarm
 
 **Notification** plays one short cue (under a second) at notification volume.

@@ -358,6 +358,14 @@ class Workspace(
     fun enqueueAsync(action: String, target: String, data: JsonObject, revision: Long?, basis: Basis? = null) = scope.launch {
         try { enqueue(action, target, data, revision, basis); sync() } catch (e: Exception) { report(e) }
     }
+    private fun reminderCommandData(c:Cache,target:String,data:JsonObject):JsonObject {
+        val value=data["reminders"] ?: return data
+        val rules=runCatching{WireJson.decodeFromJsonElement<ReminderSet>(value)}.getOrNull() ?: return data
+        if(rules.interval==null)return data
+        val previous=projectRecords(c).firstOrNull{it.record.id==target}?.record?.let(::reminderSet)
+        val prepared=prepareReminderSave(rules,previous,Clock.System.now().epochSeconds)
+        return JsonObject(data+("reminders" to reminderData(prepared)))
+    }
     suspend fun enqueue(action: String, target: String, data: JsonObject, revision: Long?, basis: Basis? = null) {
         val snap = cache.snapshot ?: error("Sign in and synchronize first.")
         check(snap.actor.role != "viewer") { "Your role is read-only." }
@@ -366,11 +374,33 @@ class Workspace(
             val stamp = basis ?: snap.basis
             val parent=if(action in setOf("comment.create","image.create"))projectRecords(c).firstOrNull { it.record.id==data.text("task_id") }?.record else null
             val protectedData=if(parent!=null&&c.supportsRecovery())JsonObject(data+("parent_incarnation" to parent.data.number("recovery_incarnation").j()))else data
-            val command = Command(newId(), stamp.epoch, stamp.generation, action, target, revision, protectedData)
+            val command = Command(newId(), stamp.epoch, stamp.generation, action, target, revision, reminderCommandData(c,target,protectedData))
             val predecessor = c.outbox.lastOrNull { it.command.target == target }?.command?.operation_id
             val parentId=if(action.startsWith("task.")||action.startsWith("list."))data.text("project_id") else data.text("task_id")
             val parentCreate=if(action.endsWith(".create")&&parentId.isNotBlank())c.outbox.lastOrNull {it.command.target==parentId&&it.command.action.endsWith(".create")}?.command?.operation_id else null
             c.copy(outbox = c.outbox + Pending(command, predecessor,parentCreation=parentCreate))
+        }
+    }
+    /** Priority is a direct field action. Queue only that field while retaining
+     * any separate editor draft and rebasing it after the priority is accepted. */
+    suspend fun setTaskPriority(target:String,priority:Int,basis:Basis) {
+        require(priority in 1..4){"Choose Urgent, High, Normal or Low."}
+        update { c->
+            val snap=checkNotNull(c.snapshot){"Synchronize first."}
+            check(snap.basis==basis){"The workspace changed. Reopen this task; your draft is kept."}
+            check(snap.actor.role!="viewer"){"Your role is read-only."}
+            val item=projectRecords(c).firstOrNull{it.record.id==target}?.record
+            check(item?.kind=="task"){"This task is no longer available."}
+            if(item.data.number("priority",3)==priority.toLong())return@update c.drafts[target]?.let { draft->
+                c.copy(drafts=c.drafts+(target to draft.copy(data=JsonObject(draft.data+("priority" to priority.j())))))
+            } ?: c
+            check(c.outbox.size+c.conflicts.size<500){"Resolve retained changes before adding more."}
+            val command=Command(newId(),basis.epoch,basis.generation,"task.update",target,item.revision,obj("priority" to priority.j()))
+            val predecessor=c.outbox.lastOrNull{it.command.target==target}?.command?.operation_id
+            // A draft already stale from another writer must keep its review fence.
+            // Saving one field is not consent to overwrite unrelated remote changes.
+            val draft=c.drafts[target]?.let{it.copy(data=JsonObject(it.data+("priority" to priority.j())),dependsOn=if(it.revision==item.revision)command.operation_id else it.dependsOn)}
+            c.copy(outbox=c.outbox+Pending(command,predecessor),drafts=if(draft==null)c.drafts else c.drafts+(target to draft))
         }
     }
     /** Explicit deletion discards this editor's unsent draft only after the
@@ -450,7 +480,7 @@ class Workspace(
             val draft = c.drafts[target] ?: error("No draft to save.")
             check(c.snapshot?.actor?.role != "viewer") { "Your role is read-only." }
             check(c.outbox.size + c.conflicts.size < 500) { "Resolve retained changes first." }
-            val command = Command(newId(), draft.epoch, draft.generation, draft.action, target, draft.revision, draft.data)
+            val command = Command(newId(), draft.epoch, draft.generation, draft.action, target, draft.revision, reminderCommandData(c,target,draft.data))
             c.copy(outbox = c.outbox + Pending(command, c.outbox.lastOrNull { it.command.target == target }?.command?.operation_id), drafts = c.drafts - target)
         }
     }
@@ -518,6 +548,7 @@ class Workspace(
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
                     c.data.keys.any { it in setOf("recurrence","category","store","on_radar","remind_at","notify_additions","item_reminders") }&&!cache.supportsPlannerV3()->"This saved edit uses newer planner fields. Update the paired server; the complete edit is kept in Retained changes."
                     (c.data.containsKey("items_are_tasks")||c.action.startsWith("list.")&&c.data.containsKey("project_id")||c.action.startsWith("project.")&&c.data.keys.any{it in setOf("status","due","assignee")})&&!cache.supportsProjects()->"This saved edit needs the newer project/work-list server. Update the server; its complete content is kept."
+                    (c.data["reminders"] as? JsonObject)?.number("timing_version")==3L&&!cache.supportsReminderInterval()->"This saved edit needs repeating intervals. Update the server; the complete edit is kept."
                     (c.data["reminders"] as? JsonObject)?.number("timing_version")==2L&&!cache.supportsReminderSchedule()->"This saved edit needs the newer server’s day-and-time reminders. Update the server; the complete edit is kept."
                     (c.data["reminders"] as? JsonObject)?.containsKey("timing_version")==true&&!cache.supportsReminderTiming()->"This saved edit needs the newer server’s custom reminder timing. Update the server; the complete edit is kept."
                     c.data.keys.any{it in setOf("note_type","ingredients","instructions","location")}&&!cache.supportsPlannerDetails()->"This saved edit needs newer recipe/location fields. Update the server; the complete edit is kept."
@@ -652,7 +683,7 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
                 "task.release", "task.reopen" -> obj("status" to "todo".j(), "claimant" to JsonNull)
                 else -> obj()
             }
-            val base=if(change.containsKey("reminders"))JsonObject(d-setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules"))else d
+            val base=if(change.containsKey("reminders"))JsonObject(d-setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules","reminder_interval_rules"))else d
             rows[c.target] = VisibleRecord(current.record.copy(data = JsonObject(base + change)), true)
         }
     }

@@ -1,5 +1,27 @@
 # Architecture
 
+Interval reminders (0.11.8) use `timing_version: 3` and feature
+`reminder-interval-v1`. `ReminderInterval.kt` derives the latest missed and two
+future occurrences directly from an immutable saved anchor and cadence, without
+enumerating elapsed minutes. Month/year occurrences always derive from the
+original calendar anchor. Command construction captures the anchor inside the
+durable outbox update, so retries never restart a cadence. Existing receipts,
+recipient checks, completion filters and local scheduling remain authoritative.
+
+The server's additive `reminder_interval_rules` projection contains the full
+format. Schedule-v2, timing-v1 and legacy projections remove unsupported fields
+and preserve compatible alerts; older strict decoders do not receive unknown
+interval fields. The reminder writer guard requires version 3 to replace an
+existing interval, while ordinary field edits remain compatible. Portable
+transfer and checkpoint history use canonical rules, including the anchor.
+
+Priority is a separate field command on existing Android tasks. Its durable
+queue operation retains and rebases any unrelated detail draft. The calendar
+shares one scrolling viewport with delivery notices and its creation controls.
+Categorized Settings route delivery warnings to their relevant repair page.
+Local-alarm reconciliation does not wait for network initialization and clears
+only a scheduling warning that recovered successfully.
+
 0.10 item context separates the parent list's purpose/broad area from optional
 `task.item_category`. `shared/item-contexts.json` is the canonical vocabulary;
 `tools/sync-item-contexts.py` generates web/native data, checked by all build

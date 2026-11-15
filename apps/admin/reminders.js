@@ -22,6 +22,7 @@
   const alarmTones = ["beacon", "orbit", "sunrise", "siren"];
   let activePreview = null;
   const rulesFor = (record) =>
+    record?.data?.reminder_interval_rules ??
     record?.data?.reminder_schedule_rules ??
     record?.data?.reminder_timing_rules ??
     (record?.data && "reminder_rules" in record.data
@@ -71,7 +72,7 @@
       throw Error("Use up to eight reminders.");
     if (
       rules.timing_version !== undefined &&
-      ![1, 2].includes(rules.timing_version)
+      ![1, 2, 3].includes(rules.timing_version)
     )
       throw Error("Update the app for this reminder timing.");
     const ids = new Set();
@@ -91,12 +92,16 @@
       check(r);
       if (r.day_time) {
         FieldReminderTiming.validateDay(r.day_time);
-        if (rules.timing_version !== 2 || r.minutes_before !== 0 || r.lead_time)
+        if (
+          ![2, 3].includes(rules.timing_version) ||
+          r.minutes_before !== 0 ||
+          r.lead_time
+        )
           throw Error("Check day-and-time reminder settings.");
       }
       if (r.lead_time) {
         FieldReminderTiming.validate(r.lead_time);
-        if (![1, 2].includes(rules.timing_version) || r.minutes_before !== 0)
+        if (![1, 2, 3].includes(rules.timing_version) || r.minutes_before !== 0)
           throw Error("Check the reminder timing format.");
       }
       if (
@@ -134,8 +139,54 @@
         throw Error("Choose a recognized reminder time zone.");
       }
     }
+    if (rules.interval) {
+      const r = rules.interval;
+      check(r);
+      FieldReminderTiming.validate({
+        amount: r.amount,
+        unit: r.unit,
+        zone: r.zone,
+      });
+      if (
+        rules.timing_version !== 3 ||
+        rules.repeat ||
+        r.amount < 1 ||
+        !Number.isInteger(r.anchor_at) ||
+        r.anchor_at < 1 ||
+        r.anchor_at > 4102444800
+      )
+        throw Error(
+          "Choose one positive repeat interval and a valid start time.",
+        );
+    }
   }
-  function controls(parent, initial, getDay, changed, extension = null) {
+  const hasAnchor = (record) =>
+    record?.kind === "event"
+      ? !!(record.data.starts_at || record.data.start_date)
+      : record?.kind === "note"
+        ? !!record.data.remind_at
+        : !!(record?.data?.due || record?.data?.planned_for);
+  function forSave(value, previous) {
+    const result = structuredClone(value),
+      rule = result.interval;
+    if (!rule) return result;
+    const old = rulesFor(previous)?.interval;
+    if (
+      !old ||
+      ["id", "amount", "unit", "zone"].some((key) => rule[key] !== old[key])
+    )
+      rule.anchor_at = Math.floor(Date.now() / 1000);
+    result.timing_version = 3;
+    return result;
+  }
+  function controls(
+    parent,
+    initial,
+    getDay,
+    changed,
+    extension = null,
+    anchored = () => true,
+  ) {
     const rules = structuredClone(initial || { alerts: [], repeat: null }),
       section = el("details", "reminder-editor"),
       summary = el("summary"),
@@ -152,13 +203,14 @@
     section.append(summary, body);
     parent.append(section);
     const notify = () => {
-      rules.timing_version = 2;
-      summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat ? " + recurring" : ""}`;
+      rules.timing_version = 3;
+      summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat || rules.interval ? " + recurring" : ""}`;
       changed(structuredClone(rules));
       if (extension) {
         const ids = new Set([
           ...rules.alerts.map((r) => r.id),
           ...(rules.repeat ? [rules.repeat.id] : []),
+          ...(rules.interval ? [rules.interval.id] : []),
         ]);
         for (const id of Object.keys(extension.value.playback))
           if (!ids.has(id)) delete extension.value.playback[id];
@@ -183,7 +235,7 @@
       const profileSummary = container.querySelector(":scope > summary");
       const updateSummary = () => {
         if (profileSummary)
-          profileSummary.textContent = `${extra.alarm ? "Alarm" : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.duration_seconds ? extra.duration_seconds + " seconds" : "play once") : "notification"} · ${r.volume}%`;
+          profileSummary.textContent = `${extra.alarm ? "Alarm · " + r.importance : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.duration_seconds ? extra.duration_seconds + " seconds" : "play once") : "notification"} · ${r.volume}%`;
       };
       const importance = addField(
         fields,
@@ -219,22 +271,40 @@
         ),
       );
       function refreshSoundChoices(changedMode = false) {
-        const keys = extension ? (extra.alarm ? alarmTones : notificationTones) : ["chime", "bell", "pulse"];
+        const keys = extension
+          ? extra.alarm
+            ? alarmTones
+            : notificationTones
+          : ["chime", "bell", "pulse"];
         const saved = extra.tone || r.sound;
         const chosen = changedMode && !keys.includes(saved) ? keys[0] : saved;
-        sound.replaceChildren(...[...keys, ...(!keys.includes(chosen) ? [chosen] : [])].map(key => {
-          const option = document.createElement("option");
-          option.value = key;
-          option.textContent = tones[key] + (!keys.includes(key) ? " (saved sound)" : "");
-          return option;
-        }));
+        sound.replaceChildren(
+          ...[...keys, ...(!keys.includes(chosen) ? [chosen] : [])].map(
+            (key) => {
+              const option = document.createElement("option");
+              option.value = key;
+              option.textContent =
+                tones[key] + (!keys.includes(key) ? " (saved sound)" : "");
+              return option;
+            },
+          ),
+        );
         sound.value = chosen;
-        if(changedMode) {
+        if (changedMode) {
           extra.tone = chosen;
-          r.sound = ["chime", "bell", "pulse"].includes(chosen) ? chosen : "chime";
+          r.sound = ["chime", "bell", "pulse"].includes(chosen)
+            ? chosen
+            : "chime";
         }
-        sound.title = extra.alarm ? "Alarm sound · repeating phrase" : "Notification sound · one short cue";
-        for(const option of volume.options)option.textContent=option.value+"% of phone "+(extra.alarm?"alarm":"notification")+" volume";
+        sound.title = extra.alarm
+          ? "Alarm sound · repeating phrase"
+          : "Notification sound · one short cue";
+        for (const option of volume.options)
+          option.textContent =
+            option.value +
+            "% of phone " +
+            (extra.alarm ? "alarm" : "notification") +
+            " volume";
       }
       refreshSoundChoices();
       const vibLabel = el("label", "dialog-choice"),
@@ -702,8 +772,77 @@
           render();
         }
       });
-      add.disabled = rules.alerts.length >= 8;
+      add.disabled = rules.alerts.length >= 8 || !anchored();
       body.append(add);
+      if (!anchored())
+        body.append(
+          el(
+            "p",
+            "muted",
+            "No date is set. Use Repeat every for recurring nudges. Saved date reminders stay paused until a date is added.",
+          ),
+        );
+      const cycleLabel = el("label", "dialog-choice"),
+        cycle = el("input");
+      cycle.type = "checkbox";
+      cycle.checked = !!rules.interval;
+      cycleLabel.append(
+        cycle,
+        document.createTextNode("Repeat every interval"),
+      );
+      body.append(cycleLabel);
+      cycle.onchange = () => {
+        rules.interval = cycle.checked
+          ? {
+              id: uuid(),
+              amount: 1,
+              unit: "hours",
+              anchor_at: Math.floor(Date.now() / 1000),
+              zone: localZone(),
+              ...profile,
+            }
+          : null;
+        if (cycle.checked) rules.repeat = null;
+        notify();
+        render();
+      };
+      if (rules.interval) {
+        const r = rules.interval,
+          box = el("div", "reminder-window");
+        const amount = field(box, "Repeat interval", r.amount, "number");
+        amount.min = "1";
+        amount.max = String(FieldReminderTiming.limits[r.unit]);
+        amount.step = "1";
+        const unit = addField(
+          box,
+          select(
+            "Repeat interval unit",
+            Object.entries(FieldReminderTiming.units),
+            r.unit,
+          ),
+        );
+        amount.oninput = () => {
+          r.amount = Number(amount.value);
+          notify();
+        };
+        unit.onchange = () => {
+          r.unit = unit.value;
+          amount.max = String(FieldReminderTiming.limits[r.unit]);
+          notify();
+        };
+        box.append(
+          el(
+            "p",
+            "muted",
+            "First nudge one interval after saving. Only one missed nudge is caught up after a gap. Months and years keep the original day where possible.",
+          ),
+        );
+        const sound = el("details");
+        sound.append(el("summary", "", "Repeating nudge sound & importance"));
+        profileFields(sound, r, "Repeating nudge");
+        box.append(sound);
+        body.append(box);
+      }
       const label = el("label", "dialog-choice"),
         repeat = el("input");
       repeat.type = "checkbox";
@@ -714,6 +853,7 @@
       );
       body.append(label);
       repeat.onchange = () => {
+        if (repeat.checked) rules.interval = null;
         rules.repeat = repeat.checked
           ? {
               id: uuid(),
@@ -836,13 +976,14 @@
         profileFields(sound, r, "Recurring reminder");
         window.append(sound);
       }
-      if (!rules.alerts.length && !rules.repeat)
+      if (!rules.alerts.length && !rules.repeat && !rules.interval)
         body.append(el("p", "muted", "No reminders for this item."));
     }
-    summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat ? " + recurring" : ""}`;
+    summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat || rules.interval ? " + recurring" : ""}`;
     render();
     return {
       root: section,
+      refresh: render,
       read: () => structuredClone(rules),
       replace(value) {
         Object.keys(rules).forEach((k) => delete rules[k]);
@@ -877,7 +1018,13 @@
         await mutate(
           record.kind + ".update",
           record.id,
-          { reminders: settings, reminder_options: options },
+          {
+            reminders: settings,
+            reminder_options: options,
+            ...(record.kind === "note" && (settings.interval || settings.repeat)
+              ? { on_radar: true }
+              : {}),
+          },
           record.revision,
         );
       },
@@ -900,6 +1047,7 @@
               options = v;
             },
           },
+          () => hasAnchor(record),
         ),
     );
   }
@@ -979,5 +1127,7 @@
     windowLabel,
     rulesFor,
     optionsFor,
+    forSave,
+    hasAnchor,
   };
 })(globalThis);

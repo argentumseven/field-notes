@@ -62,7 +62,7 @@ object Alerts {
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .setData(Uri.parse("fieldnotes://notification/" + digest(key))).putExtra("open_record",target)
-        if(channel==ISSUES||channel==SOFTWARE)intent.putExtra("open_page","Settings")
+        if(channel==ISSUES||channel==SOFTWARE)intent.putExtra("open_page",if(channel==SOFTWARE)"Settings/UPDATES"else"Settings/REMINDERS")
         // Looking at a ringing reminder answers it: opening it also silences the sound.
         if(manualSound)intent.putExtra(STOP_ALARM_EXTRA,true)
         val open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -146,6 +146,26 @@ object LocalAlarms {
         // Local alarms must not wait for DNS or a network tunnel to initialize.
         return app.vault.load().takeIf { it.token != null && it.snapshot != null }
     }
+    /** Use the cached vault without waiting for networking, keep receipts intact, and clear only a recovered
+     * scheduling failure. Never dismiss a different sound, permission or storage issue. */
+    suspend fun reconcileSafely(context:Context,force:Boolean=false):Boolean {
+        val app=context.applicationContext as FieldNotesApplication
+        return try {
+            if(!app.getSystemService(UserManager::class.java).isUserUnlocked)return true
+            val previous=app.deliveryError.value
+            reconcile(context,force)
+            if(isSchedulingWarning(previous))app.deliveryError.compareAndSet(previous,null)
+            true
+        }catch(e:Exception){
+            if(e is kotlinx.coroutines.CancellationException)throw e
+            app.deliveryError.value=when(e){
+                is java.io.IOException->SCHEDULING_STORAGE_FAILURE
+                is kotlinx.serialization.SerializationException->SCHEDULING_STATE_FAILURE
+                else->SCHEDULING_FAILURE
+            }
+            false
+        }
+    }
     suspend fun reconcile(context: Context, force: Boolean = false) = withContext(Dispatchers.IO) { mutex.withLock {
         val app = context.applicationContext as FieldNotesApplication
         Alerts.channels(context)
@@ -162,11 +182,13 @@ object LocalAlarms {
         val delivered=if(same)previous.delivered.filterKeys { it in active } else emptyMap()
         val now = Clock.System.now()
         val candidates=if(cache==null)emptyList() else localAlerts(cache,now,TimeZone.currentSystemDefault(),seen.keys,delivered)
-        cache?.let { reminderCompatibilityWarning(it)?.let { message->app.deliveryError.value=message } }
+        // Format warnings are derived from current content in the UI, not persisted as stale delivery failures.
         val enabled=candidates.filter { alert ->
                 alert.key !in seen && Alerts.allowed(context,alert.profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS)
             }
-        if(enabled.size<candidates.size)app.deliveryError.value="Some reminders are blocked by Android notification permissions or channel settings. Review Alerts in Settings."
+        val blocked="Some reminders are blocked by Android notification permissions or channel settings. Open Settings → Reminders → Notification permissions & channels."
+        if(enabled.size<candidates.size)app.deliveryError.value=blocked
+        else {app.deliveryError.compareAndSet(blocked,null);app.deliveryError.compareAndSet("Some reminders are blocked by Android notification permissions or channel settings. Review Alerts in Settings.",null)}
         val desired=enabled.take(64).associate { it.key to it.at }
         if(!force&&!previous.applyPending&&same&&previous.scheduled==desired&&previous.delivered==delivered) return@withLock
         val alarms = context.getSystemService(AlarmManager::class.java)
@@ -251,7 +273,7 @@ class AlertReceiver : BroadcastReceiver() {
                         if(cache?.token!=null)Alerts.post(context,Alerts.REMINDERS,"profile-test:"+intent.getStringExtra("nonce"),"Field Notes profile test","This alert was generated in the Field Notes profile. GrapheneOS forwarding and sound settings control delivery to your active profile.")
                     }
                     else if (intent.action == "org.fieldnotes.ALERT") LocalAlarms.fire(context, intent.getStringExtra("occurrence") ?: return@withTimeout)
-                    else { LocalAlarms.reconcile(context, true); PlannerWidget.refresh(context); UpcomingWidget.refresh(context);CalendarWidget.refresh(context) }
+                    else { LocalAlarms.reconcileSafely(context, true); PlannerWidget.refresh(context); UpcomingWidget.refresh(context);CalendarWidget.refresh(context) }
                 }
             } catch(_:Exception){app.deliveryError.value="Reminder delivery needs attention. Open Field Notes."}
             finally { pending.finish() }

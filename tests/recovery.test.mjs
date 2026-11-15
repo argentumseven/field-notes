@@ -355,6 +355,18 @@ test("deleted tasks recover their images, comments and missing collection with t
 test("whole-content checkpoints roll backward and forward, retain authentication and fence old queues", async () => {
   const s = await scene(false);
   try {
+    const interval = {
+      id: randomUUID(),
+      amount: 2,
+      unit: "hours",
+      anchor_at: 1794700000,
+      zone: "UTC",
+      importance: "urgent",
+      sound: "bell",
+      volume: 75,
+      vibrate: true,
+    };
+    const reminders = { alerts: [], repeat: null, timing_version: 3, interval };
     const task = randomUUID(),
       later = randomUUID();
     assert.equal(
@@ -362,6 +374,7 @@ test("whole-content checkpoints roll backward and forward, retain authentication
         await s.send("task.create", task, {
           title: "First state",
           notes: "At checkpoint",
+          reminders,
         })
       ).status,
       200,
@@ -380,7 +393,10 @@ test("whole-content checkpoints roll backward and forward, retain authentication
         await s.send(
           "task.update",
           task,
-          { notes: "Changed after checkpoint" },
+          {
+            notes: "Changed after checkpoint",
+            reminders: { ...reminders, interval: { ...interval, amount: 3 } },
+          },
           1,
         )
       ).status,
@@ -417,6 +433,10 @@ test("whole-content checkpoints roll backward and forward, retain authentication
       snapshot.records.find((r) => r.id === task).data.notes,
       "At checkpoint",
     );
+    assert.deepEqual(
+      snapshot.records.find((r) => r.id === task).data.reminder_interval_rules,
+      reminders,
+    );
     assert(!snapshot.records.some((r) => r.id === later));
     assert.deepEqual(await readFile(s.f.key), key);
     assert.equal(
@@ -441,6 +461,10 @@ test("whole-content checkpoints roll backward and forward, retain authentication
     assert.equal(
       snapshot.records.find((r) => r.id === task).data.notes,
       "Changed after checkpoint",
+    );
+    assert.deepEqual(
+      snapshot.records.find((r) => r.id === task).data.reminder_interval_rules,
+      { ...reminders, interval: { ...interval, amount: 3 } },
     );
     assert(snapshot.records.some((r) => r.id === later));
     assert.equal(

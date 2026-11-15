@@ -69,6 +69,7 @@ class FieldNotesApplication : Application(), Configuration.Provider {
                 val previous=vault.readEffect("delivery-health")
                 if(previous!=null){try{if(deliveryError.value==null)deliveryError.value=previous.decodeToString().takeIf {it.isNotBlank()}}finally{previous.fill(0)}}
             }catch(_:Exception){deliveryPersistenceError.value="Delivery status could not be read. Check local storage."}
+            LocalAlarms.reconcileSafely(this@FieldNotesApplication)
             deliveryError.collect { persistDeliveryHealth() }
         }
         ContextCompat.registerReceiver(this, object : BroadcastReceiver() {
@@ -80,6 +81,6 @@ class FieldNotesApplication : Application(), Configuration.Provider {
         // reconciliation between saving its intent and installing the OS alarms.
         scope.launch { initialized.await(); model.state.map{it.cache}.distinctUntilChanged().collect { cache ->
             if(resolvedVolumeWarning(deliveryError.value,cache.preferences))withContext(Dispatchers.IO){persistDeliveryHealth()}
-            delay(600); withContext(Dispatchers.IO){PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication)};try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};try{LocalAlarms.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryError.value="Reminder scheduling needs attention. Open Field Notes."} } }
+            delay(600); withContext(Dispatchers.IO){PlannerWidget.refresh(this@FieldNotesApplication);UpcomingWidget.refresh(this@FieldNotesApplication);CalendarWidget.refresh(this@FieldNotesApplication)};try{SharedAdditions.reconcile(this@FieldNotesApplication)}catch(_:Exception){deliveryPersistenceError.value="Shared-addition notification delivery needs attention. Saved content is kept."};LocalAlarms.reconcileSafely(this@FieldNotesApplication) } }
     }
 }

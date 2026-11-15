@@ -9,6 +9,12 @@ updates** checks immediately. **Automatically prepare app updates** defaults on:
 the verified download is prepared in the background, and a notification offers
 review/installation. Android still requires installation consent.
 
+In 0.11.8, Settings opens a category menu: choose **App updates** for installation
+or **Reminders** for scheduling permissions, retry and notification tests. Repeat
+intervals without dates require both the 0.11.8 server and app. Update the server
+first, then install its offered APK with the existing signer. Pairing, queued
+work and reminder start times are preserved.
+
 If the installed app predates 0.3.2, it does not yet have this screen. Download
 the matching APK from the updated server and install it **over the existing app**, with the
 same signing key. Do not uninstall or clear storage. Later updates use the flow

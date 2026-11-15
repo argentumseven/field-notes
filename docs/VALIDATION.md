@@ -1,5 +1,45 @@
 # Implementation and validation record
 
+## 0.11.8 priority, calendar, Settings and interval reminders — 2026-11-15
+
+Android code 27, protocol 1 and schema 2. Existing-task priority queues a field
+save immediately, retaining unrelated drafts and keeping an already-stale draft's
+revision fence. List-item priority behaves the same way. The calendar places
+notices, creation controls, cells and entries in one scrolling viewport, with a
+day-time jump and no calendar floating button. Settings has separate category
+pages; scheduling warnings explain their effect and open permission/retry checks.
+Successful reconciliation clears only a recovered scheduling warning and never
+waits for network initialization before loading cached reminders.
+
+Undated tasks and notes support independent minute/hour/day/week/month/year
+intervals. The durable command captures the start time; replay, restart, sound
+edits and transfer preserve it. Tests cover elapsed/calendar arithmetic, DST,
+month-end/leap-day clamping, long future intervals, one missed catch-up, completed
+tasks, recipient filtering, old-writer rejection, and checkpoint roll backward/
+forward with the full cadence intact. Legacy reminder projections remain decodable.
+
+Source validation: **159 Kotlin host tests**, including seven headless Compose
+interaction checks; **19 Rust tests**, formatting and Clippy with warnings as
+errors; **128 API/archive checks**; **134 Python checks**; Android main and
+instrumented-test compilation and release lint. **41 Chromium workflows** were
+validated: the complete run passed 40 and exposed the old undated-alert
+expectation; after updating that test to the intended interval flow, all three
+project/recipient workflows passed on rerun. The new narrow-screen interval
+workflow creates an urgent undated task, reopens its cadence, edits sound without
+moving its anchor, and disables the interval.
+
+Headless shared-UI checks tap Urgent/High and reopen the task, preserve a separate
+list-item draft, scroll below a large calendar warning, reach morning/midnight/
+evening, navigate Settings categories and open reminder repair. Captures use
+synthetic data. The 33 new host-test dependency hashes were checked against Maven
+Central over TLS; existing verification pins were retained. These dependencies
+are not added to the Android runtime.
+
+Physical Android/GrapheneOS alarm delivery, notification forwarding, permission
+dialogs, sound and device scrolling remain unrun. Headless UI checks and compiled
+instrumentation do not establish those platform behaviors. No live installation,
+user content, pairing, keys or network settings were modified.
+
 ## 0.11.7 delete navigation and visible alarms — 2026-11-14
 
 Published and independently verified: [v0.11.7](https://github.com/argentumseven/field-notes/releases/tag/v0.11.7),

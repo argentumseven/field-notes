@@ -69,10 +69,11 @@ fun reminderCompatibilityWarning(cache:Cache):String? {
     for(row in projectRecords(cache)) {
         val r=row.record
         if(r.kind !in setOf("task","event","note"))continue
-        val raw=if(r.data.containsKey("reminder_rules"))r.data["reminder_rules"] else r.data["reminders"]
+        val title=r.data.text("title").take(120).ifBlank{"Untitled item"}
+        val raw=r.data["reminder_interval_rules"] ?: r.data["reminder_schedule_rules"] ?: r.data["reminder_timing_rules"] ?: r.data["reminder_rules"] ?: r.data["reminders"]
         if(raw!=null&&raw!=kotlinx.serialization.json.JsonNull) {
-            val rules=reminderSet(r) ?: return "A reminder uses a newer format. Update the app; cached tasks and edits are kept."
-            if(runCatching { validateReminders(rules) }.isFailure)return "A reminder schedule needs review. Open its Reminders settings."
+            val rules=reminderSet(r) ?: return "The reminder on ‘$title’ uses a newer format. Open Settings → App updates. Cached tasks and edits are kept."
+            if(runCatching { validateReminders(rules) }.isFailure)return "The reminder schedule on ‘$title’ needs review. Open that item → Reminders & sound and check its timing. Other reminders can still run."
         }
         if(r.data.containsKey("reminder_options")) {
             val options=reminderOptions(r) ?: return "A reminder option needs a newer app. Update without resetting pairing."

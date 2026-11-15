@@ -1,5 +1,10 @@
 # Tasks, task lists and projects
 
+In Android 0.11.8, tapping **Urgent**, **High**, **Normal** or **Low** on an
+existing task or list item saves that priority immediately, including offline.
+Other unfinished detail edits remain drafts until **Save details** or **Save item**.
+Creating a new task keeps its chosen priority when **Create task** is pressed.
+
 **Household** describes the work, including honey-do and home maintenance. It
 does not force a particular structure. Choose the smallest grouping that helps:
 

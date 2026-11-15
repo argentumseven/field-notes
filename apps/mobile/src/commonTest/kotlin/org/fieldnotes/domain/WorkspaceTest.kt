@@ -241,6 +241,46 @@ class WorkspaceTest {
         assertEquals(3,vault.value.conflicts.size);assertTrue(vault.value.outbox.isEmpty());assertEquals("Fix hinge",vault.value.conflicts.last().command.data.text("title"))
     }
 
+    @Test fun quickPriorityQueuesOnlyPriorityAndPreservesTheSeparateDraft()=runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
+        val basis=v.value.snapshot!!.basis
+        m.saveDraft(task.id,task.revision,obj("title" to "Unsaved title".j(),"notes" to "Keep this draft".j(),"priority" to 3.j()),basis)
+        m.setTaskPriority(task.id,1,basis)
+        val pending=v.value.outbox.single().command
+        assertEquals(setOf("priority"),pending.data.keys);assertEquals(1,pending.data.number("priority"))
+        assertEquals("Keep this draft",v.value.drafts.getValue(task.id).data.text("notes"))
+        assertEquals(1,v.value.drafts.getValue(task.id).data.number("priority"));assertEquals(pending.operation_id,v.value.drafts.getValue(task.id).dependsOn)
+        assertEquals(1,projectRecords(v.value).single().record.data.number("priority"))
+        m.setTaskPriority(task.id,1,basis);assertEquals(1,v.value.outbox.size)
+        m.sync();assertTrue(v.value.outbox.isEmpty());assertEquals(1,t.snapshot.records.single().data.number("priority"))
+        assertEquals("Measure first",t.snapshot.records.single().data.text("notes"))
+        val draft=v.value.drafts.getValue(task.id);assertEquals("Keep this draft",draft.data.text("notes"));assertNull(draft.dependsOn);assertEquals(t.snapshot.records.single().revision,draft.revision)
+        val restart=model(v,t,backgroundScope);restart.initialize();assertEquals(1,projectRecords(v.value).single().record.data.number("priority"))
+    }
+    @Test fun quickPriorityRejectsAnOldWorkspaceWithoutDiscardingTheDraft()=runTest {
+        val v=MemoryVault();val m=model(v,FakeTransport(),backgroundScope);m.initialize()
+        assertFailsWith<IllegalStateException>{m.setTaskPriority(task.id,1,Basis("older-epoch",1))}
+        assertTrue(v.value.outbox.isEmpty())
+        assertFailsWith<IllegalArgumentException>{m.setTaskPriority(task.id,0,v.value.snapshot!!.basis)}
+    }
+    @Test fun quickPriorityDoesNotApproveAnAlreadyStaleDetailsDraft()=runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();val basis=v.value.snapshot!!.basis
+        m.saveDraft(task.id,1,obj("notes" to "Unfinished local notes".j()),basis)
+        t.snapshot=t.snapshot.copy(sequence=2,records=listOf(task.copy(revision=2,data=JsonObject(task.data+("notes" to "New notes from another device".j())))))
+        m.sync();assertEquals(2,v.value.snapshot!!.records.single().revision)
+        m.setTaskPriority(task.id,1,basis);assertNull(v.value.drafts.getValue(task.id).dependsOn)
+        m.sync();assertTrue(v.value.outbox.isEmpty())
+        assertEquals("New notes from another device",t.snapshot.records.single().data.text("notes"))
+        assertEquals(1,v.value.drafts.getValue(task.id).revision)
+        assertEquals("Unfinished local notes",v.value.drafts.getValue(task.id).data.text("notes"))
+    }
+    @Test fun choosingTheSavedPriorityAlsoCorrectsAnOlderUnsentPriorityDraft()=runTest {
+        val v=MemoryVault();val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize();val basis=v.value.snapshot!!.basis
+        m.saveDraft(task.id,1,obj("priority" to 1.j(),"notes" to "Keep drafting".j()),basis)
+        m.setTaskPriority(task.id,3,basis)
+        assertTrue(v.value.outbox.isEmpty());assertEquals(3,v.value.drafts.getValue(task.id).data.number("priority"))
+        assertEquals("Keep drafting",v.value.drafts.getValue(task.id).data.text("notes"))
+    }
     @Test fun recoveryIntentIsDurableBeforeSendingAndLostRepliesCanBeConfirmedAfterRestart()=runTest {
         val v=MemoryVault(initial().copy(compatibility=ServerCompatibility(features=setOf(RECOVERY_FEATURE))));val t=FakeTransport();val m=model(v,t,backgroundScope);m.initialize()
         val preview=RecoveryPreview("preview",9999999999,"epoch",1,"version",1,"Saved state",false,change_count=1,changes=emptyList(),confirmation_phrase="RESTORE ITEM #1")
