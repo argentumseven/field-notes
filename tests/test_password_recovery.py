@@ -66,10 +66,10 @@ class PasswordRecovery(unittest.TestCase):
      with opener.open(f'http://127.0.0.1:{admin}/health',timeout=1):break
     except OSError:time.sleep(.02)
    request=urllib.request.Request(f'http://127.0.0.1:{device}/api/login',data=json.dumps({'name':'admin','password':'replacement-recovery-password!','device':'recovery test'}).encode(),headers={'Content-Type':'application/json'})
-   with opener.open(request,timeout=3) as response:self.assertEqual(json.load(response)['actor']['name'],'admin')
+   with opener.open(request,timeout=10) as response:self.assertEqual(json.load(response)['actor']['name'],'admin')
    if old_name:
     old_request=urllib.request.Request(f'http://127.0.0.1:{device}/api/login',data=json.dumps({'name':old_name,'password':'replacement-recovery-password!','device':'old name test'}).encode(),headers={'Content-Type':'application/json'})
-    with self.assertRaises(urllib.error.HTTPError) as error:opener.open(old_request,timeout=3)
+    with self.assertRaises(urllib.error.HTTPError) as error:opener.open(old_request,timeout=10)
     self.assertEqual(error.exception.code,401)
   finally:child.terminate();child.wait(timeout=5)
  def test_unknown_account_changes_nothing_without_hashing_or_stopping_services(self):

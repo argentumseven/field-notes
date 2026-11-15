@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.json.*
 
-@Serializable data class AlertProfile(val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true,val duration:Int=0,val alarm:Boolean=false,val unmute:Boolean=false,val alarmVolume:Int=100,val notificationUnmute:Boolean=false,val notificationVolume:Int=100)
+@Serializable data class AlertProfile(val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true,val duration:Int=0,val alarm:Boolean=false,val unmute:Boolean=false,val alarmVolume:Int=100,val notificationUnmute:Boolean=false,val notificationVolume:Int=100,val gain:Int=100,val untilDismissed:Boolean=false)
 @Serializable data class ReminderAlert(val id:String,val minutes_before:Int=10,val importance:String="normal",val sound:String="chime",val volume:Int=75,val vibrate:Boolean=true,@EncodeDefault(EncodeDefault.Mode.NEVER) val lead_time:ReminderLead?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val day_time:ReminderDayTime?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val after_start:ReminderLead?=null,@EncodeDefault(EncodeDefault.Mode.NEVER) val label:String="") {
     val profile get()=AlertProfile(importance,sound,volume,vibrate)
 }

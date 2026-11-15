@@ -30,9 +30,7 @@ test("meals repeat, named reminders run after start, copies keep details and opt
       state.day = "2026-11-15";
       render();
     });
-    await page
-      .getByRole("button", { name: "Plan dinner", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Plan food", exact: true }).click();
     await page.getByLabel("Event title", { exact: true }).fill("Sunday roast");
     assert.equal(
       await page.getByLabel("Plan as", { exact: true }).inputValue(),

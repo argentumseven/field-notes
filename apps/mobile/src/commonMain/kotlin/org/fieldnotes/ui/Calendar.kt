@@ -64,10 +64,10 @@ import org.fieldnotes.domain.*
         for(mode in listOf("Day","Week","Month","Agenda"))FilterChip(view==mode,{selectView(mode)},{Text(mode)})
     }
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){SecondaryButton(onClick={calendarOptions=!calendarOptions}){Text("Calendar options "+if(calendarOptions)"▴"else"▾")};SecondaryButton(onClick={selectDate(today.toString())}){Text("Today")}}
-    if(!mealsOnly&&mealChange!=null)Row(verticalAlignment=Alignment.CenterVertically){Switch(showMeals,mealChange,modifier=Modifier.semantics{contentDescription="Show meals in calendar"});Text("Show meals",Modifier.padding(start=8.dp))}
+    if(calendarOptions&&!mealsOnly&&mealChange!=null)Row(verticalAlignment=Alignment.CenterVertically){Switch(showMeals,mealChange,modifier=Modifier.semantics{contentDescription="Show meals in calendar"});Text("Show meals",Modifier.padding(start=8.dp))}
     if(calendarOptions)Row(verticalAlignment=Alignment.CenterVertically){Switch(federalHolidays,holidayChange,modifier=Modifier.semantics{contentDescription="Show US federal holidays"});Text("US federal holidays")}
 
-            newEvent?.let {create->Button(shape=ControlShape,onClick=create,modifier=Modifier.testTag("calendar-new-event")){Text(if(mealsOnly)"Plan dinner"else"New event")}}
+            newEvent?.let {create->Button(shape=ControlShape,onClick=create,modifier=Modifier.testTag("calendar-new-event")){Text(if(mealsOnly)"Plan food"else"New event")}}
         }}
         item("calendar-days"){Column {
     if(view=="Month") {
@@ -162,7 +162,7 @@ import org.fieldnotes.domain.*
     val initialStart = if(originalStart > 0) Instant.fromEpochSeconds(originalStart).toLocalDateTime(zone) else LocalDateTime(day, LocalTime.parse(initialTime ?: if(mealKind=="dinner")"18:00"else if(mealKind=="prep")"16:30"else"09:00"))
     val initialEnd = if(originalEnd > 0) Instant.fromEpochSeconds(originalEnd).toLocalDateTime(zone) else (initialStart.toInstant(zone)+60.minutes).toLocalDateTime(zone)
     var hasEnd by rememberSaveable(record?.id) { mutableStateOf(record!=null && data.number("ends_at")>0) }
-    var remindersJson by rememberSaveable(record?.id) { mutableStateOf(reminderData(reminderSet(Record(record?.id ?: "", "event",record?.revision ?: 0,data)) ?: ReminderSet(listOf(ReminderAlert(record?.id ?: model.newId())))).toString()) }
+    var remindersJson by rememberSaveable(record?.id) { mutableStateOf(reminderData(reminderSet(Record(record?.id ?: "", "event",record?.revision ?: 0,data)) ?: ReminderSet(listOf(ReminderAlert(record?.id ?: model.newId(),volume=if(record==null)100 else 75)))).toString()) }
     var remindersDirty by rememberSaveable(record?.id) { mutableStateOf(record==null || data.containsKey("reminders")) }
     val reminders=WireJson.decodeFromString<ReminderSet>(remindersJson)
     var optionsJson by rememberSaveable(record?.id){mutableStateOf(reminderOptionsData(reminderOptions(Record(record?.id ?: "","event",record?.revision ?: 0,data)) ?: ReminderOptions()).toString())}
@@ -187,7 +187,8 @@ import org.fieldnotes.domain.*
         validateReminders(reminders)
         val baseFields=obj("title" to title.j(), "notes" to notes.j(), "all_day" to JsonPrimitive(allDay), "start_date" to (if (allDay) startDate else "").j(), "end_date" to (if (allDay) LocalDate.parse(endDate).plus(1, DateTimeUnit.DAY).toString() else "").j(), "starts_at" to start.j(), "ends_at" to end.j())
         val fields=if(state.cache.supportsPlannerDetails())JsonObject(baseFields+("location" to location.j()))else baseFields
-        val mealFields=if(state.cache.supportsMeals())JsonObject(fields+("meal_kind" to mealKind.j()))else fields
+        val planFields=(draft?.data?.get("meal_plan") ?: record?.data?.get("meal_plan"))?.let{JsonObject(fields+("meal_plan" to it))}?:fields
+        val mealFields=if(state.cache.supportsMeals())JsonObject(planFields+("meal_kind" to mealKind.j()))else planFields
         val result=if(remindersDirty)JsonObject(mealFields+("reminders" to reminderData(reminders))) else mealFields
         recurrence?.let(::validateRepeat)
         val modern=if(state.cache.supportsPlannerV3())JsonObject(result+mapOf("recurrence" to repeatData(recurrence),"category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record?.data?.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())) else result
@@ -200,13 +201,13 @@ import org.fieldnotes.domain.*
         OutlinedTextField(title, { title = it.take(240) }, label = { Text("Title") }, enabled = writable)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){for(name in listOf("Schedule","Reminders","Details"))FilterChip(section==name,{section=name},{Text(name)})}
         if(section=="Schedule"){
-        if(state.cache.supportsMeals())ViewChoice("Plan as",mealKind,listOf("" to "Calendar event","dinner" to "Dinner","prep" to "Meal prep")){mealKind=it}
+        if(state.cache.supportsMeals())ViewChoice("Plan as",mealKind,listOf("" to "Calendar event","dinner" to "Food or occasion","prep" to "Prep session")){mealKind=it}
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(allDay, { allDay = it; }, enabled = writable); Text("All day") }
-        DateField(if(allDay) "First day" else "Starts", startDate, writable, clearable=false) { next ->
+        DateField(if(allDay) "First day" else if(mealKind.isNotBlank())"Ready date"else "Starts", startDate, writable, clearable=false) { next ->
             val distance = LocalDate.parse(startDate).daysUntil(LocalDate.parse(endDate)).coerceAtLeast(0)
             startDate = next; endDate = LocalDate.parse(next).plus(distance, DateTimeUnit.DAY).toString()
         }
-        if (!allDay) TimeField("Start time", startTime, use24Hour, writable) { next ->
+        if (!allDay) TimeField(if(mealKind.isNotBlank())"Ready time"else"Start time", startTime, use24Hour, writable) { next ->
             val duration = runCatching { LocalTime.parse(endTime).toSecondOfDay() - LocalTime.parse(startTime).toSecondOfDay() }.getOrDefault(3600).coerceAtLeast(60)
             startTime = next
             if (startDate == endDate) {

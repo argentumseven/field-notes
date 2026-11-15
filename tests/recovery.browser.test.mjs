@@ -442,6 +442,10 @@ test("checkpoint restore and individual deletion require deliberate confirmation
       title: "Later note",
       body: "Removed by restore",
     });
+    await page.evaluate(async () => {
+      await refresh();
+      render();
+    });
     await page.getByRole("button", { name: "History", exact: true }).click();
     await page
       .getByRole("button", { name: "Content checkpoints", exact: true })
@@ -467,6 +471,12 @@ test("checkpoint restore and individual deletion require deliberate confirmation
     await list
       .getByRole("button", { name: "Preview restore", exact: true })
       .click();
+    await page
+      .getByRole("heading", {
+        name: "Restore preview · Careful restore",
+        exact: true,
+      })
+      .waitFor();
     const preview = page.locator(".recovery-dialog").last();
     assert.match(await preview.innerText(), /1 changed · 1 removed/);
     let confirmation = await restoreConfirmation(

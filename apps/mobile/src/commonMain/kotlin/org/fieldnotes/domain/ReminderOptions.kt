@@ -9,18 +9,19 @@ import kotlinx.serialization.json.*
  * still decode and deliver a basic notification during a rolling update. */
 @Serializable data class ReminderAudience(val mode:String="everyone",val people:List<String> = emptyList())
 @OptIn(ExperimentalSerializationApi::class)
-@Serializable data class ReminderPlayback(val tone:String="",val duration_seconds:Int=0,val alarm:Boolean=false,val unmute:Boolean=false,val alarm_volume:Int=100,@EncodeDefault(EncodeDefault.Mode.NEVER) val notification_unmute:Boolean=false,@EncodeDefault(EncodeDefault.Mode.NEVER) val notification_volume:Int=100)
+@Serializable data class ReminderPlayback(val tone:String="",val duration_seconds:Int=0,val alarm:Boolean=false,val unmute:Boolean=false,val alarm_volume:Int=100,@EncodeDefault(EncodeDefault.Mode.NEVER) val notification_unmute:Boolean=false,@EncodeDefault(EncodeDefault.Mode.NEVER) val notification_volume:Int=100,@EncodeDefault(EncodeDefault.Mode.NEVER) val gain_percent:Int=100,@EncodeDefault(EncodeDefault.Mode.NEVER) val until_dismissed:Boolean=false)
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable data class ReminderOptions(val audience:ReminderAudience=ReminderAudience(),val playback:Map<String,ReminderPlayback> = emptyMap(),@EncodeDefault(EncodeDefault.Mode.NEVER) val playback_version:Int?=null)
 fun Cache.supportsReminderAudio()=compatibility?.features?.contains("reminder-audio-v2")==true
-val reminderTones=linkedMapOf("chime" to "Chime","bell" to "Bell","pulse" to "Pulse","beacon" to "Beacon","marimba" to "Marimba","orbit" to "Orbit","sunrise" to "Sunrise","siren" to "Siren")
-val notificationTones=reminderTones.filterKeys { it in setOf("chime","bell","pulse","marimba") }
-val alarmTones=reminderTones.filterKeys { it in setOf("beacon","orbit","sunrise","siren") }
-fun AlertProfile.withDeliveryMode(alarm:Boolean):AlertProfile {
+fun Cache.supportsAudioV3()=compatibility?.features?.contains("reminder-audio-v3")==true
+val reminderTones=linkedMapOf("chime" to "Chime","bell" to "Bell","pulse" to "Pulse","beacon" to "Beacon","marimba" to "Marimba","orbit" to "Orbit","sunrise" to "Sunrise","siren" to "Siren","signal" to "Signal","crystal" to "Crystal","radar" to "Radar","klaxon" to "Klaxon")
+val notificationTones=reminderTones.filterKeys { it in setOf("chime","bell","pulse","marimba","signal","crystal") }
+val alarmTones=reminderTones.filterKeys { it in setOf("beacon","orbit","sunrise","siren","radar","klaxon") }
+fun AlertProfile.withDeliveryMode(alarm:Boolean,modern:Boolean=false):AlertProfile {
     if(this.alarm==alarm)return this
     val sounds=if(alarm)alarmTones else notificationTones
-    return copy(alarm=alarm,sound=sound.takeIf{it in sounds} ?: if(alarm)"beacon"else"chime",
-        duration=if(alarm)5 else 0,unmute=unmute&&alarm,notificationUnmute=notificationUnmute&&!alarm)
+    return copy(alarm=alarm,sound=sound.takeIf{it in sounds} ?: if(alarm)if(modern)"radar"else"beacon"else"chime",
+        duration=if(alarm&&!modern)5 else 0,untilDismissed=alarm&&modern,unmute=unmute&&alarm,notificationUnmute=notificationUnmute&&!alarm)
 }
 const val ALARM_VOLUME_DISABLED="This alarm requested temporary alarm-volume control, but it is off on this phone. Enable it in Sound settings or turn off this reminder's volume override."
 const val NOTIFICATION_VOLUME_DISABLED="This notification requested temporary notification-volume control, but it is off on this phone. Enable it in Sound settings or turn off this reminder's volume override."
@@ -32,7 +33,7 @@ fun resolvedVolumeWarning(message:String?,preferences:Preferences):Boolean=when(
     else->false
 }
 private val ReminderJson=Json { ignoreUnknownKeys=true;encodeDefaults=true }
-fun reminderOptions(record:Record):ReminderOptions? = record.data["reminder_options"]?.let { runCatching { ReminderJson.decodeFromJsonElement<ReminderOptions>(it) }.getOrNull() }
+fun reminderOptions(record:Record):ReminderOptions? = (record.data["reminder_audio_options"] ?: record.data["reminder_options"])?.let { runCatching { ReminderJson.decodeFromJsonElement<ReminderOptions>(it) }.getOrNull() }
 fun reminderOptionsData(value:ReminderOptions)=ReminderJson.encodeToJsonElement(value).jsonObject
 fun reminderRecipient(record:Record,user:String):Boolean {
     val audience=reminderOptions(record)?.audience
@@ -46,27 +47,28 @@ fun reminderRecipient(record:Record,user:String):Boolean {
     }
 }
 fun validateReminderOptions(value:ReminderOptions) {
-    require(value.playback_version==null||value.playback_version==2) {"Update the app for these sound settings."}
+    require(value.playback_version==null||value.playback_version in 2..3) {"Update the app for these sound settings."}
     require(value.audience.mode in setOf("everyone","people","assigned")) { "Choose who receives reminders." }
     require(value.audience.people.size<=64 && value.audience.people.distinct().size==value.audience.people.size) { "Choose distinct people." }
-    require(value.playback_version==null||value.playback_version==2) {"Update the app for these sound settings."}
+    require(value.playback_version==null||value.playback_version in 2..3) {"Update the app for these sound settings."}
     require(value.audience.mode!="people"||value.audience.people.isNotEmpty()) { "Choose at least one person." }
     require(value.playback.size<=9) { "Use up to nine sound settings." }
     value.playback.values.forEach {
-        require(it.tone.isEmpty()||it.tone in reminderTones) { "Choose a supported sound." }
+        require((it.tone.isEmpty()||it.tone in reminderTones)&&(it.tone !in setOf("signal","crystal","radar","klaxon")||value.playback_version==3)) { "Choose a supported sound." }
         require(it.duration_seconds in setOf(0,5,10,15,30,60) && it.alarm_volume in 25..100) { "Choose the alarm duration and volume." }
         require(it.notification_volume in 25..100&&! (it.alarm&&it.notification_unmute)) {"Choose one delivery mode and a notification volume."}
-        require(!it.notification_unmute||value.playback_version==2) {"Update the app for notification volume control."}
+        require(!it.notification_unmute||value.playback_version in 2..3) {"Update the app for notification volume control."}
+        require(it.gain_percent in 25..200&&(!it.until_dismissed||it.alarm)&&(!(it.until_dismissed||it.gain_percent!=100)||value.playback_version==3)){"Update the app for boosted or dismissible alarms."}
         require(!it.unmute||it.alarm) { "Unmuting is available for alarm reminders." }
     }
 }
 fun effectiveAlertProfile(record:Record,id:String,base:AlertProfile):AlertProfile {
     val p=reminderOptions(record)?.playback?.get(id) ?: return base
-    return base.copy(sound=p.tone.takeIf { it in reminderTones } ?: base.sound,duration=p.duration_seconds.takeIf { it in setOf(0,5,10,15,30,60) } ?: 0,alarm=p.alarm,unmute=p.unmute&&p.alarm,alarmVolume=p.alarm_volume.coerceIn(25,100),notificationUnmute=p.notification_unmute&&!p.alarm,notificationVolume=p.notification_volume.coerceIn(25,100))
+    return base.copy(sound=p.tone.takeIf { it in reminderTones } ?: base.sound,duration=p.duration_seconds.takeIf { it in setOf(0,5,10,15,30,60) } ?: 0,alarm=p.alarm,unmute=p.unmute&&p.alarm,alarmVolume=p.alarm_volume.coerceIn(25,100),notificationUnmute=p.notification_unmute&&!p.alarm,notificationVolume=p.notification_volume.coerceIn(25,100),gain=p.gain_percent,untilDismissed=p.until_dismissed)
 }
-fun playbackOptions(profile:AlertProfile)=ReminderPlayback(profile.sound,profile.duration,profile.alarm,profile.unmute,profile.alarmVolume,profile.notificationUnmute,profile.notificationVolume)
+fun playbackOptions(profile:AlertProfile)=ReminderPlayback(profile.sound,profile.duration,profile.alarm,profile.unmute,profile.alarmVolume,profile.notificationUnmute,profile.notificationVolume,profile.gain,profile.untilDismissed)
 fun legacyTone(tone:String)=tone.takeIf { it in setOf("chime","bell","pulse") } ?: "chime"
-fun ReminderPlayback.applyTo(base:AlertProfile)=base.copy(sound=tone.ifBlank { base.sound },duration=duration_seconds,alarm=alarm,unmute=unmute,alarmVolume=alarm_volume,notificationUnmute=notification_unmute&&!alarm,notificationVolume=notification_volume)
+fun ReminderPlayback.applyTo(base:AlertProfile)=base.copy(sound=tone.ifBlank { base.sound },duration=duration_seconds,alarm=alarm,unmute=unmute,alarmVolume=alarm_volume,notificationUnmute=notification_unmute&&!alarm,notificationVolume=notification_volume,gain=gain_percent,untilDismissed=until_dismissed)
 fun prunedReminderOptions(value:ReminderOptions,rules:ReminderSet):ReminderOptions {
     val ids=rules.alerts.map { it.id }.toSet()+listOfNotNull(rules.repeat?.id,rules.interval?.id)
     return value.copy(playback=value.playback.filterKeys { it in ids })

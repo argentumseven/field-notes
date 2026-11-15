@@ -98,9 +98,10 @@ test('every role can change its own password; current proof, exact bytes, confir
     assert.equal((await change(f, partner, password, password)).status, 400);
     assert.equal((await change(f, partner, password, replacement, { user_id: 'someone-else' })).status, 422);
     assert.equal((await f.request('/api/account/password', { base: f.device, token: partner, body: { current_password: password, new_password: replacement } })).status, 404);
-    const cookie = { Cookie: `field_session=${partner}` };
+    const webLogin=await f.request("/api/login",{origin:f.admin,body:{name:"partner",password,device:"CSRF browser fixture"}});
+    const cookie = { Cookie: webLogin.headers.get("set-cookie").split(";")[0] };
     assert.equal((await f.request('/api/account/password', { headers: cookie, body: { current_password: password, new_password: replacement } })).status, 403);
-    const session = (await f.request('/api/session', { token: partner })).data;
+    const session = (await f.request('/api/session', { headers:cookie })).data;
     const headers = { ...cookie, 'X-Field-CSRF': session.csrf };
     assert.equal((await f.request('/api/account/password', { headers, origin: 'https://attacker.invalid', body: { current_password: password, new_password: replacement } })).status, 403);
     const exact = '  a new test password with spaces  ';

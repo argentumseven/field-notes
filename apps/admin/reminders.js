@@ -4,7 +4,7 @@
   const profile = {
     importance: "normal",
     sound: "chime",
-    volume: 75,
+    volume: 100,
     vibrate: true,
   };
   const localZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -17,9 +17,20 @@
     orbit: "Orbit",
     sunrise: "Sunrise",
     siren: "Siren",
+    signal: "Signal",
+    crystal: "Crystal",
+    radar: "Radar",
+    klaxon: "Klaxon",
   };
-  const notificationTones = ["chime", "bell", "pulse", "marimba"];
-  const alarmTones = ["beacon", "orbit", "sunrise", "siren"];
+  const notificationTones = [
+    "chime",
+    "bell",
+    "pulse",
+    "marimba",
+    "signal",
+    "crystal",
+  ];
+  const alarmTones = ["beacon", "orbit", "sunrise", "siren", "radar", "klaxon"];
   let activePreview = null;
   const rulesFor = (record) =>
     record?.data?.reminder_after_rules ??
@@ -31,10 +42,11 @@
       : record?.data?.reminders);
   const optionsFor = (record, kind) =>
     structuredClone(
-      record?.data?.reminder_options || {
-        audience: { mode: "everyone", people: [] },
-        playback: {},
-      },
+      record?.data?.reminder_audio_options ||
+        record?.data?.reminder_options || {
+          audience: { mode: "everyone", people: [] },
+          playback: {},
+        },
     );
   function validateOptions(value) {
     if (
@@ -48,6 +60,13 @@
     for (const p of Object.values(value.playback || {}))
       if (
         (p.tone && !tones[p.tone]) ||
+        (p.gain_percent !== undefined &&
+          (!Number.isInteger(p.gain_percent) ||
+            p.gain_percent < 25 ||
+            p.gain_percent > 200)) ||
+        (p.until_dismissed && !p.alarm) ||
+        ((p.until_dismissed || (p.gain_percent ?? 100) !== 100) &&
+          value.playback_version !== 3) ||
         ![0, 5, 10, 15, 30, 60].includes(p.duration_seconds) ||
         !Number.isInteger(p.alarm_volume) ||
         p.alarm_volume < 25 ||
@@ -241,6 +260,7 @@
     const field = (p, label, value, type = "text") =>
       addField(p, input(label, value, type));
     function profileFields(container, r, prefix) {
+      const modern = !!extension; // Web code is served by this same version of the server.
       const fields = el("div", "sound-options");
       const extra = extension?.value.playback[r.id] || {
         tone: r.sound,
@@ -256,7 +276,7 @@
       const profileSummary = container.querySelector(":scope > summary");
       const updateSummary = () => {
         if (profileSummary)
-          profileSummary.textContent = `${extra.alarm ? "Alarm · " + r.importance : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.duration_seconds ? extra.duration_seconds + " seconds" : "play once") : "notification"} · ${r.volume}%`;
+          profileSummary.textContent = `${extra.alarm ? "Alarm · " + r.importance : r.importance} · ${tones[extra.tone || r.sound]} · ${extra.alarm ? (extra.until_dismissed ? "until dismissed" : extra.duration_seconds ? extra.duration_seconds + " seconds" : "play once") : "notification"} · ${Math.round((r.volume * (extra.gain_percent || 100)) / 100)}%`;
       };
       const importance = addField(
         fields,
@@ -284,11 +304,10 @@
         fields,
         select(
           prefix + " sound level",
-          [25, 50, 75, 100].map((n) => [
-            String(n),
-            n + "% of phone notification volume",
-          ]),
-          String(r.volume),
+          (modern ? [25, 50, 75, 100, 125, 150, 200] : [25, 50, 75, 100]).map(
+            (n) => [String(n), n + "% signal level"],
+          ),
+          String(Math.round((r.volume * (extra.gain_percent || 100)) / 100)),
         ),
       );
       function refreshSoundChoices(changedMode = false) {
@@ -323,9 +342,8 @@
         for (const option of volume.options)
           option.textContent =
             option.value +
-            "% of phone " +
-            (extra.alarm ? "alarm" : "notification") +
-            " volume";
+            "% signal level" +
+            (Number(option.value) > 100 ? " (boost)" : "");
       }
       refreshSoundChoices();
       const vibLabel = el("label", "dialog-choice"),
@@ -339,12 +357,18 @@
         r.sound = ["chime", "bell", "pulse"].includes(sound.value)
           ? sound.value
           : "chime";
-        r.volume = Number(volume.value);
+        r.volume = Math.min(100, Number(volume.value));
+        if (modern) {
+          extra.gain_percent =
+            Number(volume.value) > 100 ? Number(volume.value) : 100;
+          extension.value.playback_version = 3;
+        }
         r.vibrate = vib.checked;
         if (extension) {
           extra.tone = sound.value;
           if (r.importance === "quiet") {
             extra.alarm = false;
+            extra.until_dismissed = false;
             extra.unmute = false;
             extra.notification_unmute = false;
             if (alarmControl) alarmControl.value = "notification";
@@ -371,7 +395,7 @@
           if (r.importance === "quiet") return;
           activePreview?.pause();
           const audio = (activePreview = new Audio(
-            `/sounds/v1/${extra.alarm ? "alarm" : "reminder"}_${extra.tone || r.sound}_${r.volume}.wav`,
+            `/sounds/v2/${extra.alarm ? "alarm" : "reminder"}_${extra.tone || r.sound}_${Math.round((r.volume * (extra.gain_percent || 100)) / 100)}.flac`,
           ));
           audio
             .play()
@@ -408,10 +432,11 @@
           select(
             prefix + " alarm duration",
             [
+              ...(modern ? [["dismiss", "Until dismissed"]] : []),
               ["0", "Play once"],
               ...[5, 10, 15, 30, 60].map((n) => [String(n), n + " seconds"]),
             ],
-            String(extra.duration_seconds),
+            extra.until_dismissed ? "dismiss" : String(extra.duration_seconds),
           ),
         );
         const alarmLabel = el("label", "dialog-choice"),
@@ -464,9 +489,11 @@
           extra.notification_volume = extra.alarm
             ? extra.notification_volume || 100
             : Number(level.value);
-          extra.duration_seconds = extra.alarm ? Number(length.value) : 0;
+          extra.until_dismissed = extra.alarm && length.value === "dismiss";
+          extra.duration_seconds =
+            extra.alarm && !extra.until_dismissed ? Number(length.value) : 0;
           extension.value.playback[r.id] = extra;
-          extension.value.playback_version = 2;
+          extension.value.playback_version = modern ? 3 : 2;
           configureMode();
           updateSummary();
           notify();
@@ -477,7 +504,7 @@
             !extra.alarm &&
             Number(length.value) === 0
           )
-            length.value = "5";
+            length.value = modern ? "dismiss" : "5";
           level.value = String(
             mode.value === "alarm"
               ? extra.alarm_volume
@@ -512,7 +539,7 @@
         el(
           "p",
           "muted",
-          "Sound level is relative to the phone’s notification volume. Android, DND and profile forwarding remain in control.",
+          "Sound boost above 100% increases the signal up to 200%. Phone hardware volume, Android and DND still limit playback. New alarms require dismissal; notifications play once.",
         ),
       );
       updateSummary();

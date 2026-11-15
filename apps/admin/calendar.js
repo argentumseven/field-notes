@@ -74,10 +74,13 @@ function calendarEventLabel(record) {
 }
 function renderCalendar(root) {
   const view =
-    state.calendarView ||
-    readSetting("field-notes-calendar-view") ||
-    (innerWidth < 760 ? "day" : "week");
-  state.calendarView = view;
+    state.page === "meals"
+      ? state.mealsView || readSetting("field-notes-meals-view") || "week"
+      : state.calendarView ||
+        readSetting("field-notes-calendar-view") ||
+        (innerWidth < 760 ? "day" : "week");
+  if (state.page === "meals") state.mealsView = view;
+  else state.calendarView = view;
   const chosen = new Date(state.day + "T12:00:00"),
     weekStart = new Date(chosen);
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
@@ -145,9 +148,15 @@ function renderCalendar(root) {
     const b = button(
       mode[0].toUpperCase() + mode.slice(1),
       () => {
-        state.calendarView = mode;
+        if (state.page === "meals") state.mealsView = mode;
+        else state.calendarView = mode;
         try {
-          localStorage.setItem("field-notes-calendar-view", mode);
+          localStorage.setItem(
+            state.page === "meals"
+              ? "field-notes-meals-view"
+              : "field-notes-calendar-view",
+            mode,
+          );
         } catch {}
         render();
       },
@@ -160,7 +169,7 @@ function renderCalendar(root) {
   if (mayWrite())
     toolbar.append(
       button(
-        state.page === "meals" ? "Plan dinner" : "New event",
+        state.page === "meals" ? "Plan food" : "New event",
         () =>
           eventEditor(null, undefined, state.page === "meals" ? "dinner" : ""),
         "primary",
@@ -168,7 +177,7 @@ function renderCalendar(root) {
     );
   if (state.page === "meals" && mayWrite())
     toolbar.append(
-      button("Plan meal prep", () => eventEditor(null, undefined, "prep")),
+      button("Plan prep", () => eventEditor(null, undefined, "prep")),
     );
   const options = el("details", "calendar-options");
   options.append(el("summary", "", "Calendar options"));
@@ -207,10 +216,34 @@ function renderCalendar(root) {
       el(
         "p",
         "muted",
-        "Plan dinner and prep here. Show meals in Calendar is optional and never changes reminders.",
+        "Plan any food or occasion here. Show meals in Calendar is optional and never changes reminders.",
       ),
     );
   root.append(toolbar, options);
+  if (state.page === "meals") {
+    const mealDays =
+      view === "month"
+        ? Array.from(
+            {
+              length: new Date(
+                state.month.getFullYear(),
+                state.month.getMonth() + 1,
+                0,
+              ).getDate(),
+            },
+            (_, i) =>
+              FieldPlanning.localDay(
+                new Date(
+                  state.month.getFullYear(),
+                  state.month.getMonth(),
+                  i + 1,
+                ),
+              ),
+          )
+        : days;
+    renderMealsOverview(root, mealDays);
+    return;
+  }
   if (view === "month") {
     renderCalendarMonth(root);
     return;
@@ -438,6 +471,12 @@ function renderCalendar(root) {
   );
 }
 function openCalendarRecord(record) {
+  if (record.kind === "event" && record.data.meal_kind) {
+    state.selected = record.id;
+    state.mealOccurrence = record.data.starts_at;
+    renderDetail();
+    return;
+  }
   if (record.kind === "task") {
     state.selected = record.id;
     renderDetail();
@@ -605,8 +644,8 @@ async function eventEditor(record, selectedTime, mealKind = "") {
         value: d.meal_kind || mealKind,
         options: [
           ["", "Calendar event"],
-          ["dinner", "Dinner"],
-          ["prep", "Meal prep"],
+          ["dinner", "Food or occasion"],
+          ["prep", "Prep session"],
         ],
       },
       {
@@ -708,6 +747,9 @@ async function eventEditor(record, selectedTime, mealKind = "") {
         record ? "event.update" : "event.create",
         record?.id || uuid(),
         {
+          ...(record?.data.meal_plan
+            ? { meal_plan: record.data.meal_plan }
+            : {}),
           title: v.title,
           meal_kind: v.meal_kind,
           category: v.category,
@@ -749,7 +791,12 @@ async function eventEditor(record, selectedTime, mealKind = "") {
         nodes.start_date.previousElementSibling.textContent = nodes.all_day
           .checked
           ? "First day"
-          : "Starts";
+          : nodes.meal_kind.value
+            ? "Ready date"
+            : "Starts";
+        nodes.start_time.labels[0].textContent = nodes.meal_kind.value
+          ? "Ready time"
+          : "Start time";
         nodes.end_date.previousElementSibling.textContent = nodes.all_day
           .checked
           ? "Last day · included"
@@ -757,6 +804,7 @@ async function eventEditor(record, selectedTime, mealKind = "") {
       };
       nodes.all_day.onchange = update;
       nodes.has_end.onchange = update;
+      nodes.meal_kind.onchange = update;
       update();
       if (record) {
         nodes.operation.hidden = true;
@@ -789,7 +837,9 @@ async function eventEditor(record, selectedTime, mealKind = "") {
           },
           "danger",
         );
-        $("#dialog-body").append(remove);
+        const actions = el("div", "event-editor-actions");
+        $("#dialog-body").append(actions);
+        actions.append(remove);
         const clone = button("Clone…", () => {
           state.dismissDialog?.();
           return cloneEvent(record);
@@ -922,6 +972,8 @@ async function eventEditor(record, selectedTime, mealKind = "") {
           oldDate = nodes.start_date.value;
         }
       };
+      const actions = $("#dialog-body .event-editor-actions");
+      if (actions) $("#dialog-body").append(actions);
       let previousTime = nodes.start_time.value;
       nodes.start_time.onchange = () => {
         try {
@@ -1099,6 +1151,7 @@ function eventCopyData(record, date, zone, original, clock = null) {
       "notes",
       "location",
       "meal_kind",
+      "meal_plan",
       "category",
       "all_day",
       "start_date",
@@ -1155,5 +1208,487 @@ function eventCopyData(record, date, zone, original, clock = null) {
     }
   }
   data.reminder_options = FieldReminders.optionsFor(record, "event");
+  if (data.meal_plan) data.meal_plan.progress = [];
   return data;
+}
+
+function renderMealsOverview(root, days) {
+  const overview = el("div", "meal-overview");
+  for (const day of days) {
+    const section = el("section", "meal-day");
+    section.append(
+      el(
+        "h3",
+        "",
+        new Date(day + "T12:00").toLocaleDateString([], {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+        }),
+      ),
+    );
+    const meals = calendarItems(day).filter((x) => x.record.kind === "event");
+    if (!meals.length) section.append(el("p", "muted", "Nothing planned"));
+    for (const { record: r } of meals) {
+      const b = button("", () => openCalendarRecord(r), "meal-summary");
+      b.append(
+        el("strong", "", r.data.title),
+        el("span", "", calendarEventLabel(r)),
+      );
+      const plan = r.data.meal_plan;
+      if (plan) {
+        try {
+          const times = FieldCooking.schedule(plan, r.data.starts_at),
+            begin = times[0]?.start;
+          b.append(
+            el(
+              "span",
+              "muted",
+              plan.items.length +
+                " items" +
+                (begin ? " · Begin " + cookingClock(begin) : ""),
+            ),
+          );
+        } catch (e) {
+          b.append(el("span", "muted", "Plan needs review"));
+        }
+      }
+      section.append(b);
+    }
+    overview.append(section);
+  }
+  root.append(overview);
+}
+function cookingClock(at) {
+  return new Date(at * 1000).toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZoneName: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+function renderMealDetail(record) {
+  const occurrence = state.mealOccurrence || record.data.starts_at,
+    plan = record.data.meal_plan || FieldCooking.empty(),
+    detail = el("aside", "detail meal-detail"),
+    backdrop = el("div", "detail-backdrop");
+  backdrop.onclick = closeDetail;
+  detail.dataset.scrollKey = "meal-detail:" + record.id + ":" + occurrence;
+  detail.setAttribute("role", "dialog");
+  detail.setAttribute("aria-modal", "true");
+  detail.setAttribute("aria-label", "Meal workflow");
+  const head = el("div", "detail-header");
+  head.append(
+    el("strong", "", record.data.title),
+    button("Close", closeDetail),
+  );
+  detail.append(head, el("p", "", "Ready " + cookingClock(occurrence)));
+  const own =
+    mayWrite() && (isAdmin() || record.data.author_id === state.actor.user_id);
+  if (own) {
+    const actions = el("div", "event-editor-actions");
+    if (
+      plan.progress.some(
+        (p) => p.state === "done" && p.occurrence < Date.now() / 1000 - 86400,
+      )
+    )
+      actions.append(
+        button("Clear completed history", async () => {
+          if (
+            await confirmDialog(
+              "Clear older completed history?",
+              "Completed phases for meals served more than 24 hours ago will be cleared. Current and future meals and running timers are kept.",
+              "Clear history",
+            )
+          )
+            await mutate("event.meal_clear", record.id, {}, record.revision);
+        }),
+      );
+    actions.append(
+      button("Edit schedule", () => {
+        closeDetail();
+        return eventEditor(record);
+      }),
+      button("Edit preparation", () => editCookingPlan(record)),
+    );
+    detail.append(actions);
+  }
+  if (record.data.all_day) {
+    detail.append(el("p", "", "Set a ready time to calculate preparation."));
+  } else if (!plan.items.length)
+    detail.append(
+      el(
+        "p",
+        "",
+        "Add your own items and phases. The ready time sets their deadlines; durations and dependencies calculate when to begin.",
+      ),
+    );
+  else {
+    try {
+      const times = FieldCooking.schedule(plan, occurrence);
+      if (times.length)
+        detail.append(
+          el("p", "", "Get started " + cookingClock(times[0].start)),
+        );
+      const finish = Math.max(occurrence, ...times.map((t) => t.end));
+      if (finish > occurrence)
+        detail.append(
+          el(
+            "p",
+            "warning",
+            "Current progress puts the meal " +
+              Math.ceil((finish - occurrence) / 60) +
+              " minutes behind its ready time.",
+          ),
+        );
+      for (const t of times) {
+        const row = el("section", "cooking-phase");
+        row.append(
+          el("h3", "", t.stage.name),
+          el(
+            "p",
+            "muted",
+            t.item.name + " · " + (t.progress?.state || "planned"),
+          ),
+          el(
+            "p",
+            "",
+            t.progress?.state === "done"
+              ? "Completed " + cookingClock(t.end)
+              : cookingClock(t.start) + " → " + cookingClock(t.end),
+          ),
+        );
+        if (t.stage.after.length)
+          row.append(
+            el(
+              "p",
+              "muted",
+              "After " +
+                t.stage.after
+                  .map((id) => times.find((v) => v.stage.id === id)?.stage.name)
+                  .join(", "),
+            ),
+          );
+        if (t.stage.notes) row.append(el("p", "", t.stage.notes));
+        if (own) {
+          const actions = el("div", "cooking-actions");
+          const change = async (status) => {
+            if (
+              status === "running" &&
+              t.stage.after.some(
+                (id) =>
+                  !plan.progress.some(
+                    (p) =>
+                      p.occurrence === occurrence &&
+                      p.stage_id === id &&
+                      p.state === "done",
+                  ),
+              ) &&
+              !(await confirmDialog(
+                "Start before prerequisites are complete?",
+                "Check that the required work is ready before starting this phase.",
+                "Start phase",
+              ))
+            )
+              return;
+            await mutate(
+              "event.meal_stage",
+              record.id,
+              {
+                occurrence,
+                stage_id: t.stage.id,
+                state: status,
+                at: Math.floor(Date.now() / 1000),
+              },
+              record.revision,
+            );
+          };
+          if (t.progress?.state !== "done")
+            actions.append(
+              button(t.progress ? "Restart timer" : "Start now", () =>
+                change("running"),
+              ),
+              button("Done", () => change("done")),
+            );
+          if (t.progress)
+            actions.append(
+              button("Reset", async () => {
+                if (
+                  await confirmDialog(
+                    "Reset this phase?",
+                    "Its timer and completion will be cleared for this date.",
+                    "Reset phase",
+                  )
+                )
+                  await change("planned");
+              }),
+            );
+          row.append(actions);
+        }
+        detail.append(row);
+      }
+    } catch (e) {
+      detail.append(el("p", "error", e.message));
+    }
+  }
+  document.body.append(backdrop, detail);
+  detail.tabIndex = -1;
+  detail.focus();
+}
+async function editCookingPlan(record) {
+  let plan = structuredClone(record.data.meal_plan || FieldCooking.empty());
+  await formDialog(
+    "Preparation plan",
+    "Enter any item and phase names. Durations work backward from ready time. Dependencies can connect any phases; waiting time follows all prerequisites.",
+    [],
+    async () => {
+      FieldCooking.schedule(plan, record.data.starts_at);
+      await mutate(
+        "event.update",
+        record.id,
+        { meal_plan: plan },
+        record.revision,
+      );
+    },
+    "Save preparation",
+    () => {
+      const root = el("div", "cooking-editor");
+      $("#dialog-body").append(root);
+      const field = (
+        parent,
+        label,
+        value,
+        change,
+        type = typeof value === "number" ? "number" : "text",
+      ) => {
+        const wrap = el("div", "cooking-field");
+        parent.append(wrap);
+        const n = addField(wrap, input(label, value, type));
+        n.oninput = () => change(type === "number" ? Number(n.value) : n.value);
+        if (type === "number") {
+          n.min = 0;
+          n.max = 20160;
+          n.step = 1;
+        }
+        return n;
+      };
+      const redraw = () => {
+        root.replaceChildren();
+        for (const item of plan.items) {
+          const block = el("section", "cooking-item");
+          field(block, "Item name", item.name, (v) => (item.name = v));
+          field(
+            block,
+            "Item notes",
+            item.notes,
+            (v) => (item.notes = v),
+            "textarea",
+          );
+          for (const phase of item.stages) {
+            const section = el("fieldset", "cooking-phase");
+            section.append(el("legend", "", "Phase"));
+            field(section, "Phase name", phase.name, (v) => (phase.name = v));
+            const timing = el("div", "cooking-timing");
+            field(
+              timing,
+              "Duration (minutes)",
+              phase.duration_minutes,
+              (v) => (phase.duration_minutes = v),
+            );
+            field(
+              timing,
+              "Finish early (minutes)",
+              -phase.offset_minutes,
+              (v) => (phase.offset_minutes = -v),
+            );
+            field(
+              timing,
+              "Wait after prerequisites (minutes)",
+              phase.wait_minutes,
+              (v) => (phase.wait_minutes = v),
+            );
+            field(
+              timing,
+              "Check every (minutes, 0 = off)",
+              phase.check_every_minutes,
+              (v) => (phase.check_every_minutes = v),
+            );
+            section.append(timing);
+            field(
+              section,
+              "Phase notes",
+              phase.notes,
+              (v) => (phase.notes = v),
+              "textarea",
+            );
+            const deps = el("details");
+            deps.append(
+              el("summary", "", "Depends on… (" + phase.after.length + ")"),
+            );
+            for (const other of plan.items
+              .flatMap((i) => i.stages.map((s) => ({ item: i, stage: s })))
+              .filter((t) => t.stage.id !== phase.id)) {
+              const label = el("label", "dialog-choice"),
+                check = el("input");
+              check.type = "checkbox";
+              check.checked = phase.after.includes(other.stage.id);
+              label.append(
+                check,
+                document.createTextNode(
+                  other.item.name + " · " + other.stage.name,
+                ),
+              );
+              check.onchange = () => {
+                phase.after = phase.after.filter((id) => id !== other.stage.id);
+                if (check.checked) phase.after.push(other.stage.id);
+              };
+              deps.append(label);
+            }
+            section.append(deps);
+            for (const [key, label] of [
+              ["notify_start", "Remind me to begin"],
+              ["notify_end", "Remind me when finished"],
+            ]) {
+              const l = el("label", "dialog-choice"),
+                c = el("input");
+              c.type = "checkbox";
+              c.checked = phase[key];
+              c.onchange = () => (phase[key] = c.checked);
+              l.append(c, document.createTextNode(label));
+              section.append(l);
+            }
+            section.append(
+              button(
+                "Remove phase",
+                () => {
+                  item.stages = item.stages.filter((s) => s !== phase);
+                  for (const s of plan.items.flatMap((i) => i.stages))
+                    s.after = s.after.filter((id) => id !== phase.id);
+                  redraw();
+                },
+                "danger",
+              ),
+            );
+            block.append(section);
+          }
+          block.append(
+            button("Add phase", () => {
+              item.stages.push({
+                id: uuid(),
+                name: "",
+                duration_minutes: 30,
+                offset_minutes: 0,
+                wait_minutes: 0,
+                after: item.stages.length ? [item.stages.at(-1).id] : [],
+                check_every_minutes: 0,
+                notes: "",
+                notify_start: true,
+                notify_end: true,
+              });
+              redraw();
+            }),
+            button(
+              "Remove item",
+              () => {
+                const ids = item.stages.map((s) => s.id);
+                plan.items = plan.items.filter((i) => i !== item);
+                for (const s of plan.items.flatMap((i) => i.stages))
+                  s.after = s.after.filter((id) => !ids.includes(id));
+                redraw();
+              },
+              "danger",
+            ),
+          );
+          root.append(block);
+        }
+        root.append(
+          button("Add item", () => {
+            plan.items.push({ id: uuid(), name: "", notes: "", stages: [] });
+            redraw();
+          }),
+        );
+        const sounds = el("details");
+        sounds.append(el("summary", "", "Cooking reminders"));
+        const audioField = (label, choices, value, change) => {
+          const wrap = el("div", "cooking-field");
+          sounds.append(wrap);
+          const n = addField(wrap, select(label, choices, value));
+          n.onchange = () => change(n.value);
+          return n;
+        };
+        audioField(
+          "Delivery mode",
+          [
+            ["notification", "Notification"],
+            ["alarm", "Alarm"],
+          ],
+          plan.profile.alarm ? "alarm" : "notification",
+          (v) => {
+            plan.profile.alarm = v === "alarm";
+            plan.profile.untilDismissed = plan.profile.alarm;
+            plan.profile.duration = 0;
+            plan.profile.unmute = false;
+            plan.profile.notificationUnmute = false;
+            redraw();
+          },
+        );
+        audioField(
+          "Cooking sound",
+          Object.entries({
+            chime: "Chime",
+            bell: "Bell",
+            pulse: "Pulse",
+            marimba: "Marimba",
+            signal: "Signal",
+            crystal: "Crystal",
+            beacon: "Beacon",
+            orbit: "Orbit",
+            sunrise: "Sunrise",
+            siren: "Siren",
+            radar: "Radar",
+            klaxon: "Klaxon",
+          }),
+          plan.profile.sound,
+          (v) => (plan.profile.sound = v),
+        );
+        audioField(
+          "Cooking sound level",
+          [25, 50, 75, 100, 125, 150, 200].map((n) => [String(n), n + "%"]),
+          String((plan.profile.volume * plan.profile.gain) / 100),
+          (v) => {
+            plan.profile.volume = Math.min(100, +v);
+            plan.profile.gain = +v > 100 ? +v : 100;
+          },
+        );
+        if (plan.profile.alarm)
+          audioField(
+            "Cooking alarm duration",
+            [
+              ["dismiss", "Until dismissed"],
+              ["0", "Play once"],
+              ...[5, 10, 15, 30, 60].map((n) => [String(n), n + " seconds"]),
+            ],
+            plan.profile.untilDismissed
+              ? "dismiss"
+              : String(plan.profile.duration),
+            (v) => {
+              plan.profile.untilDismissed = v === "dismiss";
+              plan.profile.duration = v === "dismiss" ? 0 : +v;
+            },
+          );
+        sounds.append(
+          el(
+            "p",
+            "muted",
+            "Reminders inherit the meal’s recipients. Sound boost is limited by phone hardware volume and DND.",
+          ),
+        );
+        root.append(sounds);
+      };
+      redraw();
+    },
+  );
 }

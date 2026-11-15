@@ -8,6 +8,7 @@ mod enrollment;
 mod history;
 mod item_context;
 mod lists;
+mod meals;
 mod media;
 mod organization;
 mod planning;

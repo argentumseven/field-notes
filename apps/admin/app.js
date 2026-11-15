@@ -33,6 +33,64 @@ const state = {
   images: [],
   loading: false,
 };
+let suspendedEditor = null;
+const accountDrafts = new Map();
+function lockBrowserDrafts() {
+  if (!state.actor) return;
+  accountDrafts.set(state.actor.user_id, state.drafts);
+  state.drafts = new Map();
+  const dialog = $("#dialog"),
+    title = $("#dialog-body h2")?.textContent;
+  if (
+    dialog?.open &&
+    ["New event", "Edit event", "Preparation plan"].includes(title)
+  ) {
+    suspendedEditor = {
+      user: state.actor.user_id,
+      onclose: dialog.onclose,
+      dismiss: state.dismissDialog,
+    };
+    dialog.onclose = null;
+    dialog.close();
+  }
+}
+function unlockBrowserDrafts() {
+  state.drafts = accountDrafts.get(state.actor.user_id) || new Map();
+  const previous = suspendedEditor;
+  suspendedEditor = null;
+  if (previous) {
+    if (previous.user === state.actor.user_id) {
+      $("#dialog").onclose = previous.onclose;
+      $("#dialog").showModal();
+    } else previous.dismiss?.();
+  }
+}
+let lastBrowserActivity = Date.now();
+for (const event of ["pointerdown", "keydown", "wheel", "touchstart"])
+  document.addEventListener(
+    event,
+    () => {
+      lastBrowserActivity = Date.now();
+    },
+    { passive: true },
+  );
+setInterval(() => {
+  if (state.actor && Date.now() - lastBrowserActivity > 1800000) {
+    const username = state.actor.name;
+    lockBrowserDrafts();
+    void api("/logout", {}).catch(() => {});
+    state.actor = null;
+    state.csrf = "";
+    state.snapshot = null;
+    state.people = [];
+    closeDetail();
+    renderLogin({
+      username,
+      message:
+        "Locked after 30 minutes without activity. Sign in to continue; open drafts are kept in this tab.",
+    });
+  }
+}, 10000);
 const uuid = () => crypto.randomUUID();
 function el(tag, cls = "", text = "") {
   const n = document.createElement(tag);
@@ -100,6 +158,7 @@ async function api(path, body, method, live = () => true) {
     h["Content-Type"] = "application/json";
     h["X-Field-CSRF"] = state.csrf;
   }
+  if (Date.now() - lastBrowserActivity < 60000) h["X-Field-Activity"] = "1";
   const clockStart = Date.now(),
     clockTick = performance.now();
   let r;
@@ -121,6 +180,7 @@ async function api(path, body, method, live = () => true) {
   if (!r.ok) {
     if (r.status === 401 && state.actor && path !== "/reauth") {
       const username = state.actor.name;
+      lockBrowserDrafts();
       state.actor = null;
       state.csrf = "";
       state.snapshot = null;
@@ -225,7 +285,7 @@ function brand() {
 function renderLogin({ username = "", message = "" } = {}) {
   FieldRecovery.changed();
   FieldHistory.leave();
-  state.dismissDialog?.();
+  if (!suspendedEditor) state.dismissDialog?.();
   state.elevatedUntil = 0;
   $("#app").replaceChildren();
   const wrap = el("div", "login"),
@@ -270,9 +330,11 @@ function renderLogin({ username = "", message = "" } = {}) {
         throw Error(
           "The browser did not retain the new session. Allow cookies for this HTTPS address, then sign in again.",
         );
+      lastBrowserActivity = Date.now();
       state.csrf = result.csrf;
       await refresh(result.actor);
       render();
+      unlockBrowserDrafts();
     } catch (e) {
       state.csrf = "";
       error.textContent =
@@ -686,7 +748,7 @@ function renderWorkspace(viewKey) {
         mine: "Open work assigned to you, plus tasks you are working on.",
         unassigned: "Open tasks without a responsible person yet.",
         calendar: "Your calendar, on your server.",
-        meals: "What’s for dinner? Plan meals, prep and reminders.",
+        meals: "Meals, snacks, food occasions and preparation.",
         admin: "People, enrolled devices and server maintenance.",
         archive:
           "Encrypted copies, duplicate-safe imports and retained alternatives.",
@@ -1208,6 +1270,10 @@ function renderDetail() {
   const task = byId(state.selected);
   if (!task) {
     closeDetail();
+    return;
+  }
+  if (task.kind === "event" && task.data.meal_kind) {
+    renderMealDetail(task);
     return;
   }
   if (task.kind === "note") {

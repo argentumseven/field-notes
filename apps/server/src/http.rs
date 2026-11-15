@@ -144,7 +144,20 @@ async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> R
     }
     if !app.device && path.starts_with("/api/") && path != "/api/login" && !bootstrap {
         if let Ok(token) = credential(request.headers(), false) {
-            if let Err(error) = blocking(app.clone(), move |s| s.authorize_browser(&token)).await {
+            let cookie_only = !request.headers().contains_key("authorization");
+            let active = request
+                .headers()
+                .get("x-field-activity")
+                .is_some_and(|v| v == "1");
+            if let Err(error) = blocking(app.clone(), move |s| {
+                s.authorize_browser(&token)?;
+                if cookie_only {
+                    s.browser_activity(&token, active)?;
+                }
+                Ok(())
+            })
+            .await
+            {
                 return error.into_response();
             }
         }
@@ -220,7 +233,7 @@ async fn login(
     let device = app.device;
     let bound = device && app.bind_devices;
     let dev = app.dev;
-    let (token, actor) = blocking(app, move |s| {
+    let (token, actor) = blocking(app.clone(), move |s| {
         if bound {
             s.login_enrolled(&input.name, &input.password, &input.device, addr.ip())
         } else {
@@ -228,6 +241,10 @@ async fn login(
         }
     })
     .await?;
+    if !device {
+        let saved = token.clone();
+        blocking(app.clone(), move |s| s.begin_browser(&saved)).await?;
+    }
     let mut response = Json(if device {
         json!({"actor":actor,"token":token})
     } else {
@@ -238,7 +255,7 @@ async fn login(
         response.headers_mut().insert(
             "set-cookie",
             HeaderValue::from_str(&format!(
-                "field_session={token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=2592000{}",
+                "field_session={token}; HttpOnly; Path=/; SameSite=Strict{}",
                 if dev { "" } else { "; Secure" }
             ))
             .map_err(|_| Fault(500, "Session failed".into()))?,
@@ -981,6 +998,15 @@ pub fn router(app: App) -> Router {
                 }),
             )
             .route(
+                "/cooking.js",
+                get(|| async {
+                    (
+                        [("content-type", "text/javascript; charset=utf-8")],
+                        include_str!("../../admin/cooking.js"),
+                    )
+                }),
+            )
+            .route(
                 "/recurrence.js",
                 get(|| async {
                     (
@@ -988,6 +1014,17 @@ pub fn router(app: App) -> Router {
                         include_str!("../../admin/recurrence.js"),
                     )
                 }),
+            )
+            .route(
+                "/sounds/v2/{name}",
+                get(
+                    |axum::extract::Path(name): axum::extract::Path<String>| async move {
+                        match crate::sounds::lossless(&name) {
+                            Some(b) => ([("content-type", "audio/flac")], b).into_response(),
+                            None => StatusCode::NOT_FOUND.into_response(),
+                        }
+                    },
+                ),
             )
             .route(
                 "/sounds/v1/{name}",

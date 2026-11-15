@@ -445,6 +445,8 @@ impl Store {
             "starts_at",
             "ends_at",
             "recurrence",
+            "meal_kind",
+            "meal_plan",
             "remind_at",
             "on_radar",
             "reminders",

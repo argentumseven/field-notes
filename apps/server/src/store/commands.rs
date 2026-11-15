@@ -396,6 +396,12 @@ impl Store {
                 )?;
                 record.data = json!({"task_id":tid,"name":text(&c.data,"name",180)?,"author":actor.name,"author_id":actor.user_id,"width":normalized.width,"height":normalized.height,"size":normalized.bytes.len(),"original_sha256":crypto::digest(&bytes),"created_at":now()});
             }
+            "event.meal_clear" => {
+                self.cooking_clear(c, &mut record, &actor)?;
+            }
+            "event.meal_stage" => {
+                self.cooking_progress(c, &mut record, &actor)?;
+            }
             "event.create" | "event.update" => {
                 if record.kind != "event" {
                     return fail(400, "Expected a calendar event");

@@ -1739,3 +1739,30 @@ bytes, stable installation identity/ports, encrypted-backup admission, readiness
 rollback, corrupt/incompatible bundles, signer changes and scoped historical
 image ownership. They do **not** establish privileged Debian/Ubuntu/systemd/kernel
 upgrade behavior. See [UPDATES.md](UPDATES.md) for the operator path and limits.
+
+## 0.11.10 food preparation, sessions and audio validation — 2026-11-15
+
+Automated checks: 173 Kotlin host tests, including 13 Compose interaction tests;
+134 full API tests; 43 full Chromium browser tests; 21 Rust tests; and 134 Python
+installation/upgrade/artifact tests. Android debug and instrumentation Kotlin
+compilation and release lint passed. Final focused browser checks cover arbitrary
+birthday-cake and snack names, zero-duration packing, dependencies, ready times,
+layout at 390/1245 px, calendar options and retained editor text across idle lock.
+Audio tests cover v3/legacy projection, old-writer fences, persistence and portable
+imports. The source generator's 168 lossless clips were independently decoded
+and compared to every original PCM sample; v1 WAV bytes remain unchanged.
+
+Food and phase names are free-form, with generic Food or occasion / Prep session
+scheduling choices. Backward timing, forward propagation of actual progress,
+loop/bounds validation, per-occurrence progress, old-editor schedule protection,
+restart, replay and duplicate-safe content transfer are covered. A DST-fold test
+refuses progress for an occurrence that the calendar does not generate. The
+upgrader admits 0.11.10 recovery while retaining same-version/downgrade refusal.
+
+Native captures use the headless Compose host renderer, not a physical phone.
+No emulator/KVM or GrapheneOS phone is attached. Actual speaker loudness, Android
+FLAC decoding, long alarm dismissal, notification/DND behavior and privileged
+Debian/systemd upgrade behavior remain unrun on physical devices. A non-destructive
+Android instrumentation test prepares every tone/boost through MediaPlayer.
+Pairing, signing identity, schema 2/protocol 1 and saved reminder defaults are
+preserved. Signed/public artifact verification is recorded after publication.

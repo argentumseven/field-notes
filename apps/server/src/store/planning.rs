@@ -63,6 +63,7 @@ impl Store {
                 "notes",
                 "location",
                 "meal_kind",
+                "meal_plan",
                 "all_day",
                 "start_date",
                 "end_date",
@@ -94,6 +95,14 @@ impl Store {
         {
             return fail(409,"This is a repeating series. Use the current app or website to change its schedule; your edit was not applied");
         }
+        if record.data.get("meal_plan").is_some()
+            && data.get("meal_plan").is_none()
+            && ["starts_at", "ends_at", "all_day", "recurrence", "meal_kind"]
+                .iter()
+                .any(|k| data.get(*k).is_some_and(|v| record.data.get(*k) != Some(v)))
+        {
+            return fail(409,"This meal has a cooking plan. Update the app or website before changing its schedule");
+        }
         if record.revision == 0 {
             record.data = json!({"author_id":actor.user_id,"created_at":now(),"notes":""});
         }
@@ -109,7 +118,7 @@ impl Store {
         for (key, value) in data.as_object().unwrap() {
             // Preserve the old audience until recipient validation can tell
             // historical disabled accounts from newly selected ones.
-            if key != "reminder_options" && key != "category_override" {
+            if key != "meal_plan" && key != "reminder_options" && key != "category_override" {
                 record.data[key] = value.clone();
             }
         }
@@ -171,6 +180,16 @@ impl Store {
             record.data["ends_at"] = if end == 0 { Value::Null } else { json!(end) };
             record.data["start_date"] = json!("");
             record.data["end_date"] = json!("");
+        }
+        self.cooking_plan(data, record, importing)?;
+        if record.data.get("meal_plan").is_some()
+            && (!matches!(record.data["meal_kind"].as_str(), Some("dinner" | "prep"))
+                || record.data["all_day"] == true)
+        {
+            return fail(
+                400,
+                "Remove the cooking plan before changing to an all-day or regular event",
+            );
         }
         Self::reminders(data, record)?;
         Self::recurrence(data, record)?;

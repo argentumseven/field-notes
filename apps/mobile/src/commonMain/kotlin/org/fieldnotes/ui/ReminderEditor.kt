@@ -18,8 +18,8 @@ import kotlinx.datetime.*
 import kotlinx.coroutines.launch
 import org.fieldnotes.domain.*
 
-internal data class ReminderEditorSettings(val options:ReminderOptions=ReminderOptions(),val people:List<HouseholdPerson> = emptyList(),val user:String="",val advanced:Boolean=false,val assigned:Boolean=false,val allowLoud:Boolean=false,val enableLoud:()->Unit={},val changed:(ReminderOptions)->Unit={},val calendarTiming:Boolean=false,val dayTiming:Boolean=false,val flat:Boolean=false,val audioV2:Boolean=false,val allowNotification:Boolean=false,val enableNotification:()->Unit={},val testSound:(AlertProfile)->Unit={},val stopSound:()->Unit={},val intervalTiming:Boolean=false,val anchored:Boolean=true,val afterTiming:Boolean=false)
-internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options:ReminderOptions,assigned:Boolean=false,device:DeviceActions=DeviceActions(),changed:(ReminderOptions)->Unit)=ReminderEditorSettings(options,state.cache.people,state.cache.snapshot!!.actor.user_id,state.cache.supportsRemindersV2(),assigned,state.cache.preferences.allowAlarmVolumeOverride,{model.launch { model.preferences{it.copy(allowAlarmVolumeOverride=true)} }},changed,calendarTiming=state.cache.supportsReminderTiming(),dayTiming=state.cache.supportsReminderSchedule(),audioV2=state.cache.supportsReminderAudio(),allowNotification=state.cache.preferences.allowNotificationVolumeOverride,enableNotification={model.launch{model.preferences{it.copy(allowNotificationVolumeOverride=true)}}},testSound=device.testReminderSound,stopSound=device.stopAlarm,intervalTiming=state.cache.supportsReminderInterval(),afterTiming=state.cache.supportsReminderAfter())
+internal data class ReminderEditorSettings(val options:ReminderOptions=ReminderOptions(),val people:List<HouseholdPerson> = emptyList(),val user:String="",val advanced:Boolean=false,val assigned:Boolean=false,val allowLoud:Boolean=false,val enableLoud:()->Unit={},val changed:(ReminderOptions)->Unit={},val calendarTiming:Boolean=false,val dayTiming:Boolean=false,val flat:Boolean=false,val audioV2:Boolean=false,val allowNotification:Boolean=false,val enableNotification:()->Unit={},val testSound:(AlertProfile)->Unit={},val stopSound:()->Unit={},val intervalTiming:Boolean=false,val anchored:Boolean=true,val afterTiming:Boolean=false,val audioV3:Boolean=false)
+internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options:ReminderOptions,assigned:Boolean=false,device:DeviceActions=DeviceActions(),changed:(ReminderOptions)->Unit)=ReminderEditorSettings(options,state.cache.people,state.cache.snapshot!!.actor.user_id,state.cache.supportsRemindersV2(),assigned,state.cache.preferences.allowAlarmVolumeOverride,{model.launch { model.preferences{it.copy(allowAlarmVolumeOverride=true)} }},changed,calendarTiming=state.cache.supportsReminderTiming(),dayTiming=state.cache.supportsReminderSchedule(),audioV2=state.cache.supportsReminderAudio(),allowNotification=state.cache.preferences.allowNotificationVolumeOverride,enableNotification={model.launch{model.preferences{it.copy(allowNotificationVolumeOverride=true)}}},testSound=device.testReminderSound,stopSound=device.stopAlarm,intervalTiming=state.cache.supportsReminderInterval(),afterTiming=state.cache.supportsReminderAfter(),audioV3=state.cache.supportsAudioV3())
 @Composable internal fun ReminderEditor(value:ReminderSet,day:LocalDate,newId:()->String,use24Hour:Boolean=false,preview:(AlertProfile)->Unit={},settings:ReminderEditorSettings=ReminderEditorSettings(),changed:(ReminderSet)->Unit) {
     val emit:(ReminderSet)->Unit={changed(if(settings.afterTiming)it.copy(timing_version=4)else if(settings.intervalTiming)it.copy(timing_version=3)else if(settings.dayTiming)it.copy(timing_version=2)else if(settings.calendarTiming)it.copy(timing_version=1)else it)}
     var editingTime by remember {mutableStateOf<ReminderAlert?>(null)}
@@ -43,11 +43,11 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                 SecondaryButton(onClick={emit(value.copy(alerts=value.alerts.filterNot { it.id==rule.id }))}){Text("Remove")}
             } } }
             if(settings.anchored)Box { SecondaryButton(onClick={addMenu=true},enabled=value.alerts.size<8){Text("Add reminder")};DropdownMenu(addMenu,{addMenu=false}) {
-                for(minutes in listOf(0,5,10,15,30,60,120,1440,2880,4320,10080,20160,30240,40320))DropdownMenuItem(text={Text(reminderTimeLabel(ReminderAlert("preview",minutes)))},onClick={emit(value.copy(alerts=value.alerts+ReminderAlert(newId(),minutes)));addMenu=false})
-                DropdownMenuItem(text={Text("Custom time…")},onClick={editingTime=ReminderAlert(newId());newTime=true;addMenu=false})
+                for(minutes in listOf(0,5,10,15,30,60,120,1440,2880,4320,10080,20160,30240,40320))DropdownMenuItem(text={Text(reminderTimeLabel(ReminderAlert("preview",minutes)))},onClick={emit(value.copy(alerts=value.alerts+ReminderAlert(newId(),minutes,volume=100)));addMenu=false})
+                DropdownMenuItem(text={Text("Custom time…")},onClick={editingTime=ReminderAlert(newId(),volume=100);newTime=true;addMenu=false})
             } }
             if(settings.intervalTiming) {
-                Row(verticalAlignment=Alignment.CenterVertically){Switch(value.interval!=null,{enabled->emit(value.copy(interval=if(enabled)ReminderInterval(newId(),anchor_at=Clock.System.now().epochSeconds,zone=TimeZone.currentSystemDefault().id)else null,repeat=if(enabled)null else value.repeat))},modifier=Modifier.semantics{contentDescription="Repeat every interval"});Text("Repeat every",Modifier.padding(start=8.dp))}
+                Row(verticalAlignment=Alignment.CenterVertically){Switch(value.interval!=null,{enabled->emit(value.copy(interval=if(enabled)ReminderInterval(newId(),volume=100,anchor_at=Clock.System.now().epochSeconds,zone=TimeZone.currentSystemDefault().id)else null,repeat=if(enabled)null else value.repeat))},modifier=Modifier.semantics{contentDescription="Repeat every interval"});Text("Repeat every",Modifier.padding(start=8.dp))}
                 value.interval?.let {rule->
                     var amount by rememberSaveable(rule.id,rule.unit){mutableStateOf(rule.amount.toString())}
                     OutlinedTextField(amount,{amount=it.take(7);emit(value.copy(interval=rule.copy(amount=it.toIntOrNull() ?: 0)))},label={Text("Repeat interval")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
@@ -57,7 +57,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                     SecondaryButton(onClick={soundFor=rule.id}){Text("Repeating nudge sound & importance")}
                 }
             } else if(!settings.anchored)Text("Update the paired server to use repeat intervals. Existing time windows remain available.",style=MaterialTheme.typography.bodySmall)
-            Row(verticalAlignment=Alignment.CenterVertically) { Switch(value.repeat!=null,{checked -> emit(value.copy(repeat=if(checked) ReminderWindow(newId(),starts_on=day.toString(),zone=TimeZone.currentSystemDefault().id) else null,interval=if(checked)null else value.interval)) },modifier=Modifier.semantics {contentDescription="Repeat during a time window"});Text("Repeat during a time window",Modifier.padding(start=8.dp)) }
+            Row(verticalAlignment=Alignment.CenterVertically) { Switch(value.repeat!=null,{checked -> emit(value.copy(repeat=if(checked) ReminderWindow(newId(),volume=100,starts_on=day.toString(),zone=TimeZone.currentSystemDefault().id) else null,interval=if(checked)null else value.interval)) },modifier=Modifier.semantics {contentDescription="Repeat during a time window"});Text("Repeat during a time window",Modifier.padding(start=8.dp)) }
             value.repeat?.let { rule ->
                 Text("These are reminders, not blocks of occupied calendar time.",style=MaterialTheme.typography.bodySmall)
                 DateField("First reminder day",rule.starts_on,clearable=false){emit(value.copy(repeat=rule.copy(starts_on=it)))}
@@ -92,7 +92,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
         val profile=base?.let { settings.options.playback[id]?.applyTo(it) ?: it }
         if(profile!=null) SoundProfileDialog(profile,preview,settings,{soundFor=null}) { p ->
             emit(if(alert!=null)value.copy(alerts=value.alerts.map { if(it.id==id)it.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate) else it }) else if(rule!=null)value.copy(repeat=rule.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate)) else value.copy(interval=interval!!.copy(importance=p.importance,sound=legacyTone(p.sound),volume=p.volume,vibrate=p.vibrate)))
-            if(settings.advanced)settings.changed(prunedReminderOptions(settings.options,value).copy(playback=prunedReminderOptions(settings.options,value).playback+(id to playbackOptions(p)),playback_version=if(settings.audioV2)2 else settings.options.playback_version))
+            if(settings.advanced)settings.changed(prunedReminderOptions(settings.options,value).copy(playback=prunedReminderOptions(settings.options,value).playback+(id to playbackOptions(p)),playback_version=if(settings.audioV3)3 else if(settings.audioV2)2 else settings.options.playback_version))
             soundFor=null
         }
     }
@@ -115,27 +115,28 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
     }
     if(audience.mode=="people"&&audience.people.isEmpty())Text("Choose at least one person.",color=MaterialTheme.colorScheme.error)
 }
-@Composable private fun SoundProfileDialog(initial:AlertProfile,preview:(AlertProfile)->Unit,settings:ReminderEditorSettings,close:()->Unit,save:(AlertProfile)->Unit) {
+@Composable internal fun SoundProfileDialog(initial:AlertProfile,preview:(AlertProfile)->Unit,settings:ReminderEditorSettings,close:()->Unit,save:(AlertProfile)->Unit) {
     var p by remember { mutableStateOf(initial) }
     EditorDialog(onDismissRequest=close,title={Text("Sound & importance")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Importance")
-        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf("quiet","normal","urgent"))FilterChip(p.importance==level,{p=p.copy(importance=level,alarm=if(level=="quiet")false else p.alarm,unmute=if(level=="quiet")false else p.unmute,notificationUnmute=if(level=="quiet")false else p.notificationUnmute)},{Text(level.replaceFirstChar { it.uppercase() })})}
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf("quiet","normal","urgent"))FilterChip(p.importance==level,{p=p.copy(importance=level,alarm=if(level=="quiet")false else p.alarm,untilDismissed=if(level=="quiet")false else p.untilDismissed,unmute=if(level=="quiet")false else p.unmute,notificationUnmute=if(level=="quiet")false else p.notificationUnmute)},{Text(level.replaceFirstChar { it.uppercase() })})}
         if(p.importance!="quiet") {
             if(settings.advanced) {
                 Text("Delivery mode",style=MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    FilterChip(!p.alarm,{p=p.withDeliveryMode(false)},{Text("Notification")})
-                    FilterChip(p.alarm,{p=p.withDeliveryMode(true)},{Text("Alarm")})
+                    FilterChip(!p.alarm,{p=p.withDeliveryMode(false,settings.audioV3)},{Text("Notification")})
+                    FilterChip(p.alarm,{p=p.withDeliveryMode(true,settings.audioV3)},{Text("Alarm")})
                 }
             }
-            Text(if(p.alarm)(if(p.duration==0)"Alarm · plays once and shows on screen with Stop" else "Alarm · rings for the chosen time or until you press Stop, and shows on screen") else "Notification sound · one short sound")
-            val choices=if(p.alarm)alarmTones else notificationTones.filterKeys{settings.advanced||it in setOf("chime","bell","pulse")}
+            Text(if(p.alarm)(if(p.untilDismissed)"Alarm · rings until you dismiss it"else if(p.duration==0)"Alarm · plays once and shows on screen with Stop" else "Alarm · rings for the chosen time or until you press Stop, and shows on screen") else "Notification sound · one short sound")
+            val choices=(if(p.alarm)alarmTones else notificationTones.filterKeys{settings.advanced||it in setOf("chime","bell","pulse")}).filterKeys{settings.audioV3||it !in setOf("signal","crystal","radar","klaxon")}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for((tone,name) in choices)FilterChip(p.sound==tone,{p=p.copy(sound=tone)},{Text(name)})}
             if(p.sound !in choices)Text("Saved sound: ${reminderTones[p.sound] ?: p.sound}. Kept until you choose a replacement.",style=MaterialTheme.typography.bodySmall)
             if(settings.advanced) {
                 if(p.alarm) {
                     Text("Ring for")
-                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(seconds in listOf(0,5,10,15,30,60))FilterChip(p.duration==seconds,{p=p.copy(duration=seconds)},{Text(if(seconds==0)"Play once" else "$seconds s")})}
+                    if(settings.audioV3)FilterChip(p.untilDismissed,{p=p.copy(untilDismissed=true,duration=0)},{Text("Until dismissed")})
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(seconds in listOf(0,5,10,15,30,60))FilterChip(!p.untilDismissed&&p.duration==seconds,{p=p.copy(duration=seconds,untilDismissed=false)},{Text(if(seconds==0)"Play once" else "$seconds s")})}
                     Row(verticalAlignment=Alignment.CenterVertically){Switch(p.unmute,{p=p.copy(unmute=it)},modifier=Modifier.semantics {contentDescription="Temporarily raise alarm volume"});Text("Temporarily raise alarm volume",Modifier.padding(start=8.dp))}
                     if(p.unmute) {
                         Text("Alarm volume · ${p.alarmVolume}%")
@@ -153,7 +154,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                 Text("Restores the previous volume afterward. Later manual changes take priority. Silent, Vibrate and DND remain under Android control.",style=MaterialTheme.typography.bodySmall)
             }
             Text(if(p.alarm)"Sound level · relative to alarm volume" else "Sound level · relative to notification volume")
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in listOf(25,50,75,100))FilterChip(p.volume==level,{p=p.copy(volume=level)},{Text("$level%")})}
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in (if(settings.audioV3)listOf(25,50,75,100,125,150,200)else listOf(25,50,75,100)))FilterChip(p.volume*p.gain/100==level,{p=p.copy(volume=level.coerceAtMost(100),gain=if(level>100)level else 100)},{Text("$level%")})}
             Row(verticalAlignment=Alignment.CenterVertically){Switch(p.vibrate,{p=p.copy(vibrate=it)},modifier=Modifier.semantics {contentDescription="Vibration"});Text("Vibration",Modifier.padding(start=8.dp))}
             SecondaryButton(onClick={preview(p)}){Text("Preview sound")}
             if(settings.advanced) {
@@ -161,6 +162,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                 SecondaryButton(onClick={preview(p.copy(importance="quiet"));settings.stopSound()}){Text("Stop sound and restore volume")}
             }
         }
+        Text("100% is the new nominal level. Boost up to 200% increases the audio signal with limiting; Android’s hardware volume and DND still apply.")
         Text("Alarm mode uses Android’s alarm audio stream. Preview uses the current volume. DND exceptions remain in Android Settings; profile forwarding uses the receiving profile’s channel.",style=MaterialTheme.typography.bodySmall)
     }},confirmButton={Button(shape=ControlShape,onClick={save(p)}){Text("Done")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }

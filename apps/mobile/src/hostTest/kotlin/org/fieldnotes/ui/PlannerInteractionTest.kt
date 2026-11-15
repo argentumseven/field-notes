@@ -125,6 +125,8 @@ class PlannerInteractionTest {
         val meal=Record("dinner","event",1,obj("title" to "Dinner to hide".j(),"meal_kind" to "dinner".j(),"starts_at" to 1794765600L.j()))
         setContent {FieldNotesTheme {Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)){PlannerCalendar(listOf(VisibleRecord(meal,false)),LocalDate(2026,11,15),kotlinx.datetime.TimeZone.UTC,"2026-11-15",{},{},{},"Month",{},showMeals=show,mealChange={show=it})}}}
         onNodeWithText("Dinner to hide",substring=true).assertDoesNotExist()
+        onNodeWithTag("calendar-content").performScrollToNode(hasText("Calendar options",substring=true))
+        onNodeWithText("Calendar options",substring=true).performClick()
         onNodeWithTag("calendar-content").performScrollToNode(hasContentDescription("Show meals in calendar"))
         onNodeWithContentDescription("Show meals in calendar").performTouchInput{click()}
         onNodeWithTag("calendar-content").performScrollToNode(hasText("Dinner to hide",substring=true))
@@ -143,6 +145,42 @@ class PlannerInteractionTest {
         }finally{h.scope.cancel()}
     }
 
+
+    @Test fun freeFormCookingFieldsSaveACompleteOfflinePlanWithoutReplacingTheMeal()=runSkikoComposeUiTest(size=Size(390f,760f)){
+        val meal=Record("meal","event",1,obj("title" to "My dinner".j(),"meal_kind" to "dinner".j(),"notes" to "Keep these notes".j(),"author_id" to "owner".j(),"starts_at" to 1794765600L.j(),"ends_at" to JsonNull,"all_day" to JsonPrimitive(false)))
+        val h=UiWorkspace(meal);var closed=false
+        try{
+            setContent{FieldNotesTheme{CookingEditor(h.model,h.model.state.value,meal,DeviceActions()){closed=true}}}
+            onNodeWithText("Add item").performScrollTo().performClick()
+            onNodeWithText("Item name").performScrollTo().performTextInput("Anything I want")
+            onNodeWithText("Add phase").performScrollTo().performClick()
+            onNodeWithText("Phase name").performScrollTo().performTextInput("My first phase")
+            onNodeWithText("Duration (minutes)").performScrollTo().performTextReplacement("600")
+            onAllNodes(isRoot()).onLast().capture("free-form-cooking-fields")
+            onNodeWithText("Save preparation").performClick()
+            runOnIdle{assertTrue(closed);val c=h.vault.value.outbox.single().command;assertEquals("event.update",c.action);assertEquals("Keep these notes",c.data.text("notes"));val plan=WireJson.decodeFromJsonElement<CookingPlan>(c.data["meal_plan"]!!);assertEquals("Anything I want",plan.items.single().name);assertEquals("My first phase",plan.items.single().stages.single().name);assertEquals(600,plan.items.single().stages.single().duration_minutes);assertEquals(meal,h.vault.value.snapshot!!.records.single())}
+        }finally{h.scope.cancel()}
+    }
+
+
+    @Test fun modernAlarmsDefaultToDismissalAndSaveTwoHundredPercentSignal()=runSkikoComposeUiTest(size=Size(390f,760f)){
+        var result:AlertProfile?=null
+        setContent{FieldNotesTheme{SoundProfileDialog(AlertProfile(volume=100),{},ReminderEditorSettings(advanced=true,audioV2=true,audioV3=true),{},{result=it})}}
+        onNodeWithText("Alarm",useUnmergedTree=true).performClick()
+        onNodeWithText("Until dismissed").performScrollTo().assertIsSelected()
+        onNodeWithText("200%",useUnmergedTree=true).performScrollTo().performClick()
+        onNodeWithText("Done").performClick()
+        runOnIdle{assertTrue(result!!.alarm);assertTrue(result!!.untilDismissed);assertEquals(0,result!!.duration);assertEquals(100,result!!.volume);assertEquals(200,result!!.gain)}
+    }
+    @Test fun olderServersOfferTheirExistingSoundsAndTimedAlarms()=runSkikoComposeUiTest(size=Size(390f,760f)){
+        setContent{FieldNotesTheme{SoundProfileDialog(AlertProfile(),{},ReminderEditorSettings(advanced=true,audioV2=true),{},{})}}
+        onNodeWithText("Signal",useUnmergedTree=true).assertDoesNotExist()
+        onNodeWithText("Alarm",useUnmergedTree=true).performClick()
+        onNodeWithText("Radar",useUnmergedTree=true).assertDoesNotExist()
+        onNodeWithText("Until dismissed",useUnmergedTree=true).assertDoesNotExist()
+        onNodeWithText("5 s").performScrollTo().assertIsSelected()
+    }
+
 }
 
 private fun SemanticsNodeInteraction.capture(name:String) {
@@ -156,9 +194,9 @@ private class UiVault(var value:Cache):Vault {
     override suspend fun save(cache:Cache){value=WireJson.decodeFromString(WireJson.encodeToString(Cache.serializer(),cache))}
     override suspend fun clearImages(){}
 }
-private class UiWorkspace {
+private class UiWorkspace(initial:Record?=null) {
     val scope=CoroutineScope(SupervisorJob()+Dispatchers.Unconfined)
-    val vault=UiVault(Cache(keys=obj("private_key" to "synthetic".j()),token="token",snapshot=Snapshot(1,"epoch",1,1,listOf(Record("task","task",1,obj("title" to "Task priority".j(),"status" to "todo".j(),"priority" to 3.j()))),Actor("owner","Owner","owner","session"))))
+    val vault=UiVault(Cache(keys=obj("private_key" to "synthetic".j()),token="token",snapshot=Snapshot(1,"epoch",1,1,listOf(initial?:Record("task","task",1,obj("title" to "Task priority".j(),"status" to "todo".j(),"priority" to 3.j()))),Actor("owner","Owner","owner","session"))))
     private val transport=object:Transport {
         override suspend fun keys()=error("Existing identity must be retained")
         override suspend fun configure(configuration:JsonObject){}

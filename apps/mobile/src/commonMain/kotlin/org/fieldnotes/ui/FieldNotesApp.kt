@@ -157,6 +157,9 @@ import org.fieldnotes.domain.*
     var selected by rememberSaveable { mutableStateOf<String?>(null) }; var page by rememberSaveable { mutableStateOf(requestedPage?.takeIf{it in setOf("Focus","Tasks","Calendar","Assignments","Notes")} ?: "Calendar") }
     var calendarDay by rememberSaveable { mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()) }
     var calendarView by rememberSaveable { mutableStateOf("Day") }
+    var mealOccurrence by rememberSaveable{mutableStateOf(0L)}
+    var mealSchedule by rememberSaveable{mutableStateOf(false)}
+    var mealsView by rememberSaveable {mutableStateOf("Week")}
     var query by rememberSaveable { mutableStateOf("") }; var project by rememberSaveable { mutableStateOf<String?>(null) }
     var filterCategory by rememberSaveable{mutableStateOf("")};var filterPerson by rememberSaveable{mutableStateOf("*")};var filterStatus by rememberSaveable{mutableStateOf("all")};var filterPriority by rememberSaveable{mutableStateOf(0)};var sortTasks by rememberSaveable{mutableStateOf("smart")}
     var taskContainer by remember {mutableStateOf<String?>(null)}
@@ -178,7 +181,7 @@ import org.fieldnotes.domain.*
             if(state.cache.snapshot?.records?.find { it.id==selected }?.kind!="event")selected=null
         }
     }
-    LaunchedEffect(requestedRecord,navigationSequence){if(requestedRecord!=null){val row=projectRecords(state.cache).firstOrNull { it.record.id==requestedRecord }?.record;if(row?.kind in setOf("list","project")){project=requestedRecord;page="Tasks";selected=null}else if(row!=null)selected=requestedRecord}}
+    LaunchedEffect(requestedRecord,navigationSequence){if(requestedRecord!=null){val row=projectRecords(state.cache).firstOrNull { it.record.id==requestedRecord }?.record;if(row?.kind in setOf("list","project")){project=requestedRecord;page="Tasks";selected=null}else if(row!=null){selected=requestedRecord;mealSchedule=false;mealOccurrence=if(row.isMeal())requestedDate?.let{d->runCatching{val date=LocalDate.parse(d);eventInstances(row,date,date.plus(1,DateTimeUnit.DAY),TimeZone.currentSystemDefault()).firstOrNull()?.data?.number("starts_at")}.getOrNull()}?:0 else 0}}}
     var removeInstallation by remember { mutableStateOf(false) };var profileHelp by remember { mutableStateOf(false) }
     val rows = remember(state.cache) { projectRecords(state.cache) }; val projects = workspaceContainers(state.cache)
     val activeContainer=projects.firstOrNull {it.record.id==project}?.record
@@ -236,7 +239,8 @@ import org.fieldnotes.domain.*
         navigate(landing.page,landing.container)
         snackbar.showSnackbar(if(gone!=null)"“${gone.data.text("title")}” was removed" else "That project or list is no longer available")
     }
-    if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound,copyLocation=copy,device=device) { selected = null }
+    if(selected!=null&&current?.record?.isMeal()==true&&!mealSchedule)CookingMeal(model,state,current.record,mealOccurrence.takeIf{it>0}?:current.record.data.number("starts_at"),device,{mealSchedule=true},{selected=null;mealOccurrence=0})
+    else if (selected != null && current?.record?.kind == "event") EventEditor(model, state, current.record, today, device.use24Hour,device.previewSound,copyLocation=copy,device=device) { selected = null;mealSchedule=false;mealOccurrence=0 }
     if (selected != null && current?.record?.kind == "note") NoteEditor(model,state,current,{selected=null},device)
     else if (selected != null && current?.record?.kind == "task"&&referenceList==null) {
         TaskScreen(model,state,current,{selected=null},attach,image,device){cid->navigate("Tasks",cid)}
@@ -289,7 +293,8 @@ import org.fieldnotes.domain.*
             }
             if(!scrollingHeader&&page !in setOf("Calendar","Meals"))workspaceHeader()
             bodyStates.SaveableStateProvider(page+":"+project.orEmpty()) {
-            if (page in setOf("Calendar","Meals")) PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->newMealKind=if(page=="Meals")"dinner"else"";eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences{it.copy(federalHolidays=on)}}},header={workspaceHeader();if(page=="Meals"){Text("What’s for dinner?",style=MaterialTheme.typography.titleLarge);Text("Plan dinners and prep, reuse recipes, and add named reminders. Calendar visibility does not change reminders.");if(writable&&state.cache.supportsMeals())SecondaryButton(onClick={newMealKind="prep";eventStartClock=null;addEvent=true}){Text("Plan meal prep")};if(!state.cache.supportsMeals())Text("Update the server to plan meals.")}},newEvent=if(writable&&(page!="Meals"||state.cache.supportsMeals()))({newMealKind=if(page=="Meals")"dinner"else"";eventStartClock=null;addEvent=true})else null,mealsOnly=page=="Meals",showMeals=state.cache.preferences.calendarMeals,mealChange={on->model.launch{model.preferences{it.copy(calendarMeals=on)}}})
+            if(page=="Meals")MealsOverview(rows,calendarDay,mealsView,zone,{calendarDay=it},{mealsView=it},{id,at->selected=id;mealOccurrence=at;mealSchedule=false},{kind->newMealKind=kind;eventStartClock=null;addEvent=true},workspaceHeader,canCreate=writable&&state.cache.supportsMeals())
+            else if (page in setOf("Calendar","Meals")) PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->newMealKind=if(page=="Meals")"dinner"else"";eventStartClock=clock;addEvent=true}, { id->selected=id;mealSchedule=false;mealOccurrence=rows.find{it.record.id==id}?.record?.takeIf{it.isMeal()}?.let{eventInstances(it,LocalDate.parse(calendarDay),LocalDate.parse(calendarDay).plus(1,DateTimeUnit.DAY),zone).firstOrNull()?.data?.number("starts_at")}?:0 },if(page=="Meals")mealsView else calendarView,{if(page=="Meals")mealsView=it else calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences{it.copy(federalHolidays=on)}}},header={workspaceHeader();if(page=="Meals"){Text("Food plans",style=MaterialTheme.typography.titleLarge);Text("Plan foods and prep, reuse recipes, and add named reminders. Calendar visibility does not change reminders.");if(writable&&state.cache.supportsMeals())SecondaryButton(onClick={newMealKind="prep";eventStartClock=null;addEvent=true}){Text("Plan prep")};if(!state.cache.supportsMeals())Text("Update the server to plan meals.")}},newEvent=if(writable&&(page!="Meals"||state.cache.supportsMeals()))({newMealKind=if(page=="Meals")"dinner"else"";eventStartClock=null;addEvent=true})else null,mealsOnly=page=="Meals",showMeals=state.cache.preferences.calendarMeals,mealChange={on->model.launch{model.preferences{it.copy(calendarMeals=on)}}})
             else if(page=="History") HistoryScreen(model,state,device.use24Hour,historyTarget,historyTitle,{historyTarget=null;historyTitle=""}){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
             else if(page=="Assignments") {
                 OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(top=12.dp),label={Text("Find assigned work")},singleLine=true)

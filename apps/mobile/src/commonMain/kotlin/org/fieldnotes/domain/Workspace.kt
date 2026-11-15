@@ -551,6 +551,8 @@ class Workspace(
                 val c = item.command
                 val fence = when {
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
+                    (c.data.containsKey("meal_plan")||c.action.startsWith("event.meal_"))&&cache.compatibility?.features?.contains("meal-workflow-v1")!=true->"Update the server for cooking plans. Your edit is kept."
+                    (c.data["reminder_options"] as? JsonObject)?.number("playback_version")==3L&&!cache.supportsAudioV3()->"Update the server for these sound settings. Your edit is kept."
                     (c.data["reminder_options"] as? JsonObject)?.number("playback_version")==2L&&!cache.supportsReminderAudio()->"This saved edit needs the newer server’s sound controls. Update the server; the complete edit is kept."
                     c.data.containsKey("meal_kind")&&!cache.supportsMeals()->"This meal plan needs a newer server. Update the server; your edit is kept."
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
@@ -685,6 +687,7 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
                 continue
             }
             if (c.action.endsWith(".delete")) { rows.remove(c.target); rows.entries.removeAll { it.value.record.data.text("task_id") == c.target }; continue }
+            if(c.action=="event.meal_stage"){rows[c.target]=VisibleRecord(current.record.copy(data=cookingProgressData(d,c.data)),true);continue}
             val change = when (c.action) {
                 "task.update", "event.update", "note.update", "project.update", "list.update" -> c.data
                 "task.start" -> obj("status" to "in_progress".j(), "claimant" to (cache.snapshot?.actor?.user_id ?: "").j())
@@ -693,7 +696,8 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
                 else -> obj()
             }
             val base=if(change.containsKey("reminders"))JsonObject(d-setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules","reminder_interval_rules","reminder_after_rules"))else d
-            rows[c.target] = VisibleRecord(current.record.copy(data = JsonObject(base + change)), true)
+            val audioBase=if(change.containsKey("reminder_options"))JsonObject(base-"reminder_audio_options")else base
+            rows[c.target] = VisibleRecord(current.record.copy(data = JsonObject(audioBase + change)), true)
         }
     }
     return rows.values.toList()

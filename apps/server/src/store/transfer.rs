@@ -103,6 +103,7 @@ fn allowed(kind: &str) -> &'static [&'static str] {
             "notes",
             "location",
             "meal_kind",
+            "meal_plan",
             "category",
             "all_day",
             "start_date",
@@ -196,6 +197,9 @@ fn content(
     {
         data.insert("reminders".into(), rules.clone());
     }
+    if let Some(options) = record.data.get("reminder_audio_options") {
+        data.insert("reminder_options".into(), options.clone());
+    }
     // Preserve legacy assigned-task delivery, rather than turning an imported
     // personal task into a new Everyone reminder. An unassigned "assigned or
     // creator" reminder must keep its mapped original creator, not the importer.
@@ -263,8 +267,10 @@ fn content_types(record: &Record) -> Result<()> {
             "fields" => value
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string)),
-            "recurrence"
+            "meal_plan"
+            | "recurrence"
             | "reminder_rules"
+            | "reminder_audio_options"
             | "reminder_after_rules"
             | "reminder_interval_rules"
             | "reminder_schedule_rules"
@@ -316,6 +322,12 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
         if let Some(playback) = options.get_mut("playback").and_then(Value::as_object_mut) {
             for p in playback.values_mut() {
                 if let Some(p) = p.as_object_mut() {
+                    if p.get("gain_percent") == Some(&json!(100)) {
+                        p.remove("gain_percent");
+                    }
+                    if p.get("until_dismissed") == Some(&json!(false)) {
+                        p.remove("until_dismissed");
+                    }
                     if p.get("notification_unmute") == Some(&json!(false)) {
                         p.remove("notification_unmute");
                     }
@@ -446,6 +458,7 @@ impl Store {
                             | "size"
                             | "original_sha256"
                             | "reminder_rules"
+                            | "reminder_audio_options"
                             | "reminder_after_rules"
                             | "reminder_interval_rules"
                             | "reminder_schedule_rules"

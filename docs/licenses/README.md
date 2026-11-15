@@ -9,3 +9,11 @@ npm lockfile version, at `apps/admin/vendor/fflate-0.8.2.js`. Its accompanying
 license is `fflate-0.8.2-LICENSE.txt`. It runs locally; no CDN or remote archive
 service is used. Tasks.org, Vikunja and Super Productivity were reviewed for
 workflow ideas; their source code and artwork were not copied.
+
+
+Reminder audio is original deterministic synthesis from
+`tools/generate-reminder-tones.py`, with no sampled recordings. Current Android
+and web previews use lossless FLAC encoding; every generated clip is decoded and
+compared sample-for-sample by the generator. FFmpeg is a generation tool only
+and is not shipped in the app or server. The original v1 WAV preview files remain
+unchanged on the server for older open web pages.

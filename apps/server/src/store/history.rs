@@ -160,6 +160,8 @@ impl Store {
             "starts_at",
             "ends_at",
             "recurrence",
+            "meal_kind",
+            "meal_plan",
             "on_radar",
             "remind_at",
             "task_id",

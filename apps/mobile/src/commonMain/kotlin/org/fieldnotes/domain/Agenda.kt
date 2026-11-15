@@ -74,6 +74,7 @@ fun localAlerts(cache: Cache, now: Instant, zone: TimeZone, seen:Set<String> = e
     val sources=sequence {
         yieldAll(alerts)
         for(record in records)if(record.kind in setOf("event","task","note") && reminderRecipient(record,actor) && allowsItemReminders(cache,record) && (record.kind!="task" || record.data.text("status")!="done") && (record.kind!="note"||record.flag("on_radar"))) {
+            if(record.isMeal())yieldAll(cookingAlerts(record,now,zone))
             if(record.kind=="note"&&!record.data.containsKey("reminders")) {
                 val at=record.data.number("remind_at")
                 if(at>=now.epochSeconds-600&&at<horizon)yield(LocalAlert("note:${record.id}:$at",at,record.id,"note",sourceAt=at))

@@ -42,6 +42,7 @@ class AlarmPlaybackService:Service() {
                     val cache=if(state.ready)state.cache else app.vault.load()
                     val testing=intent?.action in setOf(TEST,TEST_SOUND)
                     if(!testing&&(cache.token==null||state.ready&&state.needsLogin))return@withLock
+                    val playbackAt=Clock.System.now()
                     val alerts=if(testing)emptyList() else localAlerts(cache,Clock.System.now(),TimeZone.currentSystemDefault()).filter { it.key in keys&&it.profile?.let{p->p.alarm||p.notificationUnmute}==true }
                     val profile=if(testing)if(intent?.action==TEST_SOUND)SyncJson.decodeFromString<AlertProfile>(intent.getStringExtra("sound_profile") ?: error("Missing sound profile")) else TEST_ALARM else alerts.firstOrNull()?.profile ?: return@withLock
                     if(profile.importance=="quiet")return@withLock
@@ -56,7 +57,7 @@ class AlarmPlaybackService:Service() {
                             val guard=launch {
                                 app.model.state.first { current ->
                                     current.ready && (current.needsLogin || current.cache.token!=cache.token || current.cache.snapshot?.basis!=cache.snapshot?.basis ||
-                                        localAlerts(current.cache,Clock.System.now(),TimeZone.currentSystemDefault()).none { it.key in keys&&it.profile?.let{p->p.alarm||p.notificationUnmute}==true })
+                                        localAlerts(current.cache,playbackAt,TimeZone.currentSystemDefault()).none { it.key in keys&&it.profile?.let{p->p.alarm||p.notificationUnmute}==true })
                                 }
                                 playing.cancel()
                             }
@@ -119,9 +120,9 @@ class AlarmPlaybackService:Service() {
         var vibrating=false
         val media=MediaPlayer();player=media
         try {
-            wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"fieldnotes:alarm-audio").also {it.setReferenceCounted(false);it.acquire((profile.duration.takeIf {it>0} ?: 20)*1000L+20_000)}
+            wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"fieldnotes:alarm-audio").also {it.setReferenceCounted(false);it.acquire(if(profile.untilDismissed)120_000 else (profile.duration.takeIf {it>0} ?: 20)*1000L+20_000)}
             media.setAudioAttributes(attributes);media.setDataSource(this,ReminderSounds.sound(this,profile))
-            media.isLooping=profile.alarm&&profile.duration>0
+            media.isLooping=profile.alarm&&(profile.untilDismissed||profile.duration>0)
             val completed=CompletableDeferred<Unit>()
             media.setOnCompletionListener {completed.complete(Unit)}
             media.setOnErrorListener {_,_,_->completed.completeExceptionally(IllegalStateException("Android could not decode this reminder sound. Choose another sound."));true}
@@ -141,7 +142,9 @@ class AlarmPlaybackService:Service() {
                 else if(audio.ringerMode!=AudioManager.RINGER_MODE_SILENT)vibrator.vibrate(VibrationEffect.createOneShot(250,VibrationEffect.DEFAULT_AMPLITUDE),attributes)
             }
             if(profile.alarm)ramp(media,0f,1f,if(profile.sound=="sunrise")SUNRISE_FADE_IN_MS else FADE_IN_MS)
-            if(profile.alarm&&profile.duration>0) {
+            if(profile.alarm&&profile.untilDismissed){
+                while(kotlin.coroutines.coroutineContext.isActive){delay(30_000);wake?.acquire(120_000)}
+            } else if(profile.alarm&&profile.duration>0) {
                 // Ring for the chosen time, ending on a short fade instead of a cut.
                 val total=profile.duration.coerceIn(5,60)*1000L
                 val hold=total-FADE_OUT_MS-(SystemClock.elapsedRealtime()-began)

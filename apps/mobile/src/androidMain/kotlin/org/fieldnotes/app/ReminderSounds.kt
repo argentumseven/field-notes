@@ -22,10 +22,11 @@ object ReminderSounds {
     fun channel(context:Context,profile:AlertProfile):String {
         val manager=context.getSystemService(NotificationManager::class.java)
         val quiet=profile.importance=="quiet"
-        val id=if(quiet)"fn-reminder-v1-quiet" else if(profile.alarm)ALARM_CHANNEL else "fn-reminder-v1-${profile.importance}-${profile.sound}-${profile.volume}-${profile.vibrate}"
+        val effective=(profile.volume*profile.gain/100).coerceIn(25,200)
+        val id=if(quiet)"fn-reminder-v1-quiet" else if(profile.alarm)ALARM_CHANNEL else "${if(profile.gain==100&&profile.sound !in setOf("signal","crystal","radar","klaxon"))"fn-reminder-v1"else"fn-reminder-v3"}-${profile.importance}-${profile.sound}-$effective-${profile.vibrate}"
         if(manager.getNotificationChannel(id)==null) {
             manager.createNotificationChannelGroup(NotificationChannelGroup("custom-reminders","Event and task reminders"))
-            val name=if(quiet)"Quiet reminders" else if(profile.alarm)"Alarms" else "${profile.importance.replaceFirstChar { it.uppercase() }} · ${profile.sound.replaceFirstChar { it.uppercase() }} · ${profile.volume}%"
+            val name=if(quiet)"Quiet reminders" else if(profile.alarm)"Alarms" else "${profile.importance.replaceFirstChar { it.uppercase() }} · ${profile.sound.replaceFirstChar { it.uppercase() }} · ${effective}%"
             val importance=if(quiet)NotificationManager.IMPORTANCE_LOW else if(profile.alarm||profile.importance=="urgent")NotificationManager.IMPORTANCE_HIGH else NotificationManager.IMPORTANCE_DEFAULT
             manager.createNotificationChannel(NotificationChannel(id,name,importance).apply {
                 group="custom-reminders";description=if(profile.alarm)"Alarms appear on screen with Stop and Open while Field Notes plays their chosen sound. Android alarm volume, DND and profile settings apply." else "Sound level is relative to this phone's notification volume. Android and profile settings remain in control."
@@ -39,9 +40,10 @@ object ReminderSounds {
     }
     internal fun sound(context:Context,p:AlertProfile):Uri {
         val prefix=if(p.alarm)"alarm"else"reminder"
-        val id=context.resources.getIdentifier("${prefix}_${p.sound}_${p.volume}","raw",context.packageName)
+        val level=listOf(25,50,75,100,125,150,200).minBy{kotlin.math.abs(it-p.volume*p.gain/100)}
+        val id=context.resources.getIdentifier("${prefix}_${p.sound}_${level}","raw",context.packageName)
         check(id!=0) { "Reminder sound is unavailable" }
-        return Uri.parse("android.resource://${context.packageName}/raw/${prefix}_${p.sound}_${p.volume}")
+        return Uri.parse("android.resource://${context.packageName}/raw/${prefix}_${p.sound}_${level}")
     }
     @Synchronized fun preview(context:Context,p:AlertProfile) {
         preview?.release();preview=null

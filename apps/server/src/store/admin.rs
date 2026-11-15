@@ -6,7 +6,7 @@ impl Store {
             return fail(403, "Administrator role required");
         }
         let users=self.db.prepare("SELECT id,name,role,active FROM users ORDER BY name")?.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"role":r.get::<_,String>(2)?,"active":r.get::<_,i64>(3)?==1})))?.collect::<std::result::Result<Vec<_>,_>>()?;
-        let sessions=self.db.prepare("SELECT s.id,u.name,s.name,s.created,s.expires FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.expires>? ORDER BY s.created DESC")?.query_map([now()],|r|Ok(json!({"id":r.get::<_,String>(0)?,"user":r.get::<_,String>(1)?,"device":r.get::<_,String>(2)?,"created":r.get::<_,i64>(3)?,"expires":r.get::<_,i64>(4)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let sessions=self.db.prepare("SELECT s.id,u.name,s.name,s.created,s.expires FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.expires>? ORDER BY s.created DESC")?.query_map([now()],|r|Ok(json!({"id":r.get::<_,String>(0)?,"user":r.get::<_,String>(1)?,"device":r.get::<_,String>(2)?.strip_prefix("browser-v2:").unwrap_or(&r.get::<_,String>(2)?).to_owned(),"created":r.get::<_,i64>(3)?,"expires":r.get::<_,i64>(4)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let audit=self.db.prepare("SELECT actor,action,target,at FROM audit ORDER BY seq DESC LIMIT 100")?.query_map([],|r|Ok(json!({"actor":r.get::<_,String>(0)?,"action":r.get::<_,String>(1)?,"target":r.get::<_,String>(2)?,"at":r.get::<_,i64>(3)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         let (epoch, generation, sequence) = self.meta()?;
         Ok(

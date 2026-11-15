@@ -2288,7 +2288,103 @@ textarea,
 }
 
 /* Clone fields wrap with the dialog rather than overlaying its content. */
-.clone-date { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; padding:12px 0; border-bottom:1px solid var(--border); }
-.clone-date > div { flex:1 1 120px; min-width:0; }
-.clone-date input { min-width:0; width:100%; box-sizing:border-box; }
-.clone-date > button { margin-left:auto; }
+.clone-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.clone-date > div {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.clone-date input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.clone-date > button {
+  margin-left: auto;
+}
+
+.event-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 24px 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.editor-tabs {
+  gap: 10px;
+  margin-block: 20px 12px;
+}
+
+.meal-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+  margin-top: 20px;
+  align-items: start;
+}
+.meal-day,
+.cooking-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.meal-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+  text-align: left;
+  white-space: normal;
+}
+.cooking-phase {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+}
+.cooking-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cooking-timing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+}
+.cooking-editor {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.cooking-item > button {
+  margin: 12px 10px 0 0;
+}
+.cooking-phase label,
+.cooking-item > label {
+  margin-top: 12px;
+}
+
+.cooking-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cooking-field input,
+.cooking-field select,
+.cooking-field textarea {
+  width: 100%;
+  min-width: 0;
+}

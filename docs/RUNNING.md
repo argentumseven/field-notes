@@ -398,3 +398,10 @@ Normal removal preserves root-only recovery data. Purge explicitly deletes the
 recorded data/configuration directories. Neither removes Docker, WireGuard tools,
 other applications or shared resources. See [UNINSTALL.md](UNINSTALL.md) for a later purge,
 legacy installations, custom paths and external router/phone cleanup.
+
+Browser content requires login. Web cookies now last for the browser session,
+with a 30-minute idle lock and 12-hour maximum session. Background refresh alone
+does not keep a session alive. Existing long-lived browser cookies require one
+new login after this update. Phone pairing and phone session renewal are
+unchanged. The LAN login shell and APK download page remain reachable before
+login; workspace data APIs enforce authentication.

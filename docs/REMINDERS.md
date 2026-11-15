@@ -263,3 +263,20 @@ The app credential lock, Android user unlocking and widget visibility are separa
 A hidden schedule can still sync encrypted content. Unlocking retries widget
 visibility without waiting for a new server snapshot; Refresh retries its own
 backoff immediately. A profile ended by Android cannot run workers or alarms.
+
+## Expanded sound controls
+
+New reminders start at 100% signal level; saved levels are preserved. Twelve
+original bundled tones include Signal, Crystal, Radar and Klaxon. Boost choices
+125%, 150% and 200% increase the audio signal using a soft limiter, within phone
+hardware volume. This cannot exceed a speaker's physical capability or override
+DND. Alarm/notification system-volume override still requires both the phone's
+separate opt-in and the reminder's opt-in, and restores the previous volume
+without replacing a later manual choice.
+
+Choosing Alarm on a new or changed reminder defaults to **Until dismissed**.
+Timed 5/10/15/30/60-second alarms and single-play remain available. Existing saved
+alarm durations are preserved. Notifications remain single-play. Stop/Open/swipe
+on the alarm card dismisses playback. New sound settings are projected into the
+older audio contract for older apps; changing those settings requires an updated
+editor. Android channel choices remain authoritative.

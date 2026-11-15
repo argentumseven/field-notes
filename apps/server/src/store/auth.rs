@@ -201,6 +201,32 @@ impl Store {
         Ok(())
     }
 
+    pub fn begin_browser(&self, token: &str) -> Result<()> {
+        let a = self.actor(token)?;
+        self.db.execute(
+            "UPDATE sessions SET name='browser-v2:'||name,expires=? WHERE id=?",
+            params![now() + 1800, a.session_id],
+        )?;
+        Ok(())
+    }
+    pub fn browser_activity(&self, token: &str, active: bool) -> Result<()> {
+        let a = self.actor(token)?;
+        let (name, created): (String, i64) = self.db.query_row(
+            "SELECT name,created FROM sessions WHERE id=?",
+            [&a.session_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if !name.starts_with("browser-v2:") || created + 43200 <= now() {
+            return fail(401, "Sign in to this browser again");
+        }
+        if active {
+            self.db.execute(
+                "UPDATE sessions SET expires=? WHERE id=?",
+                params![(now() + 1800).min(created + 43200), a.session_id],
+            )?;
+        }
+        Ok(())
+    }
     pub fn authorize_browser(&self, token: &str) -> Result<()> {
         let actor = self.actor(token)?;
         let enrolled: bool = self.db.query_row(

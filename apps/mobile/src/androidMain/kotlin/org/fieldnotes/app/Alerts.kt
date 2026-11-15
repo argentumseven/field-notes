@@ -56,12 +56,13 @@ object Alerts {
         return context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
     }
     fun allowed(context: Context, channel: String): Boolean = permissionAllowed(context)&&context.getSystemService(NotificationManager::class.java).getNotificationChannel(channel)?.importance != NotificationManager.IMPORTANCE_NONE
-    fun post(context: Context, channel: String, key: String, title: String, text: String, target:String?=null,details:String=text,whenAt:Long=0,alarm:Boolean=false,manualSound:Boolean=alarm): Boolean {
+    fun post(context: Context, channel: String, key: String, title: String, text: String, target:String?=null,details:String=text,whenAt:Long=0,alarm:Boolean=false,manualSound:Boolean=alarm,occurrenceAt:Long?=null): Boolean {
         channels(context)
         if (!allowed(context, channel)) return false
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .setData(Uri.parse("fieldnotes://notification/" + digest(key))).putExtra("open_record",target)
+        occurrenceAt?.let{intent.putExtra("open_date",Instant.fromEpochSeconds(it).toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())}
         if(channel==ISSUES||channel==SOFTWARE)intent.putExtra("open_page",if(channel==SOFTWARE)"Settings/UPDATES"else"Settings/REMINDERS")
         // Looking at a ringing reminder answers it: opening it also silences the sound.
         if(manualSound)intent.putExtra(STOP_ALARM_EXTRA,true)
@@ -231,7 +232,7 @@ object LocalAlarms {
             val channel=profile?.let { ReminderSounds.channel(context,it) } ?: Alerts.REMINDERS
             // Playback failure updates this same card; it cannot create a second alert.
             val notificationKey="$binding:"+keys.joinToString("|")
-            if(Alerts.post(context,channel,notificationKey,notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true,profile?.let{it.alarm||it.notificationUnmute}==true)) {
+            if(Alerts.post(context,channel,notificationKey,notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile?.alarm==true,profile?.let{it.alarm||it.notificationUnmute}==true,occurrenceAt=group.filter{it.key.startsWith("cook:")}.mapNotNull{it.sourceAt}.distinct().singleOrNull())) {
                 posted+=keys
                 if(profile?.let{it.alarm||it.notificationUnmute}==true&&!AlarmPlaybackService.start(context,keys,notificationKey))Alerts.post(context,channel,notificationKey,notice.title,"Audio playback needs attention · ${notice.summary}",notice.target,notice.details,notice.whenAt,false,false)
             } else app.deliveryError.value="A reminder channel or notification permission is blocked. Open Android notification settings."

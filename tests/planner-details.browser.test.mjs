@@ -56,14 +56,14 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
       await page
         .getByLabel("Reminder 1 alarm duration", { exact: true })
         .inputValue(),
-      "5",
+      "dismiss",
     );
     const sound = page.getByLabel("Reminder 1 sound", { exact: true });
     assert.deepEqual(
       await sound
         .locator("option")
         .evaluateAll((nodes) => nodes.map((n) => n.value)),
-      ["beacon", "orbit", "sunrise", "siren"],
+      ["beacon", "orbit", "sunrise", "siren", "radar", "klaxon"],
     );
     assert.equal(await sound.inputValue(), "beacon");
     const alarmAudio = await page.request.get(
@@ -85,7 +85,7 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
       await sound
         .locator("option")
         .evaluateAll((nodes) => nodes.map((n) => n.value)),
-      ["chime", "bell", "pulse", "marimba"],
+      ["chime", "bell", "pulse", "marimba", "signal", "crystal"],
     );
     assert.equal(await sound.inputValue(), "chime");
     await page

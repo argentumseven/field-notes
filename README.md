@@ -12,7 +12,7 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.11.9.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.11.10.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
@@ -43,6 +43,14 @@ Select a screenshot to see it at full size.
 
 ## Planner and administration
 
+- Meals opens in its own weekly overview. Free-form items and phases calculate
+  preparation backward from serving time through durations, waiting periods and
+  dependencies, with start/finish/check reminders and progress for each repeated
+  date. [Meal workflow](docs/MEALS.md).
+- New alarms default to dismissal, with timed alarms still available. Twelve
+  original tones and up to 200% signal boost retain Android volume/DND controls.
+  Browser sessions use an idle lock and session-only cookies.
+
 - Android task priority saves immediately. Calendar warnings and controls scroll
   with the page, Settings opens by category, and undated items can repeat reminders
   every chosen number of minutes through years. [Reminder and Settings guide](docs/REMINDERS.md).
@@ -67,12 +75,12 @@ Select a screenshot to see it at full size.
   tasks stay out of Focus. Each task explains its score. No artificial due dates.
 - Sunday-first calendars open first, with aligned day/week time blocks, a continuous month grid and local clock
   controls. End times are optional; start-only markers do not occupy time.
-  Multiple reminders support separate importance, eight sounds and relative volume.
+  Multiple reminders support separate importance, twelve sounds and relative volume.
   Custom reminder times use amounts in minutes, hours, days, weeks, months or
   years; calendar months/years handle month ends and leap years without rewriting
   existing reminders. All-day events support an explicit day-of or days/weeks-before clock time. Federal holidays are an optional offline display layer; adjacent-month cells are blank.
   Choose recipients per person or everyone, and optionally ring a longer alarm
-  with a five-second default. Alarm and notification volume have separate explicit phone and reminder opt-ins, with restoration that respects later manual changes.
+  until dismissed by default, or for a selected duration. Alarm and notification volume have separate explicit phone and reminder opt-ins, with restoration that respects later manual changes.
   Repeat events on selected weekdays, alternate days/weeks, custom intervals or individual dates, with skipped dates and yearly intervals. Repeat reminders within a chosen daily/weekly window, even without a due date. New items default to Everyone; existing personal choices are preserved.
 - Lists have grocery, online shopping, general and custom presets, with optional
   item categories appropriate to groceries, shopping, household,
