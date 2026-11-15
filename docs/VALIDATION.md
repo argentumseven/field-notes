@@ -1,13 +1,28 @@
 # Implementation and validation record
 
-## 0.11.7 delete navigation and visible alarms — prepared, not published
+## 0.11.7 delete navigation and visible alarms — 2026-11-14
 
-Version 0.11.7/code 26 is on `main` at `f2ec388`, and a development-signed APK was built
-from it. The `v0.11.7` tag push was refused with HTTP 403 for this session's GitHub access, and
-the public release APK must be signed with the stable operator key, which is not available in
-this environment. Nothing is tagged, published or deployed, so no public delivery, download hash
-or server bundle is claimed. Run before tagging: all 124 Node checks, 19 Rust tests and the
-planner-details browser test passed. No physical-phone check is claimed.
+Published and independently verified: [v0.11.7](https://github.com/argentumseven/field-notes/releases/tag/v0.11.7),
+source `aaba74c54f4960a0debd7c4439c6d8bc15506799`, Android code **26**, with the unchanged pinned
+public signing certificate. The clean tagged release APK is nondebuggable and
+ARM64. [Publication run 43657341928](https://github.com/argentumseven/field-notes/actions/runs/43657341928)
+succeeded. All four public assets match the local signed build byte for byte;
+actual APK signature/package/version/code, ARM64 and 16 KiB alignment checks pass.
+The latest-download URL offers the same metadata. APK SHA-256:
+`5ae654cc85aa2d6f17fc54bf52dcc3bb266a4a73d616944d6d6139bb86b2d6e4`.
+The packaged native library records this source commit with `vcs.modified=false`;
+the APK also contains the new Alarms channel and all 32 regenerated alarm clips.
+The private signing key stayed outside Git and every published artifact.
+
+The matching offline x86_64 Linux bundle is published on
+`server-bundles/v0.11.7`, artifact commit `c64decb839a14a1b7185ab02f97954e37cf130b2`,
+and linked from the README. The downloaded **98,206,676-byte** public bundle
+matches SHA-256 `ef7a3d94bdf126a6530d65cd3754a472be84223ada21bee8ad1ab86d0d977e6a` and contains the exact verified public APK.
+Both image IDs match the locally built tags. The app image's CLI check ran
+nonroot with a read-only root, no capabilities, no new privileges and no network.
+Recompressing the image archive preserved its complete uncompressed bytes;
+embedded and outer checksums were recalculated and verified. No installation,
+user content, pairing, keys or network settings on the user's host were changed.
 
 Changes: deleting a project or list from inside it returns to Projects, its parent
 project or Lists instead of a task view filtered to a missing id; a container removed
@@ -19,15 +34,19 @@ on screen; opening it silences the sound; the card settles without Stop afterwar
 alarm test posts the same card. Alarm clips are regenerated as whole, seamless phrases;
 playback eases in and out, raises volume while silent, and vibrates for the ring time.
 
-Automated, passed: 140 Kotlin host tests including the new landing-rule test, Android
-debug lint, compilation of the Android and instrumented-test sources, and the Rust sound tests,
-which now also check that every alarm clip is a whole number of phrases and joins its own
-start without a jump. Compiled but not run: the new instrumented test
-`alarmCardUsesOneHighImportanceSilentChannelAndSettlesWithoutStop` and the changed
-sound-length assertion, because no emulator is available in this environment. Not run:
-emulator and physical GrapheneOS checks of heads-up display, tap-to-silence, the audible
-fades and vibration, and the delete-navigation flow in the real UI. No lock-screen or
-screen-waking alarm activity exists yet.
+Release checks passed in the signing environment: **140 Kotlin host tests**,
+Android release compilation/lint, **19 Rust tests**, Rust formatting and Clippy
+with warnings as errors, **15 focused API checks**, **two Chromium planner
+workflows**, and **42 Python checks** (25 upgrade/recovery, seven publication,
+ten APK-artifact checks). Before handoff, all 124 Node checks were recorded as
+passing; the signing run repeated the focused planner/project coverage.
+
+Preparation also compiled the Android instrumented-test sources. Compiled but
+not run: `alarmCardUsesOneHighImportanceSilentChannelAndSettlesWithoutStop` and
+the changed sound-length assertion. Emulator and physical GrapheneOS checks of
+heads-up display, tap-to-silence, audible fades/vibration and delete navigation
+remain unrun. No lock-screen or screen-waking alarm activity exists yet. This
+publication does not claim physical-phone or home-server installation.
 
 ## 0.11.6 category workflows and safe portable recovery — 2026-11-11
 
