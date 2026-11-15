@@ -366,6 +366,13 @@ class Workspace(
         val prepared=prepareReminderSave(rules,previous,Clock.System.now().epochSeconds)
         return JsonObject(data+("reminders" to reminderData(prepared)))
     }
+    suspend fun enqueueEventCopies(copies:List<JsonObject>,basis:Basis) {
+        require(copies.size in 1..31)
+        update {c->val snap=checkNotNull(c.snapshot);check(snap.basis==basis){"The workspace changed. Reopen the clone dialog."};check(snap.actor.role!="viewer");check(c.outbox.size+c.conflicts.size+copies.size<=500){"Resolve retained changes first."}
+            val pending=copies.map{data->val id=newId();Pending(Command(newId(),basis.epoch,basis.generation,"event.create",id,null,reminderCommandData(c,id,data)))}
+            c.copy(outbox=c.outbox+pending)
+        }
+    }
     suspend fun enqueue(action: String, target: String, data: JsonObject, revision: Long?, basis: Basis? = null) {
         val snap = cache.snapshot ?: error("Sign in and synchronize first.")
         check(snap.actor.role != "viewer") { "Your role is read-only." }
@@ -545,9 +552,11 @@ class Workspace(
                 val fence = when {
                     c.epoch != fresh.epoch || c.generation != fresh.generation -> "Workspace reset or restored. The old draft was not uploaded."
                     (c.data["reminder_options"] as? JsonObject)?.number("playback_version")==2L&&!cache.supportsReminderAudio()->"This saved edit needs the newer server’s sound controls. Update the server; the complete edit is kept."
+                    c.data.containsKey("meal_kind")&&!cache.supportsMeals()->"This meal plan needs a newer server. Update the server; your edit is kept."
                     c.data.containsKey("reminder_options")&&!cache.supportsRemindersV2()->"This saved edit needs the newer server's reminder controls. Update the server or review the retained edit; nothing was discarded."
                     c.data.keys.any { it in setOf("recurrence","category","store","on_radar","remind_at","notify_additions","item_reminders") }&&!cache.supportsPlannerV3()->"This saved edit uses newer planner fields. Update the paired server; the complete edit is kept in Retained changes."
                     (c.data.containsKey("items_are_tasks")||c.action.startsWith("list.")&&c.data.containsKey("project_id")||c.action.startsWith("project.")&&c.data.keys.any{it in setOf("status","due","assignee")})&&!cache.supportsProjects()->"This saved edit needs the newer project/work-list server. Update the server; its complete content is kept."
+                    (c.data["reminders"] as? JsonObject)?.number("timing_version")==4L&&!cache.supportsReminderAfter()->"This saved edit needs after-start reminders. Update the server; your complete edit is kept."
                     (c.data["reminders"] as? JsonObject)?.number("timing_version")==3L&&!cache.supportsReminderInterval()->"This saved edit needs repeating intervals. Update the server; the complete edit is kept."
                     (c.data["reminders"] as? JsonObject)?.number("timing_version")==2L&&!cache.supportsReminderSchedule()->"This saved edit needs the newer server’s day-and-time reminders. Update the server; the complete edit is kept."
                     (c.data["reminders"] as? JsonObject)?.containsKey("timing_version")==true&&!cache.supportsReminderTiming()->"This saved edit needs the newer server’s custom reminder timing. Update the server; the complete edit is kept."
@@ -683,7 +692,7 @@ fun projectRecords(cache: Cache): List<VisibleRecord> {
                 "task.release", "task.reopen" -> obj("status" to "todo".j(), "claimant" to JsonNull)
                 else -> obj()
             }
-            val base=if(change.containsKey("reminders"))JsonObject(d-setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules","reminder_interval_rules"))else d
+            val base=if(change.containsKey("reminders"))JsonObject(d-setOf("reminder_rules","reminder_timing_rules","reminder_schedule_rules","reminder_interval_rules","reminder_after_rules"))else d
             rows[c.target] = VisibleRecord(current.record.copy(data = JsonObject(base + change)), true)
         }
     }

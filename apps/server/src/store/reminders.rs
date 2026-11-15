@@ -44,7 +44,7 @@ impl Store {
         fields(value, &["alerts", "repeat", "interval", "timing_version"])?;
         if value
             .get("timing_version")
-            .is_some_and(|v| !matches!(v.as_i64(), Some(1..=3)))
+            .is_some_and(|v| !matches!(v.as_i64(), Some(1..=4)))
         {
             return fail(400, "Unsupported reminder timing version");
         }
@@ -63,6 +63,8 @@ impl Store {
                     "minutes_before",
                     "lead_time",
                     "day_time",
+                    "after_start",
+                    "label",
                     "importance",
                     "sound",
                     "volume",
@@ -72,6 +74,7 @@ impl Store {
             profile(alert)?;
             super::reminder_timing::validate_lead(alert, &value["timing_version"])?;
             super::reminder_timing::validate_day_time(alert, &value["timing_version"])?;
+            super::reminder_timing::validate_after(alert, &value["timing_version"])?;
             if !ids.insert(alert["id"].as_str().unwrap())
                 || !alert["minutes_before"]
                     .as_i64()
@@ -157,7 +160,7 @@ impl Store {
                 ],
             )?;
             profile(rule)?;
-            if value["timing_version"] != 3
+            if !matches!(value["timing_version"].as_i64(), Some(3 | 4))
                 || !value["repeat"].is_null()
                 || !ids.insert(rule["id"].as_str().unwrap())
             {

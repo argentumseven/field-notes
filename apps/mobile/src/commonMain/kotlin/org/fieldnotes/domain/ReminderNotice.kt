@@ -47,7 +47,8 @@ fun reminderNotice(cache:Cache,alerts:List<LocalAlert>,zone:TimeZone,now:Instant
             else->"Shared ${record.kind} updated"
         }
     }
-    val title=if(targets.size==1&&row!=null)row.data.text("title").ifBlank { "Field Notes reminder" } else if(alerts.all { it.kind=="overdue" })"Overdue tasks" else "${targets.size.coerceAtLeast(1)} reminders"
+    val step=alerts.map{it.label}.filter{it.isNotBlank()}.distinct().joinToString(" · ")
+    val title=if(step.isNotBlank()&&targets.size==1)step+" · "+row?.data?.text("title").orEmpty() else if(targets.size==1&&row!=null)row.data.text("title").ifBlank { "Field Notes reminder" } else if(alerts.all { it.kind=="overdue" })"Overdue tasks" else "${targets.size.coerceAtLeast(1)} reminders"
     val shown=if(targets.isEmpty())records.values.filter { it.kind=="task"&&it.data.text("status")!="done"&&reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty())&&allowsItemReminders(cache,it)&&it.data.text("due").isNotBlank()&&it.data.text("due")<Clock.System.now().toLocalDateTime(zone).date.toString() }.take(8) else occurrences.take(8)
     val details=shown.joinToString("\n\n") { r -> buildString {
         append(r.data.text("title"));append('\n');append(when(r.kind){"event"->"Calendar event · ";"task"->"Task · ";else->"Reminder note · "});append(schedule(r));append("\nFor ");append(people(r))
@@ -70,7 +71,7 @@ fun reminderCompatibilityWarning(cache:Cache):String? {
         val r=row.record
         if(r.kind !in setOf("task","event","note"))continue
         val title=r.data.text("title").take(120).ifBlank{"Untitled item"}
-        val raw=r.data["reminder_interval_rules"] ?: r.data["reminder_schedule_rules"] ?: r.data["reminder_timing_rules"] ?: r.data["reminder_rules"] ?: r.data["reminders"]
+        val raw=r.data["reminder_after_rules"] ?: r.data["reminder_interval_rules"] ?: r.data["reminder_schedule_rules"] ?: r.data["reminder_timing_rules"] ?: r.data["reminder_rules"] ?: r.data["reminders"]
         if(raw!=null&&raw!=kotlinx.serialization.json.JsonNull) {
             val rules=reminderSet(r) ?: return "The reminder on ‘$title’ uses a newer format. Open Settings → App updates. Cached tasks and edits are kept."
             if(runCatching { validateReminders(rules) }.isFailure)return "The reminder schedule on ‘$title’ needs review. Open that item → Reminders & sound and check its timing. Other reminders can still run."

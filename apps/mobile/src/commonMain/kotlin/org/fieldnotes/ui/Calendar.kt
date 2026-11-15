@@ -44,8 +44,8 @@ import org.fieldnotes.domain.*
         DatePickerDialog(onDismissRequest = { show = false }, confirmButton = { Button(shape=ControlShape,onClick = { state.selectedDateMillis?.let { changed(Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date.toString()) }; show = false }) { Text("Set date") } }, dismissButton = { SecondaryButton(onClick = { show = false }) { Text("Cancel") } }) { DatePicker(state) }
     }
 }
-@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit,federalHolidays:Boolean=false,holidayChange:(Boolean)->Unit={},header:@Composable ()->Unit={},newEvent:(()->Unit)?=null) {
-    val selected=LocalDate.parse(selectedDate);val records=rows.map { it.record }
+@Composable internal fun ColumnScope.PlannerCalendar(rows: List<VisibleRecord>, today: LocalDate, zone: TimeZone, selectedDate: String, selectDate: (String) -> Unit, createAt:(String)->Unit, open: (String) -> Unit,view:String,selectView:(String)->Unit,federalHolidays:Boolean=false,holidayChange:(Boolean)->Unit={},header:@Composable ()->Unit={},newEvent:(()->Unit)?=null,mealsOnly:Boolean=false,showMeals:Boolean=true,mealChange:((Boolean)->Unit)?=null) {
+    val selected=LocalDate.parse(selectedDate);val records=rows.map { it.record }.filter{if(mealsOnly)it.isMeal()else showMeals||!it.isMeal()}
     val month=LocalDate(selected.year,selected.monthNumber,1);val weekStart=selected.minus(selected.dayOfWeek.isoDayNumber%7,DateTimeUnit.DAY)
     val entries=calendarEntries(records,selected,zone)
     var calendarOptions by rememberSaveable{mutableStateOf(false)}
@@ -64,9 +64,10 @@ import org.fieldnotes.domain.*
         for(mode in listOf("Day","Week","Month","Agenda"))FilterChip(view==mode,{selectView(mode)},{Text(mode)})
     }
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){SecondaryButton(onClick={calendarOptions=!calendarOptions}){Text("Calendar options "+if(calendarOptions)"▴"else"▾")};SecondaryButton(onClick={selectDate(today.toString())}){Text("Today")}}
+    if(!mealsOnly&&mealChange!=null)Row(verticalAlignment=Alignment.CenterVertically){Switch(showMeals,mealChange,modifier=Modifier.semantics{contentDescription="Show meals in calendar"});Text("Show meals",Modifier.padding(start=8.dp))}
     if(calendarOptions)Row(verticalAlignment=Alignment.CenterVertically){Switch(federalHolidays,holidayChange,modifier=Modifier.semantics{contentDescription="Show US federal holidays"});Text("US federal holidays")}
 
-            newEvent?.let {create->Button(shape=ControlShape,onClick=create,modifier=Modifier.testTag("calendar-new-event")){Text("New event")}}
+            newEvent?.let {create->Button(shape=ControlShape,onClick=create,modifier=Modifier.testTag("calendar-new-event")){Text(if(mealsOnly)"Plan dinner"else"New event")}}
         }}
         item("calendar-days"){Column {
     if(view=="Month") {
@@ -147,15 +148,18 @@ import org.fieldnotes.domain.*
         }
     }
 }
-@Composable internal fun EventEditor(model: Workspace, state: WorkspaceState, record: Record?, day: LocalDate, use24Hour: Boolean = false, preview:(AlertProfile)->Unit={}, initialTime:String?=null,copyLocation:(String)->Unit={},device:DeviceActions=DeviceActions(), close: () -> Unit) {
+@Composable internal fun EventEditor(model: Workspace, state: WorkspaceState, record: Record?, day: LocalDate, use24Hour: Boolean = false, preview:(AlertProfile)->Unit={}, initialTime:String?=null,copyLocation:(String)->Unit={},device:DeviceActions=DeviceActions(),initialMealKind:String="", close: () -> Unit) {
     val draft = record?.let { state.cache.drafts[it.id] }; val data = draft?.data ?: record?.data ?: obj()
     var title by rememberSaveable(record?.id) { mutableStateOf(data.text("title")) }; var notes by rememberSaveable(record?.id) { mutableStateOf(data.text("notes")) }
+    var mealKind by rememberSaveable(record?.id){mutableStateOf(data.text("meal_kind",initialMealKind))}
+    var clone by remember{mutableStateOf<JsonObject?>(null)}
+    var recipe by remember{mutableStateOf("")}
     var location by rememberSaveable(record?.id){mutableStateOf(data.text("location"))}
     var section by rememberSaveable(record?.id){mutableStateOf("Schedule")}
     var timingTouched by rememberSaveable(record?.id){mutableStateOf(false)}
     val zone = remember(record?.id) {data["recurrence"]?.let {runCatching {WireJson.decodeFromJsonElement<EventRepeat>(it).zone}.getOrNull()}?.let {runCatching {TimeZone.of(it)}.getOrNull()} ?: TimeZone.currentSystemDefault()}
     val originalStart = data.number("starts_at"); val originalEnd = data.number("ends_at")
-    val initialStart = if(originalStart > 0) Instant.fromEpochSeconds(originalStart).toLocalDateTime(zone) else LocalDateTime(day, LocalTime.parse(initialTime ?: "09:00"))
+    val initialStart = if(originalStart > 0) Instant.fromEpochSeconds(originalStart).toLocalDateTime(zone) else LocalDateTime(day, LocalTime.parse(initialTime ?: if(mealKind=="dinner")"18:00"else if(mealKind=="prep")"16:30"else"09:00"))
     val initialEnd = if(originalEnd > 0) Instant.fromEpochSeconds(originalEnd).toLocalDateTime(zone) else (initialStart.toInstant(zone)+60.minutes).toLocalDateTime(zone)
     var hasEnd by rememberSaveable(record?.id) { mutableStateOf(record!=null && data.number("ends_at")>0) }
     var remindersJson by rememberSaveable(record?.id) { mutableStateOf(reminderData(reminderSet(Record(record?.id ?: "", "event",record?.revision ?: 0,data)) ?: ReminderSet(listOf(ReminderAlert(record?.id ?: model.newId())))).toString()) }
@@ -183,7 +187,8 @@ import org.fieldnotes.domain.*
         validateReminders(reminders)
         val baseFields=obj("title" to title.j(), "notes" to notes.j(), "all_day" to JsonPrimitive(allDay), "start_date" to (if (allDay) startDate else "").j(), "end_date" to (if (allDay) LocalDate.parse(endDate).plus(1, DateTimeUnit.DAY).toString() else "").j(), "starts_at" to start.j(), "ends_at" to end.j())
         val fields=if(state.cache.supportsPlannerDetails())JsonObject(baseFields+("location" to location.j()))else baseFields
-        val result=if(remindersDirty)JsonObject(fields+("reminders" to reminderData(reminders))) else fields
+        val mealFields=if(state.cache.supportsMeals())JsonObject(fields+("meal_kind" to mealKind.j()))else fields
+        val result=if(remindersDirty)JsonObject(mealFields+("reminders" to reminderData(reminders))) else mealFields
         recurrence?.let(::validateRepeat)
         val modern=if(state.cache.supportsPlannerV3())JsonObject(result+mapOf("recurrence" to repeatData(recurrence),"category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record?.data?.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())) else result
         return if(state.cache.supportsRemindersV2()) {
@@ -195,7 +200,8 @@ import org.fieldnotes.domain.*
         OutlinedTextField(title, { title = it.take(240) }, label = { Text("Title") }, enabled = writable)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){for(name in listOf("Schedule","Reminders","Details"))FilterChip(section==name,{section=name},{Text(name)})}
         if(section=="Schedule"){
-        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(allDay, { allDay = it;if(it&&record==null&&!timingTouched&&state.cache.supportsReminderSchedule()){remindersJson=reminderData(ReminderSet(reminders.alerts.map{r->withReminderDayTime(r,0,"09:00",zone.id)},reminders.repeat,2)).toString();remindersDirty=true} }, enabled = writable); Text("All day") }
+        if(state.cache.supportsMeals())ViewChoice("Plan as",mealKind,listOf("" to "Calendar event","dinner" to "Dinner","prep" to "Meal prep")){mealKind=it}
+        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(allDay, { allDay = it; }, enabled = writable); Text("All day") }
         DateField(if(allDay) "First day" else "Starts", startDate, writable, clearable=false) { next ->
             val distance = LocalDate.parse(startDate).daysUntil(LocalDate.parse(endDate)).coerceAtLeast(0)
             startDate = next; endDate = LocalDate.parse(next).plus(distance, DateTimeUnit.DAY).toString()
@@ -220,11 +226,17 @@ import org.fieldnotes.domain.*
         if(record!=null&&recurrence!=null)Text("Editing the entire series. Use Skip dates to remove individual occurrences.",style=MaterialTheme.typography.bodySmall)
         }
         if(section=="Reminders"){
-            if(allDay)Text("All-day offsets use 9 AM. Choose Day & time for an explicit clock time.",style=MaterialTheme.typography.bodySmall)
+            if(mealKind.isNotBlank())Text("Add a named reminder for each prep step, then choose how long before or after the meal it should fire.",style=MaterialTheme.typography.bodySmall)
+            if(allDay)Text("All-day reminders use 9 AM as the start. Choose Before start or After start.",style=MaterialTheme.typography.bodySmall)
             if(writable)ReminderEditor(reminders,LocalDate.parse(startDate),model::newId,use24Hour,preview,reminderEditorSettings(model,state,reminderOptions,device=device){optionsJson=reminderOptionsData(it).toString()}.copy(flat=true)){remindersJson=reminderData(it).toString();remindersDirty=true;timingTouched=true}
             else reminders.alerts.forEach{Text(reminderTimeLabel(it,use24Hour))}
         }
         if(section=="Details"){
+            if(mealKind.isNotBlank()){
+                val recipes=projectRecords(state.cache).map{it.record}.filter{it.isRecipe()}
+                if(recipes.isNotEmpty())ViewChoice("Use recipe",recipe,listOf("" to "Choose a recipe")+recipes.map{it.id to it.data.text("title")}){id->recipe=id;recipes.find{it.id==id}?.let{r->if(title.isBlank())title=r.data.text("title");notes=listOf(r.data.text("body"),r.data.text("ingredients"),r.data.text("instructions")).filter{it.isNotBlank()}.joinToString("\n\n").take(16384)}}
+                Text("Recipe instructions are copied here. Use named reminders such as Start the rice at 30 minutes before dinner; After start can remind you to pack leftovers.",style=MaterialTheme.typography.bodySmall)
+            }
             if(state.cache.supportsPlannerDetails()||location.isNotBlank())OutlinedTextField(location,{location=it.take(2048)},label={Text("Location")},enabled=writable&&state.cache.supportsPlannerDetails(),modifier=Modifier.fillMaxWidth())
             if(location.isNotBlank())SecondaryButton(onClick={copyLocation(location)}){Text("Copy location")}
             OutlinedTextField(notes,{notes=it.take(16384)},label={Text("Notes")},minLines=3,enabled=writable,modifier=Modifier.fillMaxWidth())
@@ -233,7 +245,8 @@ import org.fieldnotes.domain.*
         if(record!=null)Text(recordHistory(state.cache,record,zone),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if (record != null && revision != record.revision) { Text("Changed on another device. Your edits are kept. Close and reopen to load the latest event, or keep your edits for a new save.", color = MaterialTheme.colorScheme.error); SecondaryButton(onClick = { revision = record.revision }) { Text("Keep my edits") } }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    } }, confirmButton = { if(writable) Button(shape=ControlShape,onClick = { busy = true; scope.launch { try { val fields = fields(); if (record == null) model.enqueue("event.create", model.newId(), fields, null, basis) else { model.saveDraft(record.id, revision, fields, basis, "event.update"); model.submitDraft(record.id) }; model.requestSync(); close() } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message } finally { busy = false } } }, enabled = !busy) { Text("Save event") } }, dismissButton = { Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { if(writable && record != null) SecondaryButton(dangerous=true,onClick = { confirmDelete=true }) { Text("Delete") }; SecondaryButton(onClick = close) { Text("Close") } } })
+    } }, confirmButton = { if(writable) Button(shape=ControlShape,onClick = { busy = true; scope.launch { try { val fields = fields(); if (record == null) model.enqueue("event.create", model.newId(), fields, null, basis) else { model.saveDraft(record.id, revision, fields, basis, "event.update"); model.submitDraft(record.id) }; model.requestSync(); close() } catch(e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; error = e.message } finally { busy = false } } }, enabled = !busy) { Text("Save event") } }, dismissButton = { Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { if(record!=null&&writable)SecondaryButton(onClick={try{clone=fields()}catch(e:Exception){error=e.message}}){Text("Clone")} ; if(writable && record != null) SecondaryButton(dangerous=true,onClick = { confirmDelete=true }) { Text("Delete") }; SecondaryButton(onClick = close) { Text("Close") } } })
+    clone?.let{payload->CloneEventDialog(model,payload,basis,zone,{clone=null},{clone=null;close()},use24Hour=use24Hour)}
     if(confirmDelete && record!=null) EditorDialog(onDismissRequest={confirmDelete=false},title={Text("Delete this event?")},text={Text("${record.data.text("title")} will be removed from the shared calendar when this device syncs.")},confirmButton={Button(shape=ControlShape,onClick={model.enqueueAsync("event.delete",record.id,obj(),record.revision,basis);confirmDelete=false;close()}){Text("Delete event")}},dismissButton={SecondaryButton(onClick={confirmDelete=false}){Text("Keep event")}})
 }
 

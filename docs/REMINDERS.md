@@ -1,5 +1,16 @@
 # Reminders and sound
 
+## Before and after the start — 0.11.9
+
+New reminders choose **Before start** or **After start**, with the same minute,
+hour, day, week, month and year units. A zero offset means at the start. Optional
+labels such as “Start the rice” identify prep steps in the editor and notifications.
+Existing day-and-clock rules remain unchanged and editable as **Saved clock time**;
+new reminders no longer offer the redundant day-and-time mode. All-day events
+use 9 AM as their reference start. Calendar months/years clamp from the original
+occurrence, and recurring events search the appropriate earlier anchor for an
+after-start reminder. [Meal planning and cloning](MEALS.md).
+
 ## Repeating nudges without dates — 0.11.8
 
 Open **Reminders & sound** on a task, note or non-grocery list item and turn on

@@ -3,7 +3,7 @@ package org.fieldnotes.domain
 import kotlinx.datetime.*
 
 data class AgendaItem(val id: String, val title: String, val at: Long, val label: String)
-data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String, val profile:AlertProfile?=null, val progressKey:String=if(target==null)kind else "$kind:$target",val sourceAt:Long?=null)
+data class LocalAlert(val key: String, val at: Long, val target: String?, val kind: String, val profile:AlertProfile?=null, val progressKey:String=if(target==null)kind else "$kind:$target",val sourceAt:Long?=null,val label:String="")
 
 /** Home-screen agenda uses dates/events, independently of the Focus score. */
 fun upcomingAgenda(cache: Cache, now: Instant, zone: TimeZone, days: Int = 7): List<AgendaItem> {

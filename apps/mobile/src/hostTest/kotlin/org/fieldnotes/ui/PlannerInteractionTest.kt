@@ -109,6 +109,40 @@ class PlannerInteractionTest {
         }finally{h.scope.cancel()}
     }
 
+    @Test fun reminderTimingOffersBeforeAndAfterAndKeepsThePrepName()=runSkikoComposeUiTest(size=Size(390f,760f)) {
+        var result:ReminderAlert?=null
+        setContent {FieldNotesTheme {ReminderTimeDialog(ReminderAlert("prep",0),true,{},dayTiming=true,afterTiming=true){result=it}}}
+        onNodeWithText("Day & time").assertDoesNotExist()
+        onNodeWithText("After start").performClick()
+        onNodeWithText("Amount after").performTextReplacement("45")
+        onNodeWithText("Reminder label · optional").performTextInput("Pack leftovers")
+        onAllNodes(isRoot()).onLast().capture("after-start-reminder")
+        onNodeWithText("Save time").performClick()
+        runOnIdle{assertEquals(45,result!!.after_start!!.amount);assertEquals("Pack leftovers",result!!.label);assertNull(result!!.day_time)}
+    }
+    @Test fun mealVisibilityChangesTheCalendarWithoutDeletingTheMeal()=runSkikoComposeUiTest(size=Size(390f,760f)) {
+        var show by mutableStateOf(false)
+        val meal=Record("dinner","event",1,obj("title" to "Dinner to hide".j(),"meal_kind" to "dinner".j(),"starts_at" to 1794765600L.j()))
+        setContent {FieldNotesTheme {Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)){PlannerCalendar(listOf(VisibleRecord(meal,false)),LocalDate(2026,11,15),kotlinx.datetime.TimeZone.UTC,"2026-11-15",{},{},{},"Month",{},showMeals=show,mealChange={show=it})}}}
+        onNodeWithText("Dinner to hide",substring=true).assertDoesNotExist()
+        onNodeWithTag("calendar-content").performScrollToNode(hasContentDescription("Show meals in calendar"))
+        onNodeWithContentDescription("Show meals in calendar").performTouchInput{click()}
+        onNodeWithTag("calendar-content").performScrollToNode(hasText("Dinner to hide",substring=true))
+        onNodeWithText("Dinner to hide",substring=true).assertIsDisplayed()
+        onNodeWithTag("calendar-content").capture("optional-meals-calendar")
+        runOnIdle{assertEquals("dinner",meal.data.text("meal_kind"))}
+    }
+    @Test fun cloningMultipleDatesQueuesIndependentCopiesAndKeepsTheOriginal()=runSkikoComposeUiTest(size=Size(390f,760f)) {
+        val h=UiWorkspace();val payload=obj("title" to "Dinner".j(),"starts_at" to 1794765600L.j(),"ends_at" to 0.j(),"all_day" to JsonPrimitive(false),"recurrence" to repeatData(EventRepeat("daily",zone="UTC")))
+        try {
+            setContent {FieldNotesTheme {CloneEventDialog(h.model,payload,h.vault.value.snapshot!!.basis,kotlinx.datetime.TimeZone.UTC,{},{})}}
+            onNodeWithText("Add date").performScrollTo().performClick()
+            onAllNodes(isRoot()).onLast().capture("clone-dates-and-times")
+            onNodeWithText("Create 2 copies").performClick()
+            runOnIdle{assertEquals(2,h.vault.value.outbox.size);assertTrue(h.vault.value.outbox.all{it.command.action=="event.create"&&it.command.data["recurrence"]==JsonNull});assertEquals(1,h.vault.value.snapshot!!.records.size)}
+        }finally{h.scope.cancel()}
+    }
+
 }
 
 private fun SemanticsNodeInteraction.capture(name:String) {

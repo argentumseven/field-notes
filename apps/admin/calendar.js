@@ -51,7 +51,12 @@ function calendarItems(day) {
     if (existing) existing.windowLabel = label;
     else result.push({ record, label, windowLabel: label, windowOnly: true });
   }
-  return result;
+  return result.filter((entry) =>
+    state.page === "meals"
+      ? !!entry.record.data.meal_kind
+      : !entry.record.data.meal_kind ||
+        readSetting("field-notes-calendar-meals") === "on",
+  );
 }
 function calendarTime(at) {
   return new Date(at * 1000).toLocaleTimeString([], {
@@ -153,7 +158,18 @@ function renderCalendar(root) {
   }
   toolbar.append(nav, modes);
   if (mayWrite())
-    toolbar.append(button("New event", () => eventEditor(), "primary"));
+    toolbar.append(
+      button(
+        state.page === "meals" ? "Plan dinner" : "New event",
+        () =>
+          eventEditor(null, undefined, state.page === "meals" ? "dinner" : ""),
+        "primary",
+      ),
+    );
+  if (state.page === "meals" && mayWrite())
+    toolbar.append(
+      button("Plan meal prep", () => eventEditor(null, undefined, "prep")),
+    );
   const options = el("details", "calendar-options");
   options.append(el("summary", "", "Calendar options"));
   const holidayLabel = el("label", "dialog-choice"),
@@ -172,6 +188,28 @@ function renderCalendar(root) {
     render();
   };
   options.append(holidayLabel);
+  if (state.page !== "meals") {
+    const label = el("label", "dialog-choice"),
+      show = el("input");
+    show.type = "checkbox";
+    show.checked = readSetting("field-notes-calendar-meals") === "on";
+    label.append(show, document.createTextNode("Show meals"));
+    show.onchange = () => {
+      localStorage.setItem(
+        "field-notes-calendar-meals",
+        show.checked ? "on" : "off",
+      );
+      render();
+    };
+    options.append(label);
+  } else
+    root.append(
+      el(
+        "p",
+        "muted",
+        "Plan dinner and prep here. Show meals in Calendar is optional and never changes reminders.",
+      ),
+    );
   root.append(toolbar, options);
   if (view === "month") {
     renderCalendarMonth(root);
@@ -491,7 +529,7 @@ function renderCalendarMonth(root) {
     );
   root.append(agenda);
 }
-async function eventEditor(record, selectedTime) {
+async function eventEditor(record, selectedTime, mealKind = "") {
   const d = record?.data || {},
     own = !record || isAdmin() || d.author_id === state.actor.user_id;
   if (!mayWrite() || !own) {
@@ -506,7 +544,17 @@ async function eventEditor(record, selectedTime) {
   }
   const initialStart = d.starts_at
       ? new Date(d.starts_at * 1000)
-      : new Date(state.day + "T" + (selectedTime || "09:00") + ":00"),
+      : new Date(
+          state.day +
+            "T" +
+            (selectedTime ||
+              (mealKind === "dinner"
+                ? "18:00"
+                : mealKind === "prep"
+                  ? "16:30"
+                  : "09:00")) +
+            ":00",
+        ),
     initialEnd = d.ends_at
       ? new Date(d.ends_at * 1000)
       : new Date(initialStart.getTime() + 3600000);
@@ -550,6 +598,17 @@ async function eventEditor(record, selectedTime) {
     [
       { key: "title", label: "Event title", value: d.title, max: 240 },
       categoryField(record),
+      {
+        key: "meal_kind",
+        required: false,
+        label: "Plan as",
+        value: d.meal_kind || mealKind,
+        options: [
+          ["", "Calendar event"],
+          ["dinner", "Dinner"],
+          ["prep", "Meal prep"],
+        ],
+      },
       {
         key: "location",
         label: "Location · optional",
@@ -650,8 +709,12 @@ async function eventEditor(record, selectedTime) {
         record?.id || uuid(),
         {
           title: v.title,
+          meal_kind: v.meal_kind,
           category: v.category,
-          ...(record?.data.category?.startsWith("custom:") && v.category !== record.data.category ? {category_override:true} : {}),
+          ...(record?.data.category?.startsWith("custom:") &&
+          v.category !== record.data.category
+            ? { category_override: true }
+            : {}),
           recurrence,
           notes: v.notes,
           location: v.location,
@@ -727,6 +790,11 @@ async function eventEditor(record, selectedTime) {
           "danger",
         );
         $("#dialog-body").append(remove);
+        const clone = button("Clone…", () => {
+          state.dismissDialog?.();
+          return cloneEvent(record);
+        });
+        remove.before(clone);
       }
       const recurrenceRoot = el("section");
       $("#dialog-body").append(recurrenceRoot);
@@ -762,33 +830,46 @@ async function eventEditor(record, selectedTime) {
           el(
             "p",
             "muted",
-            "Saved all-day reminders use 9 AM on the first day. Choose Day & time to set an explicit clock time.",
+            "Saved all-day reminders use 9 AM on the first day. Use Before start or After start.",
           ),
         );
-      const originalChange = nodes.all_day.onchange;
-      let timingTouched = false;
-      reminderRoot.addEventListener("input", () => {
-        timingTouched = true;
-      });
-      reminderRoot.addEventListener("change", () => {
-        timingTouched = true;
-      });
-      nodes.all_day.onchange = () => {
-        originalChange();
-        if (!record && !timingTouched && nodes.all_day.checked) {
-          reminderSettings = {
-            ...reminderSettings,
-            timing_version: 2,
-            alerts: reminderSettings.alerts.map((r) => ({
-              ...r,
-              minutes_before: 0,
-              lead_time: undefined,
-              day_time: { days_before: 0, time: "09:00", zone: editZone },
-            })),
-          };
-          reminderUi.replace(reminderSettings);
-        }
-      };
+      const recipeRoot = el("section");
+      const recipes = records("note").filter(
+        (r) => r.data.note_type === "recipe",
+      );
+      if (recipes.length) {
+        const choice = addField(
+          recipeRoot,
+          select(
+            "Use recipe",
+            [
+              ["", "Choose a recipe"],
+              ...recipes.map((r) => [r.id, r.data.title]),
+            ],
+            "",
+          ),
+        );
+        choice.onchange = () => {
+          const r = byId(choice.value);
+          if (!r) return;
+          if (!nodes.title.value) nodes.title.value = r.data.title;
+          nodes.notes.value = [
+            r.data.body,
+            r.data.ingredients,
+            r.data.instructions,
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+            .slice(0, 16384);
+        };
+        recipeRoot.append(
+          el(
+            "p",
+            "muted",
+            "Copies recipe instructions. Add named reminders for prep steps, before or after dinner.",
+          ),
+        );
+      }
       const details = el("div"),
         copy = button("Copy location", () =>
           copyPlannerText(nodes.location.value),
@@ -805,6 +886,7 @@ async function eventEditor(record, selectedTime) {
           "Schedule",
           [
             ...fieldNodes([
+              "meal_kind",
               "all_day",
               "start_date",
               "start_time",
@@ -819,6 +901,7 @@ async function eventEditor(record, selectedTime) {
         [
           "Details",
           [
+            recipeRoot,
             ...fieldNodes(["location"]),
             details,
             ...fieldNodes(["notes", "category"]),
@@ -885,4 +968,192 @@ function updateCalendarClock() {
         : now.getHours() * 60 + now.getMinutes();
     line.style.top = (minute / 60) * 56 + "px";
   }
+}
+
+async function cloneEvent(record) {
+  const zone =
+    record.data.recurrence?.zone ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const original = record.data.all_day
+    ? record.data.start_date
+    : (() => {
+        const p = FieldRecurrence.parts(record.data.starts_at, zone);
+        return `${p.year}-${p.month}-${p.day}`;
+      })();
+  const dates = [],
+    times = [];
+  const originalClock = record.data.all_day
+    ? null
+    : FieldRecurrence.parts(record.data.starts_at, zone);
+  const defaultTime = originalClock
+    ? `${originalClock.hour}:${originalClock.minute}`
+    : "";
+  let prepared = null;
+  await formDialog(
+    "Clone event",
+    "Choose dates and times for independent copies with the same details. The original series stays unchanged.",
+    [],
+    async () => {
+      if (!prepared) {
+        const selected = dates.map((n) => n.value);
+        if (
+          !selected.length ||
+          selected.some((d) => !d) ||
+          new Set(selected.map((d, i) => d + times[i]?.value)).size !==
+            selected.length
+        )
+          throw Error("Choose each copy date once.");
+        prepared = selected.map((date, i) => {
+          const data = eventCopyData(
+            record,
+            date,
+            zone,
+            original,
+            times[i]?.value,
+          );
+          if (data.reminders?.interval)
+            data.reminders = FieldReminders.forSave(data.reminders, null);
+          return {
+            operation_id: uuid(),
+            epoch: state.snapshot.epoch,
+            generation: state.snapshot.generation,
+            action: "event.create",
+            target: uuid(),
+            expected_revision: null,
+            data,
+          };
+        });
+      }
+      for (const n of [...dates, ...times]) if (n) n.disabled = true;
+      for (const command of prepared) await applyCommand(command);
+    },
+    "Create copies",
+    () => {
+      const body = $("#dialog-body"),
+        list = el("div");
+      body.append(list);
+      const add = () => {
+        const row = el("div", "clone-date"),
+          dayGroup = el("div"),
+          timeGroup = el("div"),
+          n = addField(
+            dayGroup,
+            input(
+              "Copy date " + (dates.length + 1),
+              FieldPlanning.shiftDay(dates.at(-1)?.value || original, 1),
+              "date",
+            ),
+          );
+        row.append(dayGroup);
+        n.required = true;
+        dates.push(n);
+        const time = record.data.all_day
+          ? null
+          : addField(
+              timeGroup,
+              input("Copy time " + dates.length, defaultTime, "time"),
+            );
+        times.push(time);
+        if (time) {
+          time.required = true;
+          row.append(timeGroup);
+        }
+        row.append(
+          button("Remove", () => {
+            if (prepared)
+              throw Error(
+                "Finish or cancel this saved copy plan before changing its dates.",
+              );
+            const index = dates.indexOf(n);
+            dates.splice(index, 1);
+            times.splice(index, 1);
+            row.remove();
+            dates.forEach(
+              (input, i) =>
+                (input.labels[0].textContent = "Copy date " + (i + 1)),
+            );
+            times.forEach((input, i) => {
+              if (input) input.labels[0].textContent = "Copy time " + (i + 1);
+            });
+          }),
+        );
+        list.append(row);
+      };
+      add();
+      body.append(
+        button("Add date", () => {
+          if (!prepared && dates.length < 31) add();
+        }),
+      );
+    },
+  );
+}
+function eventCopyData(record, date, zone, original, clock = null) {
+  const d = record.data,
+    delta = Math.round(
+      (new Date(date + "T12:00Z") - new Date(original + "T12:00Z")) / 86400000,
+    );
+  const data = Object.fromEntries(
+    [
+      "title",
+      "notes",
+      "location",
+      "meal_kind",
+      "category",
+      "all_day",
+      "start_date",
+      "end_date",
+      "starts_at",
+      "ends_at",
+    ]
+      .filter((k) => k in d)
+      .map((k) => [k, structuredClone(d[k])]),
+  );
+  data.recurrence = null;
+  const startParts = d.all_day
+    ? null
+    : FieldRecurrence.parts(d.starts_at, zone);
+  const shift = clock
+    ? (Number(clock.slice(0, 2)) * 60 +
+        Number(clock.slice(3, 5)) -
+        Number(startParts.hour) * 60 -
+        Number(startParts.minute)) *
+      60000
+    : 0;
+  if (d.all_day) {
+    data.start_date = date;
+    data.end_date = FieldPlanning.shiftDay(d.end_date, delta);
+  } else
+    for (const key of ["starts_at", "ends_at"])
+      if (d[key]) {
+        const p = FieldRecurrence.parts(d[key], zone);
+        const day = FieldPlanning.shiftDay(
+          `${p.year}-${p.month}-${p.day}`,
+          delta,
+        );
+        const changed = new Date(
+          new Date(`${day}T${p.hour}:${p.minute}:00Z`).getTime() + shift,
+        ).toISOString();
+        const at = FieldRecurrence.instant(
+          changed.slice(0, 10),
+          changed.slice(11, 16),
+          zone,
+        );
+        if (at === null)
+          throw Error(
+            "A copy time falls in a daylight-saving gap. Choose another date.",
+          );
+        data[key] = at;
+      }
+  const rules = FieldReminders.rulesFor(record);
+  if (rules) {
+    data.reminders = structuredClone(rules);
+    if (data.reminders.repeat) {
+      const w = data.reminders.repeat;
+      w.starts_on = FieldPlanning.shiftDay(w.starts_on, delta);
+      if (w.ends_on) w.ends_on = FieldPlanning.shiftDay(w.ends_on, delta);
+    }
+  }
+  data.reminder_options = FieldReminders.optionsFor(record, "event");
+  return data;
 }

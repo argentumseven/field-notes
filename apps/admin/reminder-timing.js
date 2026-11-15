@@ -35,6 +35,8 @@ const FieldReminderTiming = (() => {
     }
   }
   function parts(rule) {
+    if (rule.after_start)
+      return { amount: rule.after_start.amount, unit: rule.after_start.unit };
     if (rule.lead_time)
       return { amount: rule.lead_time.amount, unit: rule.lead_time.unit };
     for (const unit of ["weeks", "days", "hours"])
@@ -62,11 +64,18 @@ const FieldReminderTiming = (() => {
     const p = parts(rule);
     return p.amount === 0
       ? "At the start"
-      : `${p.amount} ${p.amount === 1 ? p.unit.slice(0, -1) : p.unit} before`;
+      : `${p.amount} ${p.amount === 1 ? p.unit.slice(0, -1) : p.unit} ${rule.after_start ? "after" : "before"}`;
   }
-  function apply(rule, amount, unit, zone) {
+  function apply(rule, amount, unit, zone, after = false) {
     validate({ amount, unit, zone });
     delete rule.day_time;
+    delete rule.after_start;
+    if (after) {
+      rule.minutes_before = 0;
+      delete rule.lead_time;
+      rule.after_start = { amount, unit, zone };
+      return;
+    }
     const minutes = unit in factors ? amount * factors[unit] : null;
     if (amount === 0 || (minutes !== null && minutes <= 43200)) {
       rule.minutes_before = minutes || 0;

@@ -1,5 +1,14 @@
 # Architecture
 
+After-start reminders (0.11.9) use `timing_version: 4` and additive
+`reminder_after_rules`. Older interval/schedule/timing projections remove unknown
+fields and after-start alerts; the versioned writer guard protects the canonical
+rule. Existing receipt identities stay unchanged for before-start alerts, even
+when a label is added. `meal_kind` tags ordinary events as dinner/prep. Visibility
+is a local calendar preference and never participates in delivery filtering.
+Clones create new event identities through the existing outbox/command paths,
+clear event recurrence and preserve local clock times and canonical reminders.
+
 Interval reminders (0.11.8) use `timing_version: 3` and feature
 `reminder-interval-v1`. `ReminderInterval.kt` derives the latest missed and two
 future occurrences directly from an immutable saved anchor and cadence, without

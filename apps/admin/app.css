@@ -2286,3 +2286,9 @@ textarea,
   z-index: 8;
   font-size: 13px;
 }
+
+/* Clone fields wrap with the dialog rather than overlaying its content. */
+.clone-date { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; padding:12px 0; border-bottom:1px solid var(--border); }
+.clone-date > div { flex:1 1 120px; min-width:0; }
+.clone-date input { min-width:0; width:100%; box-sizing:border-box; }
+.clone-date > button { margin-left:auto; }

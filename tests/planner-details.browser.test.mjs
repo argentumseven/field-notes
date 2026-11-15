@@ -45,13 +45,9 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
     await page.getByLabel("Starts", { exact: true }).fill("2028-03-31");
     await page.getByLabel("All day", { exact: true }).check();
     await page.getByRole("tab", { name: "Reminders", exact: true }).click();
-    assert.equal(
-      await page.getByLabel("Reminder 1", { exact: true }).inputValue(),
-      "day-time",
-    );
-    await page.getByLabel("At time", { exact: true }).fill("10:30");
-    await page.getByLabel("Day unit", { exact: true }).selectOption("weeks");
-    await page.getByLabel("How far before", { exact: true }).fill("1");
+    await page.getByLabel("Reminder 1", { exact: true }).selectOption("after");
+    await page.getByLabel("Amount after", { exact: true }).fill("1");
+    await page.getByLabel("Time unit", { exact: true }).selectOption("weeks");
     await page.locator(".reminder-row details>summary").first().click();
     await page
       .getByLabel("Reminder 1 delivery mode", { exact: true })
@@ -62,23 +58,60 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
         .inputValue(),
       "5",
     );
-    const sound=page.getByLabel("Reminder 1 sound", {exact:true});
-    assert.deepEqual(await sound.locator("option").evaluateAll(nodes=>nodes.map(n=>n.value)),["beacon","orbit","sunrise","siren"]);
-    assert.equal(await sound.inputValue(),"beacon");
-    const alarmAudio=await page.request.get(new URL("/sounds/v1/alarm_beacon_75.wav",s.f.admin).href);
-    const notificationAudio=await page.request.get(new URL("/sounds/v1/reminder_beacon_75.wav",s.f.admin).href);
-    assert.equal(alarmAudio.status(),200);assert.equal(notificationAudio.status(),200);
-    const alarmBytes=await alarmAudio.body(), notificationBytes=await notificationAudio.body();
-    assert(alarmBytes.length>notificationBytes.length*3);assert.notDeepEqual(alarmBytes,notificationBytes);
-    await page.getByLabel("Reminder 1 delivery mode",{exact:true}).selectOption("notification");
-    assert.deepEqual(await sound.locator("option").evaluateAll(nodes=>nodes.map(n=>n.value)),["chime","bell","pulse","marimba"]);
-    assert.equal(await sound.inputValue(),"chime");
-    await page.getByLabel("Reminder 1 delivery mode",{exact:true}).selectOption("alarm");
-    await page.getByLabel("Reminder 1 importance",{exact:true}).selectOption("quiet");
-    await page.getByLabel("Reminder 1 importance",{exact:true}).selectOption("normal");
-    assert.equal(await page.getByLabel("Reminder 1 delivery mode",{exact:true}).inputValue(),"notification");
-    assert.equal(await page.getByLabel("Reminder 1 alarm duration",{exact:true}).isVisible(),false);
-    await page.getByLabel("Reminder 1 delivery mode",{exact:true}).selectOption("alarm");
+    const sound = page.getByLabel("Reminder 1 sound", { exact: true });
+    assert.deepEqual(
+      await sound
+        .locator("option")
+        .evaluateAll((nodes) => nodes.map((n) => n.value)),
+      ["beacon", "orbit", "sunrise", "siren"],
+    );
+    assert.equal(await sound.inputValue(), "beacon");
+    const alarmAudio = await page.request.get(
+      new URL("/sounds/v1/alarm_beacon_75.wav", s.f.admin).href,
+    );
+    const notificationAudio = await page.request.get(
+      new URL("/sounds/v1/reminder_beacon_75.wav", s.f.admin).href,
+    );
+    assert.equal(alarmAudio.status(), 200);
+    assert.equal(notificationAudio.status(), 200);
+    const alarmBytes = await alarmAudio.body(),
+      notificationBytes = await notificationAudio.body();
+    assert(alarmBytes.length > notificationBytes.length * 3);
+    assert.notDeepEqual(alarmBytes, notificationBytes);
+    await page
+      .getByLabel("Reminder 1 delivery mode", { exact: true })
+      .selectOption("notification");
+    assert.deepEqual(
+      await sound
+        .locator("option")
+        .evaluateAll((nodes) => nodes.map((n) => n.value)),
+      ["chime", "bell", "pulse", "marimba"],
+    );
+    assert.equal(await sound.inputValue(), "chime");
+    await page
+      .getByLabel("Reminder 1 delivery mode", { exact: true })
+      .selectOption("alarm");
+    await page
+      .getByLabel("Reminder 1 importance", { exact: true })
+      .selectOption("quiet");
+    await page
+      .getByLabel("Reminder 1 importance", { exact: true })
+      .selectOption("normal");
+    assert.equal(
+      await page
+        .getByLabel("Reminder 1 delivery mode", { exact: true })
+        .inputValue(),
+      "notification",
+    );
+    assert.equal(
+      await page
+        .getByLabel("Reminder 1 alarm duration", { exact: true })
+        .isVisible(),
+      false,
+    );
+    await page
+      .getByLabel("Reminder 1 delivery mode", { exact: true })
+      .selectOption("alarm");
     await shot(page, "110-all-day-reminder");
     await page
       .getByLabel("Reminder 1 alarm duration", { exact: true })
@@ -122,12 +155,12 @@ test("event sections keep explicit all-day times, one sound mode and copyable lo
     assert(item);
     assert.equal(item.data.location, "123 Main Street");
     assert.equal(
-      item.data.reminder_schedule_rules.alerts[0].day_time.days_before,
-      7,
+      item.data.reminder_after_rules.alerts[0].after_start.amount,
+      1,
     );
     assert.equal(
       item.data.reminder_options.playback[
-        item.data.reminder_schedule_rules.alerts[0].id
+        item.data.reminder_after_rules.alerts[0].id
       ].duration_seconds,
       5,
     );

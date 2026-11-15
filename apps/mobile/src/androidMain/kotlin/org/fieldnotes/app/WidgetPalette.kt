@@ -8,7 +8,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 
-internal fun widgetRecords(cache:Cache)=projectRecords(cache).map { it.record }.filter { cache.preferences.widgetHousehold||reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty()) }
+internal fun widgetRecords(cache:Cache)=projectRecords(cache).map { it.record }.filter { (!it.isMeal()||cache.preferences.calendarMeals)&&(cache.preferences.widgetHousehold||reminderRecipient(it,cache.snapshot?.actor?.user_id.orEmpty())) }
 internal fun widgetSettings(context:Context)=PendingIntent.getActivity(context,744,Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).setData(Uri.parse("fieldnotes-widget://settings/visibility")).putExtra("open_page","Settings"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 internal fun widgetProblem(context:Context):Boolean {
     val recoveryCache=(context.applicationContext as FieldNotesApplication).model.state.value.cache

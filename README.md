@@ -12,14 +12,14 @@ images, optional dates, priorities and a private calendar. Calendar first, with
 grouped navigation, clear controls and matching light/dark themes.
 Home Linux server, Android app, and a LAN website for Linux/Windows browsers.
 
-**Development version 0.11.8.** Rust serves HTTPS directly. **No Caddy, reverse
+**Development version 0.11.9.** Rust serves HTTPS directly. **No Caddy, reverse
 proxy or load balancer.** Android uses Kotlin Multiplatform/Compose with an
 app-contained WireGuard stack, without taking Android's VPN slot or using Google
 services. iOS/native desktop packages are deferred.
 
 [Debian commands](docs/DEBIAN-INSTALL.md) · [Installation](docs/RUNNING.md) · [Uninstall](docs/UNINSTALL.md) · [Phone enrollment](docs/ENROLLMENT.md) ·
 [Updates without re-pairing](docs/UPDATES.md) · [Android download](docs/ANDROID-DOWNLOADS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) ·
-[Calendar and home-screen month widget](docs/CALENDAR.md) · [Reminders and sound](docs/REMINDERS.md) · [Recipes](docs/RECIPES.md) · [Time checks](docs/TIME-ACCURACY.md) · [List types and fields](docs/LISTS.md) · [Live updates](docs/LIVE-UPDATES.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
+[Calendar and home-screen month widget](docs/CALENDAR.md) · [Meals and meal prep](docs/MEALS.md) · [Reminders and sound](docs/REMINDERS.md) · [Recipes](docs/RECIPES.md) · [Time checks](docs/TIME-ACCURACY.md) · [List types and fields](docs/LISTS.md) · [Live updates](docs/LIVE-UPDATES.md) · [Offline work and reconnect](docs/OFFLINE.md) ·
 [Household planning](docs/PLANNER-0.6.md) · [Tasks and project tracking](docs/PROJECTS.md) · [History & restore](docs/HISTORY.md) · [Planner comparison](docs/PLANNER-COMPARISON.md) · [Export & import](docs/CONTENT-FILES.md) · [Screenshot walkthrough](docs/WALKTHROUGH.md) · [Validation](docs/VALIDATION.md)
 
 ## Screenshots

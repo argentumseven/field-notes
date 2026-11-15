@@ -102,6 +102,7 @@ fn allowed(kind: &str) -> &'static [&'static str] {
             "title",
             "notes",
             "location",
+            "meal_kind",
             "category",
             "all_day",
             "start_date",
@@ -153,6 +154,9 @@ fn content(
         .filter(|(k, _)| allowed(&record.kind).contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
+    if data.get("meal_kind").and_then(Value::as_str) == Some("") {
+        data.remove("meal_kind");
+    }
     if let Some(parent) =
         parent.filter(|_| matches!(record.kind.as_str(), "task" | "list" | "comment" | "image"))
     {
@@ -184,7 +188,8 @@ fn content(
     }
     if let Some(rules) = record
         .data
-        .get("reminder_interval_rules")
+        .get("reminder_after_rules")
+        .or_else(|| record.data.get("reminder_interval_rules"))
         .or_else(|| record.data.get("reminder_schedule_rules"))
         .or_else(|| record.data.get("reminder_timing_rules"))
         .or_else(|| record.data.get("reminder_rules"))
@@ -247,9 +252,9 @@ fn content_types(record: &Record) -> Result<()> {
     for (key, value) in record.data.as_object().unwrap() {
         let valid = match key.as_str() {
             "title" | "notes" | "body" | "note_type" | "ingredients" | "instructions"
-            | "location" | "quantity" | "store" | "link_url" | "price" | "item_category"
-            | "currency" | "due" | "planned_for" | "quadrant" | "category" | "template"
-            | "start_date" | "end_date" | "name" => value.is_string(),
+            | "meal_kind" | "location" | "quantity" | "store" | "link_url" | "price"
+            | "item_category" | "currency" | "due" | "planned_for" | "quadrant" | "category"
+            | "template" | "start_date" | "end_date" | "name" => value.is_string(),
             "pinned" | "blocked" | "all_day" | "perpetual" | "notify_additions"
             | "item_reminders" | "on_radar" | "items_are_tasks" => value.is_boolean(),
             "priority" | "estimate_minutes" => value.as_i64().is_some(),
@@ -260,6 +265,7 @@ fn content_types(record: &Record) -> Result<()> {
                 .is_some_and(|values| values.iter().all(Value::is_string)),
             "recurrence"
             | "reminder_rules"
+            | "reminder_after_rules"
             | "reminder_interval_rules"
             | "reminder_schedule_rules"
             | "reminder_timing_rules"
@@ -297,7 +303,7 @@ fn semantic(record: &Record, data: &Value, media: Option<&str>) -> String {
             d[k] = v.clone();
         }
     }
-    for field in ["location", "ingredients", "instructions"] {
+    for field in ["location", "meal_kind", "ingredients", "instructions"] {
         if d.get(field) == Some(&json!("")) {
             d.as_object_mut().unwrap().remove(field);
         }
@@ -440,6 +446,7 @@ impl Store {
                             | "size"
                             | "original_sha256"
                             | "reminder_rules"
+                            | "reminder_after_rules"
                             | "reminder_interval_rules"
                             | "reminder_schedule_rules"
                             | "reminder_timing_rules"

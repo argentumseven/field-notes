@@ -487,6 +487,7 @@ function renderWorkspace(viewKey) {
       "Plan",
       [
         ["calendar", "Calendar"],
+        ["meals", "Meals"],
         ["tasks", "Tasks"],
         ["focus", "Focus"],
         ["later", "Later & reminders"],
@@ -659,6 +660,7 @@ function renderWorkspace(viewKey) {
             mine: "My tasks",
             unassigned: "Unassigned",
             calendar: "Calendar",
+            meals: "Meals",
             lists: "Lists",
             projects: "Projects",
             admin: "Management",
@@ -684,6 +686,7 @@ function renderWorkspace(viewKey) {
         mine: "Open work assigned to you, plus tasks you are working on.",
         unassigned: "Open tasks without a responsible person yet.",
         calendar: "Your calendar, on your server.",
+        meals: "What’s for dinner? Plan meals, prep and reminders.",
         admin: "People, enrolled devices and server maintenance.",
         archive:
           "Encrypted copies, duplicate-safe imports and retained alternatives.",
@@ -731,7 +734,7 @@ function renderWorkspace(viewKey) {
     renderAssignments(main);
     return;
   }
-  if (state.page === "calendar") {
+  if (["calendar", "meals"].includes(state.page)) {
     renderCalendar(main);
     if (state.selected) renderDetail();
     return;
@@ -1163,6 +1166,9 @@ async function mutate(action, target, data, revision, basis = null) {
     expected_revision: revision,
     data,
   };
+  return applyCommand(c);
+}
+async function applyCommand(c) {
   // Retry uses this SAME envelope. Never generate a fresh ID after an ambiguous response.
   const controls = [
     ...document.querySelectorAll(

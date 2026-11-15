@@ -264,7 +264,7 @@ import org.fieldnotes.domain.*
 private val itemKeys=setOf("project_id","title","notes","quantity","store","category","item_category","link_url","price","currency","due","planned_for","priority","estimate_minutes","assignee","reminders","reminder_options")
 private fun itemEditingData(data:JsonObject):JsonObject {
     val fields=data.filterKeys { it in itemKeys }
-    val canonical=data["reminder_interval_rules"] ?: data["reminder_schedule_rules"] ?: data["reminder_timing_rules"] ?: data["reminder_rules"]
+    val canonical=data["reminder_after_rules"] ?: data["reminder_interval_rules"] ?: data["reminder_schedule_rules"] ?: data["reminder_timing_rules"] ?: data["reminder_rules"]
     return if(canonical!=null)JsonObject((fields-"reminders")+mapOf("reminders" to canonical))else JsonObject(fields)
 }
 private fun itemReminderRules(data:JsonObject,id:String)=data["reminders"]?.let { WireJson.decodeFromJsonElement<ReminderSet>(it) } ?: ReminderSet(if(data.text("due").isNotBlank())listOf(ReminderAlert(id,0)) else emptyList())

@@ -22,6 +22,7 @@
   const alarmTones = ["beacon", "orbit", "sunrise", "siren"];
   let activePreview = null;
   const rulesFor = (record) =>
+    record?.data?.reminder_after_rules ??
     record?.data?.reminder_interval_rules ??
     record?.data?.reminder_schedule_rules ??
     record?.data?.reminder_timing_rules ??
@@ -72,7 +73,7 @@
       throw Error("Use up to eight reminders.");
     if (
       rules.timing_version !== undefined &&
-      ![1, 2, 3].includes(rules.timing_version)
+      ![1, 2, 3, 4].includes(rules.timing_version)
     )
       throw Error("Update the app for this reminder timing.");
     const ids = new Set();
@@ -90,10 +91,27 @@
     };
     for (const r of rules.alerts) {
       check(r);
+      if (r.after_start) {
+        FieldReminderTiming.validate(r.after_start);
+        if (
+          rules.timing_version !== 4 ||
+          r.minutes_before !== 0 ||
+          r.lead_time ||
+          r.day_time
+        )
+          throw Error("Choose one before-start or after-start time.");
+      }
+      if (
+        r.label !== undefined &&
+        (typeof r.label !== "string" ||
+          r.label.length > 120 ||
+          rules.timing_version !== 4)
+      )
+        throw Error("Use a reminder label up to 120 characters.");
       if (r.day_time) {
         FieldReminderTiming.validateDay(r.day_time);
         if (
-          ![2, 3].includes(rules.timing_version) ||
+          ![2, 3, 4].includes(rules.timing_version) ||
           r.minutes_before !== 0 ||
           r.lead_time
         )
@@ -101,7 +119,10 @@
       }
       if (r.lead_time) {
         FieldReminderTiming.validate(r.lead_time);
-        if (![1, 2, 3].includes(rules.timing_version) || r.minutes_before !== 0)
+        if (
+          ![1, 2, 3, 4].includes(rules.timing_version) ||
+          r.minutes_before !== 0
+        )
           throw Error("Check the reminder timing format.");
       }
       if (
@@ -148,7 +169,7 @@
         zone: r.zone,
       });
       if (
-        rules.timing_version !== 3 ||
+        ![3, 4].includes(rules.timing_version) ||
         rules.repeat ||
         r.amount < 1 ||
         !Number.isInteger(r.anchor_at) ||
@@ -176,7 +197,7 @@
       ["id", "amount", "unit", "zone"].some((key) => rule[key] !== old[key])
     )
       rule.anchor_at = Math.floor(Date.now() / 1000);
-    result.timing_version = 3;
+    result.timing_version = 4;
     return result;
   }
   function controls(
@@ -203,7 +224,7 @@
     section.append(summary, body);
     parent.append(section);
     const notify = () => {
-      rules.timing_version = 3;
+      rules.timing_version = 4;
       summary.textContent = `Reminders · ${rules.alerts.length}${rules.repeat || rules.interval ? " + recurring" : ""}`;
       changed(structuredClone(rules));
       if (extension) {
@@ -584,6 +605,7 @@
         const isPreset =
             !r.lead_time &&
             !r.day_time &&
+            !r.after_start &&
             options.some(([n]) => n === r.minutes_before),
           when = addField(
             head,
@@ -593,13 +615,16 @@
                 .map(([n, t]) => [String(n), t])
                 .concat([
                   ["custom", "Custom time…"],
-                  ["day-time", "Day & time…"],
+                  ["after", "After start…"],
+                  ...(r.day_time ? [["day-time", "Saved clock time…"]] : []),
                 ]),
-              r.day_time
-                ? "day-time"
-                : isPreset
-                  ? String(r.minutes_before)
-                  : "custom",
+              r.after_start
+                ? "after"
+                : r.day_time
+                  ? "day-time"
+                  : isPreset
+                    ? String(r.minutes_before)
+                    : "custom",
             ),
           );
         const customRow = el("div", "reminder-time-controls"),
@@ -687,6 +712,7 @@
             return;
           r.minutes_before = 0;
           delete r.lead_time;
+          delete r.after_start;
           r.day_time = {
             days_before: count,
             time: dayClock.value,
@@ -712,7 +738,9 @@
               dayRow.hidden;
           dayCount.max = dayUnit.value === "weeks" ? 522 : 3660;
           dayCount.required = dayClock.required = !dayRow.hidden;
-          customRow.hidden = when.value !== "custom";
+          customRow.hidden = !["custom", "after"].includes(when.value);
+          custom.previousElementSibling.textContent =
+            when.value === "after" ? "Amount after" : "Amount before";
           custom.disabled = unit.disabled = customRow.hidden;
           custom.required = !customRow.hidden;
           custom.max = String(FieldReminderTiming.limits[unit.value]);
@@ -725,7 +753,8 @@
             r,
             Number(custom.value),
             unit.value,
-            r.lead_time?.zone || localZone(),
+            r.after_start?.zone || r.lead_time?.zone || localZone(),
+            when.value === "after",
           );
           notify();
         };
@@ -736,11 +765,14 @@
           if (when.value === "day-time") {
             updateDay();
             dayClock.focus();
-          } else if (when.value === "custom") custom.focus();
-          else {
+          } else if (["custom", "after"].includes(when.value)) {
+            update();
+            custom.focus();
+          } else {
             r.minutes_before = Number(when.value);
             delete r.lead_time;
             delete r.day_time;
+            delete r.after_start;
             notify();
           }
         };
@@ -757,6 +789,18 @@
           ),
         );
         row.prepend(head);
+        const labelInput = field(
+          row,
+          "Reminder label · optional",
+          r.label || "",
+        );
+        labelInput.maxLength = 120;
+        labelInput.placeholder = "e.g. Start the rice";
+        labelInput.oninput = () => {
+          if (labelInput.value.trim()) r.label = labelInput.value.trim();
+          else delete r.label;
+          notify();
+        };
         const sounds = el("details");
         sounds.append(
           el("summary", "", `${r.importance} · ${r.sound} · ${r.volume}%`),

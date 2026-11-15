@@ -62,6 +62,7 @@ impl Store {
                 "title",
                 "notes",
                 "location",
+                "meal_kind",
                 "all_day",
                 "start_date",
                 "end_date",
@@ -111,6 +112,14 @@ impl Store {
             if key != "reminder_options" && key != "category_override" {
                 record.data[key] = value.clone();
             }
+        }
+        if let Some(kind) = record.data.get("meal_kind") {
+            if !matches!(kind.as_str(), Some("" | "dinner" | "prep")) {
+                return fail(400, "Choose dinner, meal prep or a regular event");
+            }
+        }
+        if record.data.get("meal_kind").and_then(Value::as_str) == Some("") {
+            record.data.as_object_mut().unwrap().remove("meal_kind");
         }
         let title = text(&record.data, "title", 240)?;
         let notes = record.data["notes"]

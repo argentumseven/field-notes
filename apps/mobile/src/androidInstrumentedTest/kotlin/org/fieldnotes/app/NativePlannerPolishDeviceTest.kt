@@ -52,7 +52,7 @@ class NativePlannerPolishDeviceTest {
                 waitText("Schedule")
                 compose.onNodeWithText("Reminders",useUnmergedTree=true).performClick()
                 compose.onNodeWithText("Time",useUnmergedTree=true).performScrollTo().performClick()
-                waitText("Day & time")
+                waitText("Before start")
                 compose.onNodeWithText("Time unit:",substring=true).performClick()
                 compose.onNodeWithText("Weeks",useUnmergedTree=true).performClick()
                 compose.onNode(hasText("1") and isSelectable()).performClick()

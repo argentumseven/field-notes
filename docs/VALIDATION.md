@@ -1,5 +1,47 @@
 # Implementation and validation record
 
+## 0.11.9 meal planning, after-start reminders and event copies — 2026-11-15
+
+Android code 28, protocol 1, schema 2. New reminder editors offer Before start and
+After start using minutes through years. Saved clock-time rules retain their
+exact data and remain editable under Saved clock time. Named prep reminders
+appear in the editor and in notifications according to existing privacy choices.
+Recurring after-start delivery searches earlier occurrence anchors, and calendar
+month/year offsets retain their saved timezone on date-only items.
+
+Meals is a dedicated section for dinner and prep events, optional end times,
+recurrence, recipe instructions and up to eight named prep reminders. Show meals
+is off by default and persists locally across calendar views. Widgets follow the
+phone's choice. Visibility never filters reminder delivery. Meals use the normal
+calendar layout rather than a separate floating panel.
+
+Clone chooses multiple dates and per-copy times, preserves details and clock/
+overnight lengths, rejects DST gaps and creates independent one-offs. Android
+queues a complete copy plan in one durable outbox update. Browser retries retain
+immutable operation IDs/payloads; a browser check loses a committed response and
+confirms exactly two copies alongside the untouched original series.
+
+The new server projects v4 rules under reminder_after_rules and removes unknown
+fields/after-start alerts from older projections. Older clients can read meals as
+ordinary events and retain compatible alerts. Their reminder editors cannot erase
+unsupported timing. Empty meal metadata is normalized away to preserve ordinary
+legacy export/import identity. Meal fields and canonical reminder rules survive
+restart, server/phone-style imports and duplicate imports. No database migration,
+new signing identity, pairing reset or receipt-store replacement is required.
+
+Validation includes 19 Rust tests and Clippy/formatting, 129 checks in the full API
+run, 12 focused meal/transfer checks (including the additional ordinary-event
+compatibility case), 134 Python checks, Android compilation/instrumentation-source
+compilation and release lint. All 166 Kotlin host tests and all 42 Chromium workflows pass. Shared Compose UI
+checks cover before/after naming,
+optional meal visibility and durable multi-date copies at narrow phone sizes.
+The full Chromium workflows exercise dinner recurrence, named after-start timing,
+cloning with a different time, lost replies and persistent calendar visibility.
+
+Physical Android/GrapheneOS delivery, permission dialogs, profile forwarding and
+phone rendering remain unrun. Headless shared UI captures are not device captures.
+No live installation or user content was changed.
+
 ## 0.11.8 priority, calendar, Settings and interval reminders — 2026-11-15
 
 Published and independently downloaded: [v0.11.8](https://github.com/argentumseven/field-notes/releases/tag/v0.11.8),

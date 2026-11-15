@@ -159,9 +159,13 @@ impl Store {
     /// editors can still inspect the original rules in the additive field.
     pub fn notification_projection(mut record: Record, actor: &Actor) -> Record {
         if let Some(rules) = record.data.get("reminders").cloned() {
+            if super::reminder_timing::has_after(&rules) {
+                record.data["reminder_after_rules"] = rules.clone();
+            }
             if super::reminder_timing::extended_timing(&rules) {
                 if !rules["interval"].is_null() {
-                    record.data["reminder_interval_rules"] = rules.clone();
+                    record.data["reminder_interval_rules"] =
+                        super::reminder_timing::interval_v3_rules(&rules);
                 }
                 record.data["reminder_schedule_rules"] =
                     super::reminder_timing::schedule_v2_rules(&rules);
@@ -185,7 +189,7 @@ impl Store {
             "/../../release.json"
         )))
         .expect("valid release metadata");
-        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","project-workspaces-v1","item-context-v1","reminder-timing-v1","reminder-schedule-v2","reminder-interval-v1","reminder-audio-v2","planner-details-v1","household-categories-v1","list-unbundle-v1"]})
+        json!({"server_version":env!("CARGO_PKG_VERSION"),"protocol_min":1,"protocol_max":1,"minimum_client_code":10,"recommended_client_code":release["android_version_code"],"features":["reminder-options-v1","household-planner-v3","history-v1","history-items-v1","content-recovery-v1","project-workspaces-v1","item-context-v1","reminder-timing-v1","reminder-schedule-v2","reminder-interval-v1","reminder-after-v1","meal-planning-v1","reminder-audio-v2","planner-details-v1","household-categories-v1","list-unbundle-v1"]})
     }
 }
 

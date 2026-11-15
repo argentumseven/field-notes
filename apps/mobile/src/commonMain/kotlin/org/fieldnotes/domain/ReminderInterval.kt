@@ -25,7 +25,7 @@ fun prepareReminderSave(value:ReminderSet,previous:ReminderSet?,savedAt:Long):Re
     val rule=value.interval ?: return value
     val old=previous?.interval
     val reset=old==null||old.id!=rule.id||old.amount!=rule.amount||old.unit!=rule.unit||old.zone!=rule.zone
-    return value.copy(interval=if(reset)rule.copy(anchor_at=savedAt)else rule,timing_version=3)
+    return value.copy(interval=if(reset)rule.copy(anchor_at=savedAt)else rule,timing_version=if(value.timing_version==4)4 else 3)
 }
 fun intervalOccurrence(rule:ReminderInterval,index:Long):Long {
     require(index>=1)

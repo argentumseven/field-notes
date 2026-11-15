@@ -12,9 +12,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.datetime.TimeZone
 import org.fieldnotes.domain.*
 
-@Composable internal fun ReminderTimeDialog(initial:ReminderAlert,extended:Boolean,close:()->Unit,dayTiming:Boolean=false,use24Hour:Boolean=false,save:(ReminderAlert)->Unit) {
+@Composable internal fun ReminderTimeDialog(initial:ReminderAlert,extended:Boolean,close:()->Unit,dayTiming:Boolean=false,use24Hour:Boolean=false,afterTiming:Boolean=false,save:(ReminderAlert)->Unit) {
     val parts=remember(initial.id){reminderTimeParts(initial)}
     val originalDay=initial.day_time
+    var after by rememberSaveable(initial.id){mutableStateOf(initial.after_start!=null)}
+    var label by rememberSaveable(initial.id){mutableStateOf(initial.label)}
     var calendarDay by rememberSaveable(initial.id){mutableStateOf(originalDay!=null)}
     var amount by rememberSaveable(initial.id){mutableStateOf((originalDay?.days_before?.let{if(it>0&&it%7==0)it/7 else it} ?: parts.amount).toString())}
     var unit by rememberSaveable(initial.id){mutableStateOf(originalDay?.let{if(it.days_before>0&&it.days_before%7==0)"weeks"else"days"} ?: parts.unit)}
@@ -23,26 +25,29 @@ import org.fieldnotes.domain.*
     val maximum=if(calendarDay)if(unit=="weeks")522 else 3660 else if(extended)reminderTimeLimits[unit] ?:0 else 43200/(mapOf("minutes" to 1,"hours" to 60,"days" to 1440,"weeks" to 10080)[unit] ?:Int.MAX_VALUE)
     val count=amount.toIntOrNull();val valid=count!=null&&count in 0..maximum
     EditorDialog(onDismissRequest=close,title={Text("Reminder time")},text={ScrollableColumn(verticalArrangement=Arrangement.spacedBy(12.dp)){
-        if(dayTiming)Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-            FilterChip(!calendarDay,{calendarDay=false;unit="minutes";amount="0"},{Text("Before start")})
-            FilterChip(calendarDay,{calendarDay=true;unit="days";amount="0"},{Text("Day & time")})
+        if(afterTiming||dayTiming)FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+            FilterChip(!calendarDay&&!after,{calendarDay=false;after=false},{Text("Before start")})
+            if(afterTiming)FilterChip(after,{calendarDay=false;after=true},{Text("After start")})
+            if(originalDay!=null)FilterChip(calendarDay,{calendarDay=true;after=false;unit="days";amount="0"},{Text("Saved clock time")})
         }
-        Text(if(calendarDay)"Choose the day and clock time."else"How long before the start?")
+        if(!afterTiming)Text("Update the paired server to add reminders after the start.",style=MaterialTheme.typography.bodySmall)
+        Text(if(calendarDay)"Choose the day and clock time."else if(after)"How long after the start?"else"How long before the start?")
         FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
             val presets=when(unit){"minutes"->listOf(0,5,10,15,30);"hours"->listOf(0,1,2,3,6,12,24);else->listOf(0,1,2,3,4)}
             for(n in presets.filter{it<=maximum})FilterChip(count==n,{amount=n.toString()},{Text(if(calendarDay&&n==0)"Day of"else n.toString())})
         }
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
             SecondaryButton(onClick={amount=((count ?:0)-1).coerceAtLeast(0).toString()}){Text("−")}
-            OutlinedTextField(amount,{amount=it.take(8)},label={Text("Amount before")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.weight(1f))
+            OutlinedTextField(amount,{amount=it.take(8)},label={Text(if(after)"Amount after"else"Amount before")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.weight(1f))
             SecondaryButton(onClick={amount=((count ?:0)+1).coerceAtMost(maximum).toString()}){Text("+")}
         }
         ViewChoice("Time unit",unit,choices){unit=it;amount=(amount.toIntOrNull() ?:0).coerceAtMost(if(calendarDay)if(it=="weeks")522 else 3660 else reminderTimeLimits.getValue(it)).toString()}
         if(calendarDay)TimeField("At",clock,use24Hour){clock=it}
         Text(if(calendarDay)"Uses the event’s first day at your chosen local time, including all-day events."else"Months and years follow calendar dates. Other units count elapsed time.",style=MaterialTheme.typography.bodySmall)
+        if(afterTiming)OutlinedTextField(label,{label=it.take(120)},label={Text("Reminder label · optional")},placeholder={Text("e.g. Start the rice")},modifier=Modifier.fillMaxWidth())
         if(!valid)Text("Choose a whole number from 0 to $maximum.",color=MaterialTheme.colorScheme.error)
     }},confirmButton={Button(shape=ControlShape,enabled=valid,onClick={
-        val zone=originalDay?.zone ?:initial.lead_time?.zone ?:TimeZone.currentSystemDefault().id
-        save(if(calendarDay)withReminderDayTime(initial,count!!*(if(unit=="weeks")7 else 1),clock,zone)else withReminderTime(initial,count!!,unit,zone))
+        val zone=initial.after_start?.zone ?: originalDay?.zone ?:initial.lead_time?.zone ?:TimeZone.currentSystemDefault().id
+        save((if(calendarDay)withReminderDayTime(initial,count!!*(if(unit=="weeks")7 else 1),clock,zone)else if(after)withReminderAfter(initial,count!!,unit,zone)else withReminderTime(initial,count!!,unit,zone)).copy(label=label.trim()))
     }){Text("Save time")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }

@@ -167,6 +167,7 @@ import org.fieldnotes.domain.*
     // The last project/list shown, so a container removed while open still lands somewhere sensible.
     var lastContainer by remember { mutableStateOf<Record?>(null) }
     var menu by remember { mutableStateOf(false) }; var projectsMenu by remember { mutableStateOf(false) }
+    var newMealKind by remember{mutableStateOf("")}
     var addTask by remember { mutableStateOf(false) }; var addProject by remember { mutableStateOf(false) }; var addList by remember { mutableStateOf(false) }; var addNote by remember { mutableStateOf(false) }; var editingContainer by remember { mutableStateOf<Record?>(null) }; var addEvent by remember { mutableStateOf(false) };var eventStartClock by remember { mutableStateOf<String?>(null) }
     var changes by remember { mutableStateOf(false) }; var settings by remember { mutableStateOf(false) };var settingsFacet by remember { mutableStateOf<SettingsFacet?>(null) }; var endpoint by remember { mutableStateOf(false) }
     LaunchedEffect(requestedPage,navigationSequence) {
@@ -215,7 +216,7 @@ import org.fieldnotes.domain.*
     }
     // Each root/container retains its scroll and filter state across navigation.
     val bodyStates=rememberSaveableStateHolder()
-    val scrollingHeader=page !in setOf("Calendar","History","Assignments","Notes","Later & reminders","Recipes")
+    val scrollingHeader=page !in setOf("Calendar","Meals","History","Assignments","Notes","Later & reminders","Recipes")
     val navigationPage=if(activeContainer?.kind=="list"&&scrollingHeader)"Lists" else page
     val referenceList=current?.record?.takeIf{it.kind=="task"}?.let{task->projects.firstOrNull{it.record.id==task.data.text("project_id")&&it.record.kind=="list"&&!it.record.flag("items_are_tasks")}?.record}
     val snackbar = remember { SnackbarHostState() }
@@ -242,7 +243,7 @@ import org.fieldnotes.domain.*
     }
     else ModalNavigationDrawer(drawerState=drawer,drawerContent={ModalDrawerSheet { Column(Modifier.fillMaxHeight().plannerScroll().padding(14.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Text("Workspace",Modifier.padding(14.dp),style=MaterialTheme.typography.titleLarge)
-        DrawerGroup("Plan",listOf("Calendar","Tasks","Focus","Later & reminders"),navigationPage,navigate={navigate(it)})
+        DrawerGroup("Plan",listOf("Calendar","Meals","Tasks","Focus","Later & reminders"),navigationPage,navigate={navigate(it)})
         DrawerGroup("Library",listOf("Lists","Projects","Notes","Recipes","History"),navigationPage,navigate={navigate(it)})
         DrawerGroup("Task views",listOf("Inbox","My tasks","Assignments","Unassigned","Unscheduled","Waiting","Completed"),navigationPage,initiallyOpen=false,navigate={navigate(it)})
 
@@ -262,7 +263,7 @@ import org.fieldnotes.domain.*
         } }
     }) }, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = { NavigationBar(tonalElevation = 0.dp) {
         listOf("Calendar" to Icons.Outlined.DateRange, "Tasks" to Icons.Outlined.List, "Lists" to Icons.Outlined.List).forEach { (label, icon) -> NavigationBarItem(modifier=Modifier.testTag("nav-"+label.lowercase()),selected = navigationPage==label, onClick = { navigate(label) }, icon = { Icon(if(label == "Focus") Icons.Outlined.PlayArrow else icon, null) }, label = { Text(label) }) }
-    } }, floatingActionButton = { if (writable&&page !in setOf("History","Calendar")&&!workClosed&&(page!="Recipes"||state.cache.supportsPlannerDetails())) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders","Recipes"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Recipes" -> "New recipe"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
+    } }, floatingActionButton = { if (writable&&page !in setOf("History","Calendar","Meals")&&!workClosed&&(page!="Recipes"||state.cache.supportsPlannerDetails())) ExtendedFloatingActionButton(shape=ControlShape,onClick = { if (page == "Calendar") {eventStartClock=null;addEvent = true} else if(page in setOf("Notes","Later & reminders","Recipes"))addNote=true else if(page=="Lists"||page=="Collections")addList=true else if(page=="Projects")addProject=true else addTask = true }, icon={ Icon(Icons.Outlined.Add, "Add") }, text={ Text(when(page) { "Calendar" -> "New event"; "Notes" -> "New note"; "Recipes" -> "New recipe"; "Later & reminders" -> "New reminder note"; "Collections","Lists" -> "New list"; "Projects" -> "New project"; else -> if(projects.find { it.record.id==project }?.record?.kind=="list")"Add item" else "New task" }) }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().padding(horizontal = 18.dp)) {
             val workspaceHeader:@Composable ()->Unit={
             if(page!="Calendar")Text(projects.firstOrNull { it.record.id==project }?.record?.data?.text("title")?:page, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp).testTag("workspace-heading"),maxLines=2,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -286,9 +287,9 @@ import org.fieldnotes.domain.*
             else if(state.cache.recoveryNotice.isNotBlank())Text(state.cache.recoveryNotice)
             if(device.update.available)SecondaryButton(onClick={settingsFacet=SettingsFacet.UPDATES;settings=true}){Text("App update ${device.update.offered} available")}
             }
-            if(!scrollingHeader&&page!="Calendar")workspaceHeader()
+            if(!scrollingHeader&&page !in setOf("Calendar","Meals"))workspaceHeader()
             bodyStates.SaveableStateProvider(page+":"+project.orEmpty()) {
-            if (page == "Calendar") PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences(state.cache.preferences.copy(federalHolidays=on))}},header=workspaceHeader,newEvent=if(writable)({eventStartClock=null;addEvent=true})else null)
+            if (page in setOf("Calendar","Meals")) PlannerCalendar(rows, today, zone, calendarDay, { calendarDay=it }, {clock->newMealKind=if(page=="Meals")"dinner"else"";eventStartClock=clock;addEvent=true}, { selected = it },calendarView,{calendarView=it},state.cache.preferences.federalHolidays,{on->model.launch{model.preferences{it.copy(federalHolidays=on)}}},header={workspaceHeader();if(page=="Meals"){Text("What’s for dinner?",style=MaterialTheme.typography.titleLarge);Text("Plan dinners and prep, reuse recipes, and add named reminders. Calendar visibility does not change reminders.");if(writable&&state.cache.supportsMeals())SecondaryButton(onClick={newMealKind="prep";eventStartClock=null;addEvent=true}){Text("Plan meal prep")};if(!state.cache.supportsMeals())Text("Update the server to plan meals.")}},newEvent=if(writable&&(page!="Meals"||state.cache.supportsMeals()))({newMealKind=if(page=="Meals")"dinner"else"";eventStartClock=null;addEvent=true})else null,mealsOnly=page=="Meals",showMeals=state.cache.preferences.calendarMeals,mealChange={on->model.launch{model.preferences{it.copy(calendarMeals=on)}}})
             else if(page=="History") HistoryScreen(model,state,device.use24Hour,historyTarget,historyTitle,{historyTarget=null;historyTitle=""}){id->if(projects.any {it.record.id==id})navigate("Tasks",id)else selected=id}
             else if(page=="Assignments") {
                 OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(top=12.dp),label={Text("Find assigned work")},singleLine=true)
@@ -350,7 +351,7 @@ import org.fieldnotes.domain.*
         if(project==c.id){val landing=landingAfterRemoval(c,state.cache);navigate(landing.page,landing.container)}
         uiScope.launch{snackbar.showSnackbar("Deleted ${c.kind} “${c.data.text("title")}”")}
     }) }
-    if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock,copyLocation=copy,device=device) { addEvent = false }
+    if (addEvent) EventEditor(model, state, null, LocalDate.parse(calendarDay), device.use24Hour,device.previewSound,eventStartClock,copyLocation=copy,device=device,initialMealKind=newMealKind) { addEvent = false }
     if (endpoint) TextDialog("Server endpoint", "Host:UDP port", { endpoint = false }, confirmLabel = "Update", initial = state.cache.config?.text("endpoint") ?: "", maxLength = 260) { model.updateEndpoint(it); endpoint = false; model.launch { model.sync() } }
     if (changes) ChangesSheet(model, state, { changes = false }, copy)
     if(settings)WorkspaceSettings(model,state,device,settingsFacet,{settingsFacet=it},{settings=false},background,{endpoint=true},{profileHelp=true},{removeInstallation=true})

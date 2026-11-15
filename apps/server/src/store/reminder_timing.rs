@@ -3,9 +3,12 @@ use super::*;
 pub(super) fn extended_timing(rules: &Value) -> bool {
     !rules["interval"].is_null()
         || rules["alerts"].as_array().is_some_and(|alerts| {
-            alerts
-                .iter()
-                .any(|a| a.get("lead_time").is_some() || a.get("day_time").is_some())
+            alerts.iter().any(|a| {
+                a.get("lead_time").is_some()
+                    || a.get("day_time").is_some()
+                    || a.get("after_start").is_some()
+                    || a.get("label").is_some()
+            })
         })
 }
 
@@ -23,7 +26,7 @@ pub(super) fn validate_lead(alert: &Value, version: &Value) -> Result<()> {
         Some("years") => 10,
         _ => return fail(400, "Choose minutes, hours, days, weeks, months or years"),
     };
-    if !matches!(version.as_i64(), Some(1..=3))
+    if !matches!(version.as_i64(), Some(1..=4))
         || alert["minutes_before"].as_i64() != Some(0)
         || !lead["amount"]
             .as_i64()
@@ -53,7 +56,7 @@ pub(super) fn validate_day_time(alert: &Value, version: &Value) -> Result<()> {
     };
     fields(day, &["days_before", "time", "zone"])?;
     let time = day["time"].as_str().unwrap_or("");
-    if !matches!(version.as_i64(), Some(2 | 3))
+    if !matches!(version.as_i64(), Some(2..=4))
         || alert["minutes_before"].as_i64() != Some(0)
         || alert.get("lead_time").is_some()
         || !day["days_before"]
@@ -75,7 +78,7 @@ pub(super) fn validate_day_time(alert: &Value, version: &Value) -> Result<()> {
 }
 /// Existing day/time clients receive their full supported rules, never interval fields.
 pub(super) fn schedule_v2_rules(canonical: &Value) -> Value {
-    let mut value = canonical.clone();
+    let mut value = interval_v3_rules(canonical);
     if let Some(object) = value.as_object_mut() {
         object.remove("interval");
     }
@@ -117,4 +120,50 @@ pub(super) fn legacy_rules(canonical: &Value) -> Value {
         alerts.retain(|a| a.get("lead_time").is_none())
     }
     value
+}
+
+pub(super) fn has_after(rules: &Value) -> bool {
+    rules["alerts"].as_array().is_some_and(|a| {
+        a.iter()
+            .any(|r| r.get("after_start").is_some() || r.get("label").is_some())
+    })
+}
+pub(super) fn interval_v3_rules(canonical: &Value) -> Value {
+    let mut v = canonical.clone();
+    if let Some(alerts) = v["alerts"].as_array_mut() {
+        alerts.retain(|a| a.get("after_start").is_none());
+        for a in alerts {
+            if let Some(o) = a.as_object_mut() {
+                o.remove("label");
+            }
+        }
+    }
+    if !v["interval"].is_null() {
+        v["timing_version"] = json!(3);
+    }
+    v
+}
+pub(super) fn validate_after(alert: &Value, version: &Value) -> Result<()> {
+    if let Some(after) = alert.get("after_start") {
+        if version != 4
+            || alert["minutes_before"] != 0
+            || alert.get("lead_time").is_some()
+            || alert.get("day_time").is_some()
+        {
+            return fail(400, "Choose one before-start or after-start reminder");
+        }
+        let mut copy = alert.clone();
+        copy.as_object_mut().unwrap().remove("after_start");
+        copy["lead_time"] = after.clone();
+        validate_lead(&copy, version)?;
+    }
+    if let Some(label) = alert.get("label") {
+        if version != 4 || label.as_str().is_none_or(|s| s.chars().count() > 120) {
+            return fail(
+                400,
+                "Use a reminder label up to 120 characters with the updated app",
+            );
+        }
+    }
+    Ok(())
 }

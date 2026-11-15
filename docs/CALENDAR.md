@@ -106,3 +106,10 @@ Pinning/resizing triggers fresh checks, and an obsolete lock-state view is
 rebuilt before publication. Unlock retries continue briefly while keyguard
 settles. App credential locking and hidden-widget preferences do not stop
 encrypted synchronization; saved off preferences remain off.
+
+## Event copies and optional meals — 0.11.9
+
+**Clone** beside Delete opens a date list for independent copies. The original
+series stays unchanged. **Meals** schedules dinners and prep; **Show meals** in
+Calendar controls their visibility across calendar views. Reminders remain active
+when meals are hidden. See [Meals and meal prep](MEALS.md).
