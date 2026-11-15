@@ -1742,8 +1742,8 @@ upgrade behavior. See [UPDATES.md](UPDATES.md) for the operator path and limits.
 
 ## 0.11.10 food preparation, sessions and audio validation — 2026-11-15
 
-Automated checks: 173 Kotlin host tests, including 13 Compose interaction tests;
-134 full API tests; 43 full Chromium browser tests; 21 Rust tests; and 134 Python
+Automated checks: 177 Kotlin host tests, including 13 Compose interaction tests;
+135 full API tests; 43 full Chromium browser tests; 21 Rust tests; and 134 Python
 installation/upgrade/artifact tests. Android debug and instrumentation Kotlin
 compilation and release lint passed. Final focused browser checks cover arbitrary
 birthday-cake and snack names, zero-duration packing, dependencies, ready times,
@@ -1755,7 +1755,12 @@ and compared to every original PCM sample; v1 WAV bytes remain unchanged.
 Food and phase names are free-form, with generic Food or occasion / Prep session
 scheduling choices. Backward timing, forward propagation of actual progress,
 loop/bounds validation, per-occurrence progress, old-editor schedule protection,
-restart, replay and duplicate-safe content transfer are covered. A DST-fold test
+restart, replay and duplicate-safe content transfer are covered. Ready-time/date
+edits preserve actual cooking clocks, reject orphaned live occurrences, retain
+cue identities, and include early-started work beyond the usual horizon.
+Cooking notification taps resolve the current occurrence after a reschedule,
+and settled alarm cards retain their cooking context.
+Additional focused API/Compose checks cover these rescheduling cases. A DST-fold test
 refuses progress for an occurrence that the calendar does not generate. The
 upgrader admits 0.11.10 recovery while retaining same-version/downgrade refusal.
 

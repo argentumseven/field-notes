@@ -43,11 +43,19 @@ fun cookingAlerts(record:Record,now:Instant,zone:TimeZone):List<LocalAlert> {
     // 64 bounded phases can chain long cooks. Derive the range from the actual
     // backward plan, so work before dinner's day is still scheduled.
     val relative=cookingSchedule(plan,0);val lead=-(relative.minOfOrNull{it.planned}?:0);val days=(lead/86400+10).coerceAtMost(39).toInt()
-    return eventInstances(record,today.minus(29,DateTimeUnit.DAY),today.plus(days,DateTimeUnit.DAY),zone).flatMap { r->
+    val instances=eventInstances(record,today.minus(29,DateTimeUnit.DAY),today.plus(days,DateTimeUnit.DAY),zone)
+    val durations=plan.items.flatMap{it.stages}.associate{it.id to it.duration_minutes}
+    // Actual work may begin much earlier than the inherited plan (for example,
+    // freezing food for a future occasion). Keep those live clocks in range.
+    val live=plan.progress.filter{it.state=="running"&&it.at<end&&it.at+(durations[it.stage_id]?:0)*60L>=now.epochSeconds-600}.map{it.occurrence}.distinct().flatMap{at->
+        val date=Instant.fromEpochSeconds(at).toLocalDateTime(zone).date
+        eventInstances(record,date.minus(1,DateTimeUnit.DAY),date.plus(2,DateTimeUnit.DAY),zone).filter{it.data.number("starts_at")==at}
+    }
+    return (instances+live).distinctBy{it.data.number("starts_at")}.flatMap { r->
       val occurrence=r.data.number("starts_at")
       cookingSchedule(plan,occurrence).flatMap { t->
         if(t.progress?.state=="done")return@flatMap emptyList()
-        fun cue(at:Long,type:String)=LocalAlert("cook:${r.id}:$occurrence:${t.stage.id}:$type:$at",at,r.id,"calendar",plan.profile,"cook:${r.id}:$occurrence:${t.stage.id}:$type",occurrence,"${if(type=="start")"Begin"else if(type=="end")"Finish"else"Check"} ${t.stage.name} · ${t.item.name}")
+        fun cue(at:Long,type:String)=LocalAlert("cook:${r.id}:${t.stage.id}:$type:$at",at,r.id,"calendar",plan.profile,"cook:${r.id}:${t.stage.id}:$type",occurrence,"${if(type=="start")"Begin"else if(type=="end")"Finish"else"Check"} ${t.stage.name} · ${t.item.name}")
         val cues=mutableListOf<LocalAlert>()
         if(t.stage.notify_start&&t.progress==null)cues+=cue(t.start,"start")
         if(t.stage.notify_end)cues+=cue(t.end,"end")
@@ -56,4 +64,12 @@ fun cookingAlerts(record:Record,now:Instant,zone:TimeZone):List<LocalAlert> {
         cues.filter{it.at>=now.epochSeconds-600&&it.at<end}
       }
     }
+}
+
+/** Resolve a delivered cooking cue against the current plan, including a ready
+ * time edited while it rang. This is navigation only, independent of visibility. */
+fun cookingAlertOccurrence(record:Record,key:String,zone:TimeZone):Long? {
+    if(!key.startsWith("cook:${record.id}:"))return null
+    val at=key.substringAfterLast(':').toLongOrNull()?.takeIf{it in 1..4102444800L}?:return null
+    return runCatching{cookingAlerts(record,Instant.fromEpochSeconds(at),zone).firstOrNull{it.key==key}?.sourceAt}.getOrNull()
 }

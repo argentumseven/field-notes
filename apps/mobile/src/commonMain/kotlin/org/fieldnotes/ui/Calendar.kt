@@ -192,10 +192,11 @@ import org.fieldnotes.domain.*
         val result=if(remindersDirty)JsonObject(mealFields+("reminders" to reminderData(reminders))) else mealFields
         recurrence?.let(::validateRepeat)
         val modern=if(state.cache.supportsPlannerV3())JsonObject(result+mapOf("recurrence" to repeatData(recurrence),"category" to category.j())+(if(record?.data?.text("category")?.startsWith("custom:")==true&&category!=record?.data?.text("category"))mapOf("category_override" to JsonPrimitive(true))else emptyMap())) else result
-        return if(state.cache.supportsRemindersV2()) {
+        val prepared=if(state.cache.supportsRemindersV2()) {
             val extra=prunedReminderOptions(reminderOptions,reminders);validateReminderOptions(extra)
             JsonObject(modern+("reminder_options" to reminderOptionsData(extra)))
         } else modern
+        return keepCookingProgress(data,prepared,zone)
     }
     EditorDialog(onDismissRequest = close, title = { Text(if(record == null) "New calendar event" else "Calendar event") }, text = { ScrollableColumn( verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(title, { title = it.take(240) }, label = { Text("Title") }, enabled = writable)

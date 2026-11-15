@@ -97,7 +97,7 @@ impl Store {
         }
         if record.data.get("meal_plan").is_some()
             && data.get("meal_plan").is_none()
-            && ["starts_at", "ends_at", "all_day", "recurrence", "meal_kind"]
+            && ["starts_at", "all_day", "recurrence", "meal_kind"]
                 .iter()
                 .any(|k| data.get(*k).is_some_and(|v| record.data.get(*k) != Some(v)))
         {
@@ -115,6 +115,7 @@ impl Store {
         // Validate against the original assignment before copying editor fields.
         // Otherwise a newly assigned archived category looks unchanged.
         self.category(data, record, importing)?;
+        let original = record.clone();
         for (key, value) in data.as_object().unwrap() {
             // Preserve the old audience until recipient validation can tell
             // historical disabled accounts from newly selected ones.
@@ -181,7 +182,11 @@ impl Store {
             record.data["start_date"] = json!("");
             record.data["end_date"] = json!("");
         }
+        Self::recurrence(data, record)?;
         self.cooking_plan(data, record, importing)?;
+        if !importing && original.revision > 0 {
+            super::meals::retime(&original, record)?;
+        }
         if record.data.get("meal_plan").is_some()
             && (!matches!(record.data["meal_kind"].as_str(), Some("dinner" | "prep"))
                 || record.data["all_day"] == true)
@@ -192,7 +197,6 @@ impl Store {
             );
         }
         Self::reminders(data, record)?;
-        Self::recurrence(data, record)?;
         self.reminder_options(data, record, actor)?;
         record.data["title"] = json!(title);
         record.data["updated_at"] = json!(now());

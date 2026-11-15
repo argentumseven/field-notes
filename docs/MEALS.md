@@ -44,7 +44,7 @@ phases need reminders and checks.
 
 **Start now** records the actual start and bases checks and the finish timer on
 that time. Actual starts/completions propagate through downstream dependencies;
-the serving target stays fixed and lateness is shown explicitly. Starting before
+the ready target stays fixed and lateness is shown explicitly. Starting before
 prerequisites are marked complete requires a review. **Done** stops that phase's
 remaining cues; **Reset** clears its timer/completion for this date after review.
 A forgotten completion does not silently cancel later scheduled reminders: check
@@ -81,3 +81,10 @@ make ordinary notes edits. An older editor cannot move a meal's hidden cooking
 plan by changing its schedule; it must update first. New clients retain workflow
 edits when an older server does not support them. Export/import, encrypted
 backups, history and restores preserve the complete plan and progress.
+
+Changing a ready time or moving an occurrence preserves recorded actual start
+and completion times. Unstarted deadlines recalculate, and reminders already
+heard at the same phase/time are not replayed. A repeat change that would detach
+running work requires you to finish/reset it or clone an independent plan first.
+Work explicitly started ahead of the usual reminder horizon still keeps its
+live checks and finish timer, including preparation for a future occasion.

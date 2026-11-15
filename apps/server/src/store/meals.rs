@@ -276,6 +276,18 @@ impl Store {
             }
         }
         validate(&saved)?;
+        if importing || record.revision == 0 {
+            for p in saved["progress"].as_array().unwrap() {
+                if p["state"] == "running"
+                    && !occurrence_matches(record, p["occurrence"].as_i64().unwrap())
+                {
+                    return fail(
+                        400,
+                        "Running cooking progress must belong to a scheduled occurrence",
+                    );
+                }
+            }
+        }
         record.data["meal_plan"] = saved;
         Ok(())
     }
@@ -452,4 +464,56 @@ mod tests {
         assert!(occurrence_matches(&r, fold.earliest().unwrap().timestamp()));
         assert!(!occurrence_matches(&r, fold.latest().unwrap().timestamp()));
     }
+}
+
+/// Preserve actual clocks when a food occasion moves. Pattern changes may keep
+/// history, but must not silently detach live work from all generated dates.
+pub(super) fn retime(before: &Record, after: &mut Record) -> Result<()> {
+    use chrono::TimeZone;
+    let old_start = before.data["starts_at"].as_i64().unwrap_or(0);
+    let new_start = after.data["starts_at"].as_i64().unwrap_or(0);
+    let old_rule = &before.data["recurrence"];
+    let new_rule = &after.data["recurrence"];
+    if old_start == new_start && old_rule == new_rule {
+        return Ok(());
+    }
+    let Some(mut plan) = after.data.get("meal_plan").cloned() else {
+        return Ok(());
+    };
+    for p in plan["progress"].as_array_mut().unwrap() {
+        let old = p["occurrence"].as_i64().unwrap();
+        let candidate = if old == old_start && occurrence_matches(after, new_start) {
+            Some(new_start)
+        } else if !old_rule.is_null() && old_rule == new_rule {
+            let zone = old_rule["zone"]
+                .as_str()
+                .unwrap()
+                .parse::<chrono_tz::Tz>()
+                .unwrap();
+            let first = zone.timestamp_opt(old_start, 0).single().unwrap();
+            let next = zone.timestamp_opt(new_start, 0).single().unwrap();
+            let previous = zone.timestamp_opt(old, 0).single().unwrap();
+            let date = previous.date_naive() + (next.date_naive() - first.date_naive());
+            let at = if date == next.date_naive() {
+                Some(new_start)
+            } else {
+                zone.from_local_datetime(&date.and_time(next.time()))
+                    .earliest()
+                    .map(|d| d.timestamp())
+            };
+            at.filter(|at| occurrence_matches(after, *at))
+        } else {
+            None
+        };
+        let anchor = candidate.or_else(|| occurrence_matches(after, old).then_some(old));
+        if anchor.is_none() && p["state"] == "running" {
+            return fail(409,"This repeat change would detach a running phase. Finish or reset it, or clone an independent food plan");
+        }
+        if let Some(at) = anchor {
+            p["occurrence"] = json!(at);
+        }
+    }
+    validate(&plan)?;
+    after.data["meal_plan"] = plan;
+    Ok(())
 }

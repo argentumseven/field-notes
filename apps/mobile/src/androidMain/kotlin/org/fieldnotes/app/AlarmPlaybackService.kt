@@ -11,6 +11,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.Instant
+import kotlinx.datetime.toLocalDateTime
 import org.fieldnotes.domain.*
 
 /** Bounded local alarm audio, with a visible Stop action. Volume changes require separate phone and reminder opt-ins.
@@ -47,7 +49,8 @@ class AlarmPlaybackService:Service() {
                     val profile=if(testing)if(intent?.action==TEST_SOUND)SyncJson.decodeFromString<AlertProfile>(intent.getStringExtra("sound_profile") ?: error("Missing sound profile")) else TEST_ALARM else alerts.firstOrNull()?.profile ?: return@withLock
                     if(profile.importance=="quiet")return@withLock
                     val notice=if(testing)ReminderNotice("Reminder sound test","Selected sound and volume policy; Stop restores any temporary volume.","",null,Clock.System.now().epochSeconds) else reminderNotice(cache,alerts,TimeZone.currentSystemDefault())
-                    fun show(status:String)=controls(notice,cache.preferences,profile,status).also {shown=it;manager.notify(ID,it)}
+                    val cooking=alerts.firstOrNull{it.key.startsWith("cook:")}
+                    fun show(status:String)=controls(notice,cache.preferences,profile,status,cooking).also {shown=it;manager.notify(ID,it)}
                     show("Preparing audio")
                     val started={show(if(profile.alarm)"Alarm playing"else"Notification sound playing");Unit}
                     val allowVolume=if(profile.alarm)cache.preferences.allowAlarmVolumeOverride else cache.preferences.allowNotificationVolumeOverride
@@ -65,7 +68,7 @@ class AlarmPlaybackService:Service() {
                         }
                     } finally {
                         // The sound is over, so the card stops offering Stop. A card the user already dismissed stays dismissed.
-                        if(cardKey!=null)runCatching { Alerts.settle(this@AlarmPlaybackService,ReminderSounds.channel(this@AlarmPlaybackService,profile),cardKey,notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile.alarm) }
+                        if(cardKey!=null)runCatching { Alerts.settle(this@AlarmPlaybackService,ReminderSounds.channel(this@AlarmPlaybackService,profile),cardKey,notice.title,notice.summary,notice.target,notice.details,notice.whenAt,profile.alarm,occurrenceAt=cooking?.sourceAt,openCue=cooking?.key) }
                     }
                 }
             }catch(e:Exception) {
@@ -77,11 +80,12 @@ class AlarmPlaybackService:Service() {
         }
         return START_NOT_STICKY
     }
-    private fun controls(notice:ReminderNotice,prefs:Preferences,profile:AlertProfile,status:String="Preparing audio"):Notification {
+    private fun controls(notice:ReminderNotice,prefs:Preferences,profile:AlertProfile,status:String="Preparing audio",cooking:LocalAlert?=null):Notification {
         val openIntent=Intent(this,MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .setData(android.net.Uri.parse("fieldnotes://playing/"+Alerts.digest(notice.target.orEmpty())))
             .putExtra("open_record",notice.target).putExtra(Alerts.STOP_ALARM_EXTRA,true)
+        cooking?.let{cue->openIntent.putExtra("open_cue",cue.key);cue.sourceAt?.let{openIntent.putExtra("open_date",Instant.fromEpochSeconds(it).toLocalDateTime(TimeZone.currentSystemDefault()).date.toString())}}
         if(notice.target==null)openIntent.putExtra("open_page","Settings")
         val open=PendingIntent.getActivity(this,761,openIntent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val details=notice.details.ifBlank{notice.summary}

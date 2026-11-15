@@ -206,7 +206,20 @@ test("cooking plan persistence, revision fences, occurrence progress, old writer
     );
     r = await row();
     assert.equal(r.data.meal_plan.progress.length, 1);
-    for(const invalid of [5,"bad",[],{version:1,items:null,profile:p.profile,progress:[]}])assert.equal((await send(command('event.update',{meal_plan:invalid},r.revision))).status,400);
+    for (const invalid of [
+      5,
+      "bad",
+      [],
+      { version: 1, items: null, profile: p.profile, progress: [] },
+    ])
+      assert.equal(
+        (
+          await send(
+            command("event.update", { meal_plan: invalid }, r.revision),
+          )
+        ).status,
+        400,
+      );
     const cyclic = structuredClone(p);
     cyclic.items[0].stages[0].after = [cyclic.items[1].stages[0].id];
     assert.equal(
@@ -266,6 +279,170 @@ test("cooking plan persistence, revision fences, occurrence progress, old writer
     } finally {
       await target.close();
     }
+  } finally {
+    await f.close();
+  }
+});
+
+test("moving ready times/dates preserves actual clocks; repeat edits cannot orphan live preparation", async () => {
+  const f = await fixture();
+  try {
+    const token = await f.login(),
+      basis = (await f.request("/api/snapshot", { token })).data,
+      id = randomUUID(),
+      p = plan(),
+      serve = 1794765600;
+    const weekly = {
+      frequency: "weekly",
+      interval: 1,
+      weekdays: [7],
+      dates: [],
+      excluded: [],
+      until: "",
+      zone: "UTC",
+    };
+    const send = (action, data, revision = null) =>
+      f.request("/api/commands", {
+        token,
+        body: {
+          operation_id: randomUUID(),
+          epoch: basis.epoch,
+          generation: basis.generation,
+          action,
+          target: id,
+          expected_revision: revision,
+          data,
+        },
+      });
+    const row = async () =>
+      (await f.request("/api/snapshot", { token })).data.records.find(
+        (r) => r.id === id,
+      );
+    assert.equal(
+      (
+        await send("event.create", {
+          title: "Birthday cake or anything else",
+          meal_kind: "dinner",
+          all_day: false,
+          starts_at: serve,
+          ends_at: null,
+          notes: "",
+          recurrence: weekly,
+          meal_plan: p,
+        })
+      ).status,
+      200,
+    );
+    let r = await row();
+    assert.equal((await send('event.update',{notes:'Old client note edit',starts_at:serve,ends_at:0,all_day:false,recurrence:weekly,meal_kind:'dinner'},r.revision)).status,200,'old clients may echo no end as zero while preserving hidden preparation');
+    r=await row();assert.equal(r.data.ends_at,null);assert.deepEqual(r.data.meal_plan,JSON.parse(JSON.stringify(p)));
+
+    const stage = p.items[0].stages[0].id;
+    for (const occurrence of [serve, serve + 7 * 86400]) {
+      assert.equal(
+        (
+          await send(
+            "event.meal_stage",
+            {
+              occurrence,
+              stage_id: stage,
+              state: "running",
+              at: occurrence - 600 * 60,
+            },
+            r.revision,
+          )
+        ).status,
+        200,
+      );
+      r = await row();
+    }
+    const actual = r.data.meal_plan.progress.map((p) => p.at);
+    assert.equal(
+      (
+        await send(
+          "event.update",
+          { starts_at: serve + 3600, recurrence: weekly, meal_plan: p },
+          r.revision,
+        )
+      ).status,
+      200,
+    );
+    r = await row();
+    assert.deepEqual(
+      r.data.meal_plan.progress.map((p) => p.occurrence),
+      [serve + 3600, serve + 7 * 86400 + 3600],
+    );
+    assert.deepEqual(
+      r.data.meal_plan.progress.map((p) => p.at),
+      actual,
+    );
+    const before = JSON.stringify(r);
+    assert.equal(
+      (
+        await send(
+          "event.update",
+          { recurrence: { ...weekly, interval: 0 }, meal_plan: p },
+          r.revision,
+        )
+      ).status,
+      400,
+      "validate repeat rules before mapping progress",
+    );
+    assert.equal(
+      (
+        await send(
+          "event.update",
+          {
+            recurrence: {
+              ...weekly,
+              frequency: "dates",
+              dates: ["2026-12-25"],
+            },
+            meal_plan: p,
+          },
+          r.revision,
+        )
+      ).status,
+      409,
+      "live later occurrence cannot disappear",
+    );
+    assert.equal(JSON.stringify(await row()), before);
+    assert.equal(
+      (
+        await send(
+          "event.update",
+          {
+            starts_at: serve + 7 * 86400 + 3600,
+            recurrence: weekly,
+            meal_plan: p,
+          },
+          r.revision,
+        )
+      ).status,
+      200,
+    );
+    r = await row();
+    assert.deepEqual(
+      r.data.meal_plan.progress.map((p) => p.occurrence),
+      [serve + 7 * 86400 + 3600, serve + 14 * 86400 + 3600],
+    );
+    assert.deepEqual(
+      r.data.meal_plan.progress.map((p) => p.at),
+      actual,
+    );
+    assert.equal(
+      (
+        await send(
+          "event.update",
+          { recurrence: null, meal_plan: p },
+          r.revision,
+        )
+      ).status,
+      409,
+    );
+    await f.stop();
+    await f.start();
+    assert.deepEqual((await row()).data.meal_plan, r.data.meal_plan);
   } finally {
     await f.close();
   }

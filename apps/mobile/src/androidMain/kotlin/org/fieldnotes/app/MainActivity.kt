@@ -42,6 +42,7 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.*
 import org.fieldnotes.domain.*
+import kotlinx.datetime.*
 import org.fieldnotes.ui.FieldNotesApp
 import org.fieldnotes.ui.FieldNotesTheme
 import org.fieldnotes.ui.ControlShape
@@ -118,6 +119,19 @@ class MainActivity : ComponentActivity() {
             catch(e:Exception){if(e is CancellationException)throw e;app.deliveryError.value=e.message ?: "Alarm volume could not be restored. Open Android sound settings."}
         }
     }
+    private fun refineCookingNavigation(openIntent:Intent?) {
+        val key=openIntent?.getStringExtra("open_cue")?:return
+        val target=openIntent.getStringExtra("open_record")?:return
+        val stamp=navigationSequence
+        lifecycleScope.launch {
+            app.initialized.await()
+            if(navigationSequence!=stamp||requestedRecord!=target)return@launch
+            val row=projectRecords(app.model.state.value.cache).firstOrNull{it.record.id==target}?.record?:return@launch
+            val at=cookingAlertOccurrence(row,key,TimeZone.currentSystemDefault())?:return@launch
+            val date=Instant.fromEpochSeconds(at).toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
+            if(requestedDate!=date){requestedDate=date;navigationSequence++}
+        }
+    }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -126,6 +140,7 @@ class MainActivity : ComponentActivity() {
         requestedRecord = intent.getStringExtra("open_record")
         requestedDate = intent.getStringExtra("open_date")
         requestedPage = intent.getStringExtra("open_page")
+        refineCookingNavigation(intent)
         intent.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }?.let {
             invitationCode = it
             invitationSequence++
@@ -165,6 +180,7 @@ class MainActivity : ComponentActivity() {
         requestedRecord = intent?.getStringExtra("open_record")
         requestedDate = intent?.getStringExtra("open_date")
         requestedPage = intent?.getStringExtra("open_page")
+        refineCookingNavigation(intent)
         invitationCode = intent?.data?.toString()?.takeIf { it.startsWith("fieldnotes://enroll#") && it.length <= 20000 }
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         lifecycleScope.launch {

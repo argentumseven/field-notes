@@ -92,6 +92,37 @@ test("weekly meal overview and free-form dependency editor fit narrow screens; e
       .waitFor();
     assert(await page.getByText("Get started", { exact: false }).count());
     await page
+      .getByRole("button", { name: "Start now", exact: true })
+      .first()
+      .click();
+    await page.waitForFunction(() =>
+      records("event").some(
+        (r) =>
+          r.data.title === "Birthday cake" &&
+          r.data.meal_plan?.progress.some((p) => p.state === "running"),
+      ),
+    );
+    const cakeToken = await f.login();
+    const cakeBefore = (
+      await f.request("/api/snapshot", { token: cakeToken })
+    ).data.records.find((r) => r.data.title === "Birthday cake");
+    const beganAt = cakeBefore.data.meal_plan.progress[0].at;
+    await page
+      .getByRole("button", { name: "Edit schedule", exact: true })
+      .click();
+    await page.getByLabel("Ready time", { exact: true }).fill("21:00");
+    await page.getByRole("button", { name: "Save event", exact: true }).click();
+    await page.locator("#dialog").waitFor({ state: "hidden" });
+    const cakeAfter = (
+      await f.request("/api/snapshot", { token: cakeToken })
+    ).data.records.find((r) => r.id === cakeBefore.id);
+    assert.equal(cakeAfter.data.meal_plan.progress[0].at, beganAt);
+    assert.equal(
+      cakeAfter.data.meal_plan.progress[0].occurrence,
+      cakeAfter.data.starts_at,
+    );
+    await page.getByRole("button", { name: /Birthday cake/ }).click();
+    await page
       .getByRole("button", { name: "Edit schedule", exact: true })
       .click();
     await page.getByRole("tab", { name: "Schedule", exact: true }).waitFor();
