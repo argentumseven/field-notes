@@ -2,6 +2,25 @@
 
 ## 0.11.9 meal planning, after-start reminders and event copies — 2026-11-15
 
+Published and independently verified: [v0.11.9](https://github.com/argentumseven/field-notes/releases/tag/v0.11.9),
+source `aeecad2df3c765ee5b74db9b124b9ced3ee5d68a`.
+[Prebuilt publication run 43731400916](https://github.com/argentumseven/field-notes/actions/runs/43731400916)
+succeeded. All four versioned assets and all four latest-download assets match the
+clean signed build byte for byte. Actual APK signature/package/code 28/ARM64 and
+16 KiB alignment checks pass; its native library records the same clean source.
+APK SHA-256: `83af6fc4ff784eb5adfbb48f9f905d32cb0a4e497fb18d5e0840ab94aa44cc65`.
+The public signing certificate is unchanged. Release compilation and lint pass.
+
+The matching 98,285,656-byte x86_64 Linux bundle is linked from README, artifact
+commit `87245d56321c4c4df60c07b61cbc9ab594f71879` on `server-bundles/v0.11.9`.
+Its independently downloaded SHA-256 is
+`2b7ce4b0a41d0e19d35e7199c073cb12570f3f064f296e13bd5890555c8eabec`.
+It contains the exact public APK and the verified app/gateway image IDs; all
+embedded checksums pass. Packaging used the verified public download directory
+after a repeat public fetch failed. Image recompression preserved the complete
+uncompressed bytes. The app CLI ran nonroot/read-only with no capabilities,
+no new privileges and no network. No home-server installation was performed.
+
 Android code 28, protocol 1, schema 2. New reminder editors offer Before start and
 After start using minutes through years. Saved clock-time rules retain their
 exact data and remain editable under Saved clock time. Named prep reminders
