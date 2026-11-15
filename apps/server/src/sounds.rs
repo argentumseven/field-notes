@@ -245,10 +245,20 @@ mod tests {
                     (phrases - phrases.round()).abs() < 1e-6,
                     "{tone} is {phrases} phrases long"
                 );
-                let largest_step = clip.windows(2).map(|pair| (pair[1] - pair[0]).abs()).max().unwrap();
+                let largest_step = clip
+                    .windows(2)
+                    .map(|pair| (pair[1] - pair[0]).abs())
+                    .max()
+                    .unwrap();
                 let seam = (clip[0] - clip[clip.len() - 1]).abs();
-                assert!(seam <= largest_step, "{tone}@{level}: seam step {seam} > {largest_step}");
-                assert!(clip[0].abs() <= largest_step, "{tone}@{level} starts away from silence");
+                assert!(
+                    seam <= largest_step,
+                    "{tone}@{level}: seam step {seam} > {largest_step}"
+                );
+                assert!(
+                    clip[0].abs() <= largest_step,
+                    "{tone}@{level} starts away from silence"
+                );
             }
         }
     }
