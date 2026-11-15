@@ -65,7 +65,7 @@ internal class VolumeLeaseControl(private val stream:Int,private val name:String
         val previous=audio.getStreamVolume(stream);val muted=audio.isStreamMute(stream)
         val target=kotlin.math.ceil(audio.getStreamMaxVolume(stream)*(if(stream==AudioManager.STREAM_ALARM)profile.alarmVolume else profile.notificationVolume).coerceIn(25,100)/100.0).toInt().coerceAtLeast(previous)
         if(previous==target&&!muted)return@withLock null
-        val lease=AlarmVolumeLease(UUID.randomUUID().toString(),previous,muted,target,SystemClock.elapsedRealtime()+(profile.duration.takeIf {it>0} ?: 20)*1000L+20_000)
+        val lease=AlarmVolumeLease(UUID.randomUUID().toString(),previous,muted,target,SystemClock.elapsedRealtime()+if(profile.alarm&&profile.untilDismissed)120_000L else (profile.duration.takeIf {it>0} ?: 20)*1000L+20_000)
         write(app,lease) // Durable before touching the shared Android setting.
         val alarms=context.getSystemService(AlarmManager::class.java)
         alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,lease.untilElapsed,recovery(context,lease.token))
@@ -83,6 +83,24 @@ internal class VolumeLeaseControl(private val stream:Int,private val name:String
         }
         lease.token
     } }
+    /** Refresh only the current owner's deadline; never raise volume again after
+     * a manual change. Arm recovery first, so a crash before persistence leaves
+     * a bounded recovery alarm rather than invalidating the only scheduled one. */
+    suspend fun renew(context:Context,token:String?)=withContext(Dispatchers.IO) {mutex.withLock {
+        if(token==null)return@withLock
+        val app=context.applicationContext as FieldNotesApplication
+        val lease=read(app) ?: return@withLock
+        if(lease.token!=token||active!=token)return@withLock
+        val audio=context.getSystemService(AudioManager::class.java)
+        if(audio.getStreamVolume(stream)!=lease.raised||audio.isStreamMute(stream)!=lease.raisedMuted){
+            // Ownership was relinquished by a manual change: clear recovery
+            // without touching volume, even if it changes again during cleanup.
+            write(app,null);context.getSystemService(AlarmManager::class.java).cancel(recovery(context));active=null;return@withLock
+        }
+        val next=lease.copy(untilElapsed=SystemClock.elapsedRealtime()+120_000)
+        context.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,next.untilElapsed,recovery(context,token))
+        write(app,next)
+    }}
     suspend fun restore(context:Context,token:String?=null,expired:Boolean=false) = withContext(Dispatchers.IO) { mutex.withLock {
         val lease=read(context.applicationContext as FieldNotesApplication) ?: return@withLock
         if(token!=null&&lease.token!=token)return@withLock
@@ -96,6 +114,7 @@ internal class VolumeLeaseControl(private val stream:Int,private val name:String
 internal object AlarmAudio {
     private val control=VolumeLeaseControl(AudioManager.STREAM_ALARM,"alarm-volume",759)
     suspend fun raise(context:Context,profile:AlertProfile,allow:Boolean?=null)=control.raise(context,profile,allow)
+    suspend fun renew(context:Context,token:String?)=control.renew(context,token)
     suspend fun restore(context:Context,token:String?=null,expired:Boolean=false)=control.restore(context,token,expired)
     suspend fun restoreAfterStop(context:Context)=control.restoreAfterStop(context)
 }

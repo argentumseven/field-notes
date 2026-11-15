@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.*
 import kotlinx.datetime.*
 import org.fieldnotes.domain.*
+import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -35,6 +36,28 @@ class AlarmExperienceDeviceTest {
             audio.setStreamVolume(AudioManager.STREAM_ALARM,initial,0);if(initialMute)audio.adjustStreamVolume(AudioManager.STREAM_ALARM,AudioManager.ADJUST_MUTE,0)
             val bytes=original ?: "{\"lease\":null}".encodeToByteArray();app.vault.writeEffect("alarm-volume",bytes);bytes.fill(0)
         }
+    }
+    @Test fun dismissibleAlarmRenewsItsOwnDurableVolumeLeaseAndRespectsManualChanges()=runBlocking {
+        assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as FieldNotesApplication;app.initialized.await()
+        val audio=app.getSystemService(AudioManager::class.java);val initial=audio.getStreamVolume(AudioManager.STREAM_ALARM);val muted=audio.isStreamMute(AudioManager.STREAM_ALARM)
+        assumeTrue(audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)>1)
+        suspend fun saved():AlarmVolumeLease?{val bytes=app.vault.readEffect("alarm-volume")?:return null;return try{val raw=WireJson.parseToJsonElement(bytes.decodeToString()).jsonObject["lease"];if(raw==null||raw==JsonNull)null else WireJson.decodeFromJsonElement<AlarmVolumeLease>(raw)}finally{bytes.fill(0)}}
+        try{
+            audio.setStreamVolume(AudioManager.STREAM_ALARM,1,0);audio.adjustStreamVolume(AudioManager.STREAM_ALARM,AudioManager.ADJUST_UNMUTE,0)
+            val profile=AlertProfile(alarm=true,unmute=true,untilDismissed=true)
+            val token=AlarmAudio.raise(app,profile,true);assertNotNull(token)
+            val current=checkNotNull(saved());assertTrue(current.untilElapsed>android.os.SystemClock.elapsedRealtime()+100_000)
+            // Simulate an old expiry in flight without a forty-second sleep.
+            val old=current.copy(untilElapsed=android.os.SystemClock.elapsedRealtime()-1)
+            val bytes=("{\"lease\":"+WireJson.encodeToString(AlarmVolumeLease.serializer(),old)+"}").encodeToByteArray();try{app.vault.writeEffect("alarm-volume",bytes)}finally{bytes.fill(0)}
+            AlarmAudio.renew(app,token);assertTrue(checkNotNull(saved()).untilElapsed>android.os.SystemClock.elapsedRealtime()+100_000)
+            AlarmAudio.restore(app,token,expired=true);assertEquals(current.raised,audio.getStreamVolume(AudioManager.STREAM_ALARM));assertNotNull(saved())
+            audio.setStreamVolume(AudioManager.STREAM_ALARM,1,0);AlarmAudio.renew(app,token);assertEquals(1,audio.getStreamVolume(AudioManager.STREAM_ALARM));assertNull(saved())
+            val next=AlarmAudio.raise(app,profile,true);assertNotNull(next);val nextDeadline=checkNotNull(saved()).untilElapsed
+            AlarmAudio.renew(app,token);assertEquals(nextDeadline,checkNotNull(saved()).untilElapsed)
+            AlarmAudio.restore(app,next);assertEquals(1,audio.getStreamVolume(AudioManager.STREAM_ALARM))
+        }finally{AlarmAudio.restoreAfterStop(app);audio.setStreamVolume(AudioManager.STREAM_ALARM,initial,0);if(muted)audio.adjustStreamVolume(AudioManager.STREAM_ALARM,AudioManager.ADJUST_MUTE,0)}
     }
     @Test fun temporaryVolumeRestoresLowestSupportedStateAndRespectsAManualChange()=runBlocking {
         assumeTrue("Disposable AVD only",InstrumentationRegistry.getArguments().getString("fieldNotesCalendarGallery")=="synthetic-only")

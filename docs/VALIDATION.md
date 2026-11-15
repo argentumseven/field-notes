@@ -1764,5 +1764,8 @@ No emulator/KVM or GrapheneOS phone is attached. Actual speaker loudness, Androi
 FLAC decoding, long alarm dismissal, notification/DND behavior and privileged
 Debian/systemd upgrade behavior remain unrun on physical devices. A non-destructive
 Android instrumentation test prepares every tone/boost through MediaPlayer.
+Dismissible alarms renew their owned temporary-volume lease with a bounded
+recovery timer; a device test covers stale expiry, renewal ownership, manual
+changes and final restoration. This Android runtime test is compiled but unrun.
 Pairing, signing identity, schema 2/protocol 1 and saved reminder defaults are
 preserved. Signed/public artifact verification is recorded after publication.

@@ -143,7 +143,7 @@ class AlarmPlaybackService:Service() {
             }
             if(profile.alarm)ramp(media,0f,1f,if(profile.sound=="sunrise")SUNRISE_FADE_IN_MS else FADE_IN_MS)
             if(profile.alarm&&profile.untilDismissed){
-                while(kotlin.coroutines.coroutineContext.isActive){delay(30_000);wake?.acquire(120_000)}
+                while(kotlin.coroutines.coroutineContext.isActive){delay(30_000);AlarmAudio.renew(this@AlarmPlaybackService,lease);wake?.acquire(120_000)}
             } else if(profile.alarm&&profile.duration>0) {
                 // Ring for the chosen time, ending on a short fade instead of a cut.
                 val total=profile.duration.coerceIn(5,60)*1000L
