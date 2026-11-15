@@ -2,6 +2,26 @@
 
 ## 0.11.8 priority, calendar, Settings and interval reminders — 2026-11-15
 
+Published and independently downloaded: [v0.11.8](https://github.com/argentumseven/field-notes/releases/tag/v0.11.8),
+source `5ac35374c9e0d3337fc5ba0e367d951b2e80d61b`.
+[Prebuilt publication run 43717811684](https://github.com/argentumseven/field-notes/actions/runs/43717811684)
+succeeded. All four versioned assets and all four latest-download assets match
+the clean tagged build byte for byte. Actual APK signature, package, version/code,
+ARM64 ABI and 16 KiB alignment checks pass; its native library records the same
+clean source commit. The release build repeated all 159 host tests and lint.
+APK SHA-256: `56e02b9bbd1650aef23a8f864ab14faf56b1238b2b943230648767c7f47b5e85`.
+The public signing certificate is unchanged.
+
+The matching x86_64 Linux bundle is linked from the README and published on
+`server-bundles/v0.11.8`, artifact commit
+`c72eb4854a077b05e68084d8805d80f321798c6f`. Its independently downloaded
+98,245,052 bytes match SHA-256
+`ecd1eb672f1c1aebc4bb8528c4784c4e422e48ac49f198e210785b1c42473cc2`.
+Its APK is identical to the public release; both image IDs match the built tags.
+The app image's CLI ran nonroot, read-only, with no capabilities, no new privileges
+and no network. Recompressing the image archive retained its complete original
+uncompressed bytes, and embedded and outer checksums were verified.
+
 Android code 27, protocol 1 and schema 2. Existing-task priority queues a field
 save immediately, retaining unrelated drafts and keeping an already-stale draft's
 revision fence. List-item priority behaves the same way. The calendar places
