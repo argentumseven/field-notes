@@ -266,7 +266,8 @@ backoff immediately. A profile ended by Android cannot run workers or alarms.
 
 ## Expanded sound controls
 
-New reminders start at 100% signal level; saved levels are preserved. Twelve
+New reminders added in the reminder editor start at 100% signal level; saved
+and implicit legacy defaults are preserved. Twelve
 original bundled tones include Signal, Crystal, Radar and Klaxon. Boost choices
 125%, 150% and 200% increase the audio signal using a soft limiter, within phone
 hardware volume. This cannot exceed a speaker's physical capability or override

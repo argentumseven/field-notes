@@ -1,5 +1,48 @@
 # Implementation and validation record
 
+## 0.11.10 signed Android and Linux publication — verified 2026-11-16 UTC
+
+Published and independently verified: [v0.11.10](https://github.com/argentumseven/field-notes/releases/tag/v0.11.10).
+The public release is neither a draft nor a prerelease. The
+[verified prebuilt publication workflow](https://github.com/argentumseven/field-notes/actions/runs/43768778948)
+succeeded. This workflow publishes the locally signed APK without uploading the
+private signing key. Source/tag commit: `7eb46b9727d9c63bca604b887418af9ab422362c`.
+
+- Android: **0.11.10 / code 29**, ARM64, non-debuggable release signing.
+- APK SHA-256: `8e27d5802c214dee080d18bf991c5d6a622d789b6264958d56817f59d98e93ea`.
+- Existing public certificate: `e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+- All four public APK files were downloaded, signature/package/version/ABI checked,
+  and compared byte-for-byte with the tagged build. Native Go VCS metadata confirms
+  that same clean source commit. All 168 bundled FLAC resources were inspected;
+  obsolete duplicate Android WAV resources are absent.
+- [Linux bundle](https://raw.githubusercontent.com/argentumseven/field-notes/930ebf5c6e7ab003b24f72925235ece9406b869a/server-downloads/field-notes-0.11.10-linux-x86_64.tar.gz): **103,761,891 bytes**.
+- Bundle SHA-256: `51ec309028d8f8c2e8341a0bbbfb6e92a56c6aa21f4c69e927d3ffbeab96d0cd`.
+- Immutable artifact commit: `930ebf5c6e7ab003b24f72925235ece9406b869a` on
+  `server-bundles/v0.11.10`. The actual public tar, checksum and manifest were fetched
+  and independently checked. Its embedded APK and metadata equal the verified
+  public APK exactly, including code 29 and the clean source commit.
+- Both offline image IDs match their inventory. The Docker app reports 0.11.10
+  under `--network none --read-only --cap-drop ALL --security-opt no-new-privileges`.
+
+Final checks: **177 Kotlin host tests** (13 Compose interactions), **135 full API
+tests**, **43 full Chromium browser tests** plus focused food/rescheduling checks,
+**21 Rust tests**, **134 Python upgrade/install/artifact tests**. Android debug and
+instrumentation Kotlin compilation and final signed release lint/build passed.
+The rescheduling checks include actual clocks, old-client no-end echoes, repeat
+orphan protection, stable reminder identity and early-started future preparation.
+
+Food/occasion names and item/phase names are free-form, including snacks and
+birthday cakes. Ready times inherit through durations, waiting periods and
+cross-item dependencies. Actual clocks survive time/date edits. New alarms default
+to dismissal, with timed options retained and owned temporary-volume renewal.
+Browser sessions are session-only with inactivity/absolute expiry and retained
+editor text. The app/server retain schema 2, protocol 1, pairing and signing identity.
+
+Physical GrapheneOS/speaker/DND/long-alarm behavior, Android FLAC decoding on an
+actual phone and privileged live-server upgrade behavior remain unrun. Android
+runtime tests are compiled; native screenshots use the Compose host renderer.
+No live home-server installation was performed by this publication.
+
 ## 0.11.9 meal planning, after-start reminders and event copies — 2026-11-15
 
 Published and independently verified: [v0.11.9](https://github.com/argentumseven/field-notes/releases/tag/v0.11.9),
