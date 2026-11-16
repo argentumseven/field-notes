@@ -21,12 +21,29 @@ ordinary helper text. Boost remains available. Shared UI validation exercises
 previewing an alarm at 200% and retaining its dismissal behavior and settings.
 No database/protocol migration, pairing reset or preference rewrite is involved.
 
-Validation so far: all 177 Kotlin host checks, 137 Python checks, four focused
-API checks for audio/compatibility, and the narrow Chromium cooking/editor flow
-pass. Android app and instrumentation compilation also pass. Release lint and
-signed-artifact checks are recorded with publication when complete. No phone is attached; actual Android
-FLAC decoding, speaker output and DND behavior remain unrun. No live server was
-changed.
+Published and independently downloaded: [v0.11.11](https://github.com/argentumseven/field-notes/releases/tag/v0.11.11),
+source/tag `716a3d247ff704ce315ef39dcf3f579df76625b3`. The
+[verified prebuilt publication workflow](https://github.com/argentumseven/field-notes/actions/runs/43790855286)
+succeeded; the release is neither a draft nor a prerelease.
+
+- Android: **0.11.11 / code 30**, ARM64, non-debuggable release signing.
+- APK SHA-256: `f13d2bf8265ec6f8dfcf7b4f4583154fb1640cb6b6ae84b4abb00b63f348cd6e`.
+- Existing public signer: `e5d93fbb7b98f02f94a3ed6c35ce35e64d07d4adadcc698fa7b0099c8e0fb488`.
+- All four public assets match the clean tagged build byte for byte. SDK checks
+  verify the actual APK signature/package/version/ABI. Native Go metadata records
+  the same clean source. All 168 sound resources are ZIP-stored and their complete
+  bytes match the original source FLAC files.
+- [Linux bundle](https://raw.githubusercontent.com/argentumseven/field-notes/4d734b2f30678dd8938cbd9d0af76a4c3a8e998a/server-downloads/field-notes-0.11.11-linux-x86_64.tar.gz): **103,770,879 bytes**.
+- Bundle SHA-256: `bb1c7e2f059823e3f3a047a60b23af85e716c6a6c2e8cbc3b0218b9a504e520f`.
+- The public bundle, checksum and manifest were downloaded and verified. Its
+  embedded APK exactly matches the public release. The app image passed the
+  nonroot, read-only, capability-free, no-new-privileges, network-disabled CLI check.
+
+Validation: all 177 Kotlin host checks, 137 Python checks, four focused API checks
+for audio/compatibility, and the narrow Chromium cooking/editor flow pass.
+Android app/instrumentation compilation and release lint pass. No phone is
+attached: actual Android FLAC decoding, speaker output and DND behavior remain
+unrun. No live home-server installation was performed.
 
 ## 0.11.10 signed Android and Linux publication — verified 2026-11-16 UTC
 
