@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Inspect packaged native binaries and the real merged APK manifest."""
 import os,pathlib,struct,subprocess,sys,tempfile,zipfile
+from android_artifact import verify_sound_resources
 apk=pathlib.Path(sys.argv[1]); tools=pathlib.Path(os.environ.get('FIELD_NOTES_TOOLS','/workspace/.cache/field-notes'))
+sound_count=verify_sound_resources(apk)
 aapt=tools/'android-sdk/build-tools/35.0.0/aapt'
 manifest=subprocess.check_output([str(aapt),'dump','xmltree',str(apk),'AndroidManifest.xml'],text=True)
 for forbidden in ['android.permission.BIND_VPN_SERVICE','VpnService','android.permission.ACCESS_FINE_LOCATION','com.google.android.gms','com.google.firebase','android.permission.READ_CALENDAR','android.permission.WRITE_CALENDAR']:
@@ -25,4 +27,4 @@ with zipfile.ZipFile(apk) as archive:
    if struct.unpack_from('<I',raw,offset)[0]==1:
     align=struct.unpack_from('<Q',raw,offset+48)[0]
     assert align>=16384, f'{name}: ELF segment not 16 KiB aligned'
-print('APK manifest, native libraries, 16 KiB alignment and Flutter removal verified.')
+print(f'APK manifest, native libraries, 16 KiB alignment, Flutter removal and {sound_count} seekable reminder sounds verified.')

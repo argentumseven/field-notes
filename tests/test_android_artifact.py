@@ -1,8 +1,31 @@
-import hashlib,io,json,pathlib,sys,tempfile,types,unittest,urllib.error
+import hashlib,io,json,pathlib,sys,tempfile,types,unittest,urllib.error,zipfile
 from unittest import mock
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
-from android_artifact import verify,verify_signed,fetch_public,copy_verified,ReleaseRedirect
+from android_artifact import verify,verify_signed,fetch_public,copy_verified,ReleaseRedirect,verify_sound_resources
 import android_artifact
+
+class SoundResourcePackaging(unittest.TestCase):
+ def apk(self,compression):
+  result=io.BytesIO()
+  with zipfile.ZipFile(result,'w') as archive:
+   archive.writestr('res/a.flac',b'fLaC reminder',compress_type=zipfile.ZIP_STORED)
+   archive.writestr('res/b.flac',b'fLaC alarm',compress_type=compression)
+   archive.writestr('classes.dex',b'ordinary entries may be compressed',compress_type=zipfile.ZIP_DEFLATED)
+  result.seek(0);return result
+ def test_every_tone_must_be_seekable_even_when_other_apk_entries_are_compressed(self):
+  self.assertEqual(verify_sound_resources(self.apk(zipfile.ZIP_STORED)),2)
+  with self.assertRaisesRegex(ValueError,'ZIP-compressed'):verify_sound_resources(self.apk(zipfile.ZIP_DEFLATED))
+ def test_missing_sound_resources_are_refused(self):
+  apk=io.BytesIO()
+  with zipfile.ZipFile(apk,'w') as archive:archive.writestr('classes.dex',b'no sounds')
+  apk.seek(0)
+  with self.assertRaisesRegex(ValueError,'missing bundled'):verify_sound_resources(apk)
+ def test_signed_artifact_inspection_checks_packaging_before_sdk_verification(self):
+  with tempfile.NamedTemporaryFile(suffix='.apk') as apk:
+   apk.write(self.apk(zipfile.ZIP_DEFLATED).getvalue());apk.flush()
+   with mock.patch.object(android_artifact.subprocess,'check_output') as sdk:
+    with self.assertRaisesRegex(ValueError,'ZIP-compressed'):android_artifact.inspect(apk.name,{'version':'0.11.11'})
+    sdk.assert_not_called()
 
 class AndroidArtifact(unittest.TestCase):
  def bundle(self,folder):

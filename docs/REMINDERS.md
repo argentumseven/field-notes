@@ -64,14 +64,14 @@ reminders do not wait for a server connection.
 ## Notification or alarm
 
 **Notification** plays one short cue (under a second) at notification volume.
-Choose Chime, Bell, Pulse or Marimba. It respects Silent, Vibrate and DND and
+Choose Chime, Bell, Pulse, Marimba, Signal or Crystal. It respects Silent, Vibrate and DND and
 does not repeat or take over the alarm stream. A requested temporary notification
 volume change needs its own phone permission and restores after that one sound.
 
-**Alarm** uses a separate set of sustained phrases: Beacon, Orbit, Sunrise or
-Siren. It uses Android's alarm stream, rings for the selected duration (five
-seconds by default), and offers **Stop alarm**. Stopping or reaching the time
-limit restores any app-owned temporary volume change.
+**Alarm** uses a separate set of sustained phrases: Beacon, Orbit, Sunrise,
+Siren, Radar or Klaxon. It uses Android's alarm stream. New alarms default to
+**Until dismissed**; a fixed duration or **Play once** is also available.
+**Stop alarm** or reaching the time limit restores any app-owned temporary volume change.
 
 An alarm always appears on screen: it posts to its own **Alarms** notification
 channel at high importance, with **Stop alarm** and **Open item**, whatever
@@ -245,8 +245,9 @@ No old reminder is moved to midnight. Calendar timezone and daylight-saving rule
 are retained with the setting; a skipped spring-forward clock time advances by
 the gap and an ambiguous fall-back time uses the earlier occurrence.
 
-Choose one delivery mode: **Notification** or **Alarm**. A new alarm defaults to
-**5 seconds**. Existing saved durations, including **Play once**, are retained.
+Choose one delivery mode: **Notification** or **Alarm**. New alarms default to
+**Until dismissed** with a 0.11.10+ server, or **5 seconds** with older servers.
+Existing saved durations, including **Play once**, are retained.
 Preview plays the chosen bundled sound. **Test on this phone** exercises actual
 delivery; **Stop sound and restore volume** stops playback and restores any
 app-owned volume lease. There is one audible playback path for each delivery.
@@ -268,10 +269,10 @@ backoff immediately. A profile ended by Android cannot run workers or alarms.
 
 New reminders added in the reminder editor start at 100% signal level; saved
 and implicit legacy defaults are preserved. Twelve
-original bundled tones include Signal, Crystal, Radar and Klaxon. Boost choices
-125%, 150% and 200% increase the audio signal using a soft limiter, within phone
-hardware volume. This cannot exceed a speaker's physical capability or override
-DND. Alarm/notification system-volume override still requires both the phone's
+original bundled tones include Signal, Crystal, Radar and Klaxon. **100%** is the
+standard sound level; **125%, 150% and 200%** add boost to the recording. The
+phone's alarm or notification volume controls final playback, and Do Not Disturb
+settings apply. Alarm/notification system-volume override still requires both the phone's
 separate opt-in and the reminder's opt-in, and restores the previous volume
 without replacing a later manual choice.
 
@@ -281,3 +282,13 @@ alarm durations are preserved. Notifications remain single-play. Stop/Open/swipe
 on the alarm card dismisses playback. New sound settings are projected into the
 older audio contract for older apps; changing those settings requires an updated
 editor. Android channel choices remain authoritative.
+
+### Android sound repair — 0.11.11
+
+0.11.10 accidentally ZIP-compressed the bundled sounds inside the APK, preventing
+Android from opening them for preview and playback. Update the phone app to
+0.11.11 or newer. The corrected APK keeps all sounds seekable and retains existing
+sound choices and notification channels. A server update alone does not replace
+the installed phone app. **Preview sound** plays a short sample at the current
+phone volume; **Test on this phone** exercises the saved delivery mode and its
+separately enabled temporary-volume control.

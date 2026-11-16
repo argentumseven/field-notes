@@ -50,6 +50,16 @@ import org.fieldnotes.ui.DeviceActions
 
 class MainActivity : ComponentActivity() {
     private val app get() = application as FieldNotesApplication
+    private fun previewReminderSound(profile:AlertProfile) {
+        val failed:(Exception)->Unit={error->
+            android.util.Log.w("FieldNotesSound","Bundled sound preview failed",error)
+            runOnUiThread { Toast.makeText(this,"This sound could not be played. Try another sound or update Field Notes.",Toast.LENGTH_LONG).show() }
+        }
+        app.scope.launch {
+            try { withContext(Dispatchers.IO){ReminderSounds.preview(this@MainActivity,profile,failed)} }
+            catch(error:Exception){if(error is CancellationException)throw error;failed(error)}
+        }
+    }
     private var invitationCode by mutableStateOf<String?>(null)
     private var invitationSequence by mutableIntStateOf(0)
     private var requestedRecord by mutableStateOf<String?>(null)
@@ -246,7 +256,7 @@ class MainActivity : ComponentActivity() {
                 }
                 FieldNotesApp(app.model,
                     requestedRecord=requestedRecord,requestedPage=requestedPage,requestedDate=requestedDate,navigationSequence=navigationSequence,
-                    deviceActions=DeviceActions(transfer=transferState,exportData={password->exportPassphrase?.fill('\u0000');exportPassphrase=password.toCharArray();exportDocument.launch("field-notes-${java.time.LocalDate.now()}.fieldnotes")},chooseImport={importDocument.launch(arrayOf("application/octet-stream","application/zip","*/*"))},previewImport=app.files::preview,reviewImport=app.files::review,commitImport=app.files::commit,cancelImport=app.files::cancel,mapImportPerson=app.files::mapPerson,refreshRecovered=app.files::refreshRecovered,restoreRecovered=app.files::restore,discardRecovered=app.files::discard,testReminderSound={profile->AlarmPlaybackService.testSound(this@MainActivity,profile)},previewSound={profile->app.scope.launch { try { withContext(Dispatchers.IO){ReminderSounds.preview(this@MainActivity,profile)} }catch(_:Exception){Toast.makeText(this@MainActivity,"Sound preview unavailable. Check Android notification settings.",Toast.LENGTH_LONG).show()} }},openLink={url->
+                    deviceActions=DeviceActions(transfer=transferState,exportData={password->exportPassphrase?.fill('\u0000');exportPassphrase=password.toCharArray();exportDocument.launch("field-notes-${java.time.LocalDate.now()}.fieldnotes")},chooseImport={importDocument.launch(arrayOf("application/octet-stream","application/zip","*/*"))},previewImport=app.files::preview,reviewImport=app.files::review,commitImport=app.files::commit,cancelImport=app.files::cancel,mapImportPerson=app.files::mapPerson,refreshRecovered=app.files::refreshRecovered,restoreRecovered=app.files::restore,discardRecovered=app.files::discard,testReminderSound={profile->AlarmPlaybackService.testSound(this@MainActivity,profile)},previewSound=::previewReminderSound,openLink={url->
                         val uri=Uri.parse(url)
                         if(uri.scheme in setOf("http","https")&&!uri.host.isNullOrBlank())try{startActivity(Intent(Intent.ACTION_VIEW,uri).addCategory(Intent.CATEGORY_BROWSABLE))}catch(_:Exception){Toast.makeText(this,"No browser is available to open this link.",Toast.LENGTH_LONG).show()}
                     },dismissDeliveryIssue=deliveryIssue?.let { message -> { app.scope.launch { app.dismissDeliveryIssue(Alerts.digest(message)) }; Unit } },androidDelivery=true,status=deliveryStatus,warning=listOfNotNull(deliveryWarning,deliveryIssue,deliveryStorageIssue).distinct().joinToString("\n"),use24Hour=android.text.format.DateFormat.is24HourFormat(this),addCalendarWidget={if(!CalendarWidget.pin(this))Toast.makeText(this,"Add Field Notes · Calendar from your launcher’s widget picker.",Toast.LENGTH_LONG).show()},

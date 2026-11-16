@@ -11,7 +11,11 @@ class BundledSoundDeviceTest {
  @Test fun everyBundledToneAndBoostDecodesOnAndroid(){val context=InstrumentationRegistry.getInstrumentation().targetContext
   for(tone in reminderTones.keys)for(alarm in listOf(false,true))for(level in listOf(25,50,75,100,125,150,200)){
    val p=AlertProfile(sound=tone,volume=level.coerceAtMost(100),gain=if(level>100)level else 100,alarm=alarm)
-   val player=MediaPlayer();try{player.setDataSource(context,ReminderSounds.sound(context,p));player.prepare();assertTrue("$tone / $alarm / $level",player.duration>0)}finally{player.release()}
+   val uri=ReminderSounds.sound(context,p)
+   // Resolve the exact URI used by notifications and previews. Deflated APK resources
+   // throw here before MediaPlayer even reaches the decoder.
+   context.contentResolver.openAssetFileDescriptor(uri,"r").use { descriptor->assertTrue("$tone / $alarm / $level is seekable",descriptor!=null&&descriptor.length>0) }
+   val player=MediaPlayer();try{player.setDataSource(context,uri);player.prepare();assertTrue("$tone / $alarm / $level",player.duration>0)}finally{player.release()}
   }
  }
 }

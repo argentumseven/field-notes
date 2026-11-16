@@ -1,10 +1,20 @@
 """Build/verify fixed public APK downloads. Signing keys never enter the bundle."""
-import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,tempfile,urllib.error,urllib.parse,urllib.request
+import argparse,hashlib,json,os,pathlib,re,shutil,subprocess,tempfile,urllib.error,urllib.parse,urllib.request,zipfile
 
 FILES={'field-notes.apk','field-notes.apk.sha256','field-notes.apk.signer.txt','android.json'}
 
+def verify_sound_resources(apk):
+    """Android opens bundled sounds as file descriptors, which cannot seek in ZIP deflate."""
+    with zipfile.ZipFile(apk) as archive:
+        sounds=[entry for entry in archive.infolist() if entry.filename.startswith('res/') and entry.filename.endswith('.flac')]
+        if not sounds:raise ValueError('APK is missing bundled reminder sounds')
+        if any(entry.compress_type!=zipfile.ZIP_STORED for entry in sounds):
+            raise ValueError('APK reminder sounds are ZIP-compressed; Android cannot open them for previews, notifications or alarms')
+        return len(sounds)
+
 def inspect(apk,release):
     """Verify the APK itself; a checksum or downloaded signer report is not trust."""
+    if tuple(map(int,release['version'].split('.'))) >= (0,11,11):verify_sound_resources(apk)
     sdk=pathlib.Path(os.environ['ANDROID_HOME'])/'build-tools/35.0.0'
     report=subprocess.check_output([str(sdk/'apksigner'),'verify','--print-certs',str(apk)],text=True)
     badging=subprocess.check_output([str(sdk/'aapt'),'dump','badging',str(apk)],text=True)

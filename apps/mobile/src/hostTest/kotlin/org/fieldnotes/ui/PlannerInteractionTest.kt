@@ -164,11 +164,13 @@ class PlannerInteractionTest {
 
 
     @Test fun modernAlarmsDefaultToDismissalAndSaveTwoHundredPercentSignal()=runSkikoComposeUiTest(size=Size(390f,760f)){
-        var result:AlertProfile?=null
-        setContent{FieldNotesTheme{SoundProfileDialog(AlertProfile(volume=100),{},ReminderEditorSettings(advanced=true,audioV2=true,audioV3=true),{},{result=it})}}
+        var result:AlertProfile?=null;var previewed:AlertProfile?=null
+        setContent{FieldNotesTheme{SoundProfileDialog(AlertProfile(volume=100),{previewed=it},ReminderEditorSettings(advanced=true,audioV2=true,audioV3=true),{},{result=it})}}
         onNodeWithText("Alarm",useUnmergedTree=true).performClick()
         onNodeWithText("Until dismissed").performScrollTo().assertIsSelected()
         onNodeWithText("200%",useUnmergedTree=true).performScrollTo().performClick()
+        onNodeWithText("Preview sound").performScrollTo().performClick()
+        runOnIdle{assertEquals(200,previewed!!.gain);assertTrue(previewed!!.alarm)}
         onNodeWithText("Done").performClick()
         runOnIdle{assertTrue(result!!.alarm);assertTrue(result!!.untilDismissed);assertEquals(0,result!!.duration);assertEquals(100,result!!.volume);assertEquals(200,result!!.gain)}
     }

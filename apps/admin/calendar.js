@@ -1683,7 +1683,7 @@ async function editCookingPlan(record) {
           el(
             "p",
             "muted",
-            "Reminders inherit the meal’s recipients. Sound boost is limited by phone hardware volume and DND.",
+            "Reminders inherit the meal’s recipients. 100% is the standard sound level; 125–200% adds boost. Your phone’s volume and Do Not Disturb settings apply.",
           ),
         );
         root.append(sounds);

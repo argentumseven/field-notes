@@ -49,9 +49,12 @@ android {
     namespace = "org.fieldnotes.app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
-    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 29; versionName = "0.11.10"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
+    defaultConfig { applicationId = "org.fieldnotes.app"; minSdk = 26; targetSdk = 36; versionCode = 30; versionName = "0.11.11"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"; ndk { abiFilters += (findProperty("fieldNotesAbis")?.toString()?.split(",") ?: listOf("arm64-v8a")) } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     sourceSets["main"].jniLibs.srcDir("src/androidMain/jniLibs")
+    // MediaPlayer and Android's notification service need a seekable resource descriptor.
+    // AAPT compresses FLAC by default, making openRawResourceFd fail at runtime.
+    androidResources { noCompress += "flac" }
     packaging { jniLibs.useLegacyPackaging = false; resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     signingConfigs {
         create("operator") {

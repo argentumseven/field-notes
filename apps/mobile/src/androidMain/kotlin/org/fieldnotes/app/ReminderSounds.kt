@@ -45,14 +45,14 @@ object ReminderSounds {
         check(id!=0) { "Reminder sound is unavailable" }
         return Uri.parse("android.resource://${context.packageName}/raw/${prefix}_${p.sound}_${level}")
     }
-    @Synchronized fun preview(context:Context,p:AlertProfile) {
+    @Synchronized fun preview(context:Context,p:AlertProfile,onError:(Exception)->Unit={}) {
         preview?.release();preview=null
         if(p.importance=="quiet")return
         val player=MediaPlayer()
         try { player.apply {
             setAudioAttributes(AudioAttributes.Builder().setUsage(if(p.alarm)AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT).build())
             setDataSource(context,sound(context,p));setOnCompletionListener { it.release();if(preview===it)preview=null }
-            setOnErrorListener { failed,_,_->failed.release();if(preview===failed)preview=null;true }
+            setOnErrorListener { failed,what,extra->failed.release();if(preview===failed)preview=null;onError(IllegalStateException("Android sound preview failed ($what/$extra)"));true }
             prepare();start()
         };preview=player } catch(error:Exception) { player.release();throw error }
     }

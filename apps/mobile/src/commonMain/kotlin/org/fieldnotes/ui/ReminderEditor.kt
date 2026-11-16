@@ -155,6 +155,7 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
             }
             Text(if(p.alarm)"Sound level · relative to alarm volume" else "Sound level · relative to notification volume")
             FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){for(level in (if(settings.audioV3)listOf(25,50,75,100,125,150,200)else listOf(25,50,75,100)))FilterChip(p.volume*p.gain/100==level,{p=p.copy(volume=level.coerceAtMost(100),gain=if(level>100)level else 100)},{Text("$level%")})}
+            if(settings.audioV3)Text("100% is the standard level. 125–200% adds boost.",style=MaterialTheme.typography.bodySmall)
             Row(verticalAlignment=Alignment.CenterVertically){Switch(p.vibrate,{p=p.copy(vibrate=it)},modifier=Modifier.semantics {contentDescription="Vibration"});Text("Vibration",Modifier.padding(start=8.dp))}
             SecondaryButton(onClick={preview(p)}){Text("Preview sound")}
             if(settings.advanced) {
@@ -162,7 +163,6 @@ internal fun reminderEditorSettings(model:Workspace,state:WorkspaceState,options
                 SecondaryButton(onClick={preview(p.copy(importance="quiet"));settings.stopSound()}){Text("Stop sound and restore volume")}
             }
         }
-        Text("100% is the new nominal level. Boost up to 200% increases the audio signal with limiting; Android’s hardware volume and DND still apply.")
         Text("Alarm mode uses Android’s alarm audio stream. Preview uses the current volume. DND exceptions remain in Android Settings; profile forwarding uses the receiving profile’s channel.",style=MaterialTheme.typography.bodySmall)
     }},confirmButton={Button(shape=ControlShape,onClick={save(p)}){Text("Done")}},dismissButton={SecondaryButton(onClick=close){Text("Cancel")}})
 }

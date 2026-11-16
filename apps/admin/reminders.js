@@ -539,7 +539,7 @@
         el(
           "p",
           "muted",
-          "Sound boost above 100% increases the signal up to 200%. Phone hardware volume, Android and DND still limit playback. New alarms require dismissal; notifications play once.",
+          "100% is the standard sound level. 125–200% adds boost. Your phone’s volume and Do Not Disturb settings apply. New alarms require dismissal; notifications play once.",
         ),
       );
       updateSummary();

@@ -183,6 +183,6 @@ immediate and short delayed visibility checks, including when the snapshot did
 not change. The app credential lock does not decide widget visibility.
 
 See [reminder controls](REMINDERS.md) for independent notification/alarm volume
-consent, five-second new alarms and real sound tests. A system-ended profile
+consent, dismissible/timed alarms and real sound tests. A system-ended profile
 cannot run the service; GrapheneOS cross-user forwarding still requires its
 receiving-profile settings and physical verification.

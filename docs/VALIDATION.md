@@ -1,5 +1,33 @@
 # Implementation and validation record
 
+## 0.11.11 Android sound-resource repair — 2026-11-16
+
+Inspection of the released 0.11.10 APK found AAPT had ZIP-deflated all 168
+FLAC resources. Android opens notification and MediaPlayer resources through
+seekable file descriptors; compressed APK entries cannot supply those descriptors.
+The Android resource packaging now explicitly stores FLAC without ZIP compression.
+The same resource URIs and channel IDs are retained, so existing channel choices
+and saved sound/boost preferences continue to apply.
+
+The APK build check and signed-artifact inspection reject compressed or missing
+sound resources. Regression fixtures exercise stored, mixed-compression and
+missing-resource APKs; the gate also rejects the actual 0.11.10 release APK.
+The Android runtime test explicitly opens each sound URI as a file descriptor
+before preparing all tone/mode/boost combinations. Synchronous and asynchronous
+preview errors are reported without blaming notification permissions.
+
+Sound controls explain 100% as the standard level and 125–200% as boost, using
+ordinary helper text. Boost remains available. Shared UI validation exercises
+previewing an alarm at 200% and retaining its dismissal behavior and settings.
+No database/protocol migration, pairing reset or preference rewrite is involved.
+
+Validation so far: all 177 Kotlin host checks, 137 Python checks, four focused
+API checks for audio/compatibility, and the narrow Chromium cooking/editor flow
+pass. Android app and instrumentation compilation also pass. Release lint and
+signed-artifact checks are recorded with publication when complete. No phone is attached; actual Android
+FLAC decoding, speaker output and DND behavior remain unrun. No live server was
+changed.
+
 ## 0.11.10 signed Android and Linux publication — verified 2026-11-16 UTC
 
 Published and independently verified: [v0.11.10](https://github.com/argentumseven/field-notes/releases/tag/v0.11.10).
