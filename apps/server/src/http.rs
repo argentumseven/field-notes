@@ -5,7 +5,7 @@ use crate::{
 use axum::{
     body::Body,
     extract::{ConnectInfo, DefaultBodyLimit, Path, State},
-    http::{HeaderMap, HeaderValue, Request, StatusCode},
+    http::{header::{HOST, ORIGIN}, uri::Authority, HeaderMap, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -95,6 +95,94 @@ fn credential(h: &HeaderMap, device: bool) -> crate::store::Result<String> {
 fn csrf(token: &str) -> String {
     crypto::digest(format!("csrf:{token}").as_bytes())
 }
+// Canonicalize an HTTP request authority (Host or HTTP/2 :authority) for
+// same-origin comparison. Reject userinfo, malformed ports and hostnames.
+fn normalized_authority(raw: &str, scheme: &str) -> Option<(String, u16)> {
+    if raw.contains('@') {
+        return None;
+    }
+    let authority: Authority = raw.parse().ok()?;
+    let host = authority.host();
+    let hostname = if let Some(ipv6) = host.strip_prefix('[') {
+        let address: std::net::Ipv6Addr = ipv6.strip_suffix(']')?.parse().ok()?;
+        format!("[{address}]")
+    } else {
+        // Browsers serialize DNS names in ASCII (IDNA where needed). Preserve
+        // a trailing DNS root dot rather than equating distinct browser origins.
+        let name = host.strip_suffix('.').unwrap_or(host);
+        if name.is_empty()
+            || !name.split('.').all(|label| {
+                let bytes = label.as_bytes();
+                !bytes.is_empty()
+                    && bytes.len() <= 63
+                    && bytes[0].is_ascii_alphanumeric()
+                    && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+                    && bytes.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'-' || *b == b'_')
+            })
+        {
+            return None;
+        }
+        host.to_ascii_lowercase()
+    };
+    // Checking the entire suffix also rejects invalid/empty ports that
+    // Authority::port_u16() would otherwise silently treat as absent.
+    let port = match authority.as_str().strip_prefix(host)? {
+        "" => if scheme == "http" { 80 } else { 443 },
+        explicit => explicit.strip_prefix(':')?.parse::<u16>().ok().filter(|p| *p != 0)?,
+    };
+    Some((hostname, port))
+}
+
+// The configured app.origin is the phone enrollment URL, not the set of
+// browser hostnames. Check the browser Origin against the actual target of
+// this direct HTTP request; forwarded host/proto headers are never trusted.
+fn origin_allowed(request: &Request<Body>, dev: bool) -> bool {
+    let all_origins = request.headers().get_all(ORIGIN);
+    let mut origins = all_origins.iter();
+    let Some(origin) = origins.next() else {
+        return true; // Preserve existing behavior for requests without Origin.
+    };
+    if origins.next().is_some() {
+        return false;
+    }
+    let Some(origin) = origin.to_str().ok() else {
+        return false;
+    };
+    let scheme = if dev { "http" } else { "https" };
+    let Some((origin_scheme, origin_authority)) = origin.split_once("://") else {
+        return false;
+    };
+    if !origin_scheme.eq_ignore_ascii_case(scheme) {
+        return false;
+    }
+    let Some(expected) = normalized_authority(origin_authority, scheme) else {
+        return false;
+    };
+    // A supplied HTTP/2 :scheme or absolute-form URI cannot claim HTTP on
+    // the TLS listener (or HTTPS on the loopback-only development listener).
+    if request.uri().scheme_str().is_some_and(|value| !value.eq_ignore_ascii_case(scheme)) {
+        return false;
+    }
+    let uri_authority = request.uri().authority()
+        .map(|value| normalized_authority(value.as_str(), scheme));
+    let all_hosts = request.headers().get_all(HOST);
+    let mut hosts = all_hosts.iter();
+    let host_authority = hosts.next()
+        .map(|value| value.to_str().ok().and_then(|host| normalized_authority(host, scheme)));
+    if hosts.next().is_some() {
+        return false;
+    }
+    // Both fields may be supplied. Fail closed when they disagree rather
+    // than selecting whichever one happens to match Origin.
+    let target = match (uri_authority, host_authority) {
+        (Some(Some(uri)), Some(Some(host))) if uri == host => Some(uri),
+        (Some(Some(uri)), None) => Some(uri),
+        (None, Some(Some(host))) => Some(host),
+        _ => None,
+    };
+    target.is_some_and(|authority| authority == expected)
+}
+
 async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> Response {
     let path = request.uri().path();
     let bootstrap = matches!(
@@ -177,10 +265,8 @@ async fn secure(State(app): State<App>, request: Request<Body>, next: Next) -> R
         )
         .into_response();
     }
-    if let Some(origin) = request.headers().get("origin") {
-        if origin.to_str().ok() != Some(app.origin.as_str()) {
-            return Fault(403, "Origin not permitted".into()).into_response();
-        }
+    if !origin_allowed(&request, app.dev) {
+        return Fault(403, "Origin not permitted".into()).into_response();
     }
     let mutation = !matches!(
         *request.method(),
@@ -1097,4 +1183,81 @@ pub fn router(app: App) -> Router {
         .layer(DefaultBodyLimit::max(6_500_000))
         .layer(middleware::from_fn_with_state(app.clone(), secure))
         .with_state(app)
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::*;
+
+    fn check(uri: &str, host: Option<&str>, origin: Option<&str>, dev: bool) -> bool {
+        let mut builder = Request::builder().uri(uri);
+        if let Some(host) = host {
+            builder = builder.header(HOST, host);
+        }
+        if let Some(origin) = origin {
+            builder = builder.header(ORIGIN, origin);
+        }
+        origin_allowed(&builder.body(Body::empty()).unwrap(), dev)
+    }
+
+    #[test]
+    fn permits_matching_ip_and_dns_aliases_without_configured_origin() {
+        for host in ["192.168.1.10:9443", "notes.home.arpa:9443", "planner.home.arpa:9443"] {
+            assert!(check("/api/session", Some(host), Some(&format!("https://{host}")), false));
+        }
+        assert!(check("/api/session", Some("NOTES.Home.ARPA:9443"), Some("https://notes.home.arpa:9443"), false));
+        assert!(check("/api/session", Some("notes.home.arpa:443"), Some("https://notes.home.arpa"), false));
+        assert!(check("/api/session", Some("notes.home.arpa"), Some("https://notes.home.arpa:443"), false));
+        assert!(check("/api/session", Some("notes.home.arpa:00443"), Some("https://notes.home.arpa"), false));
+        assert!(check("/api/session", Some("[2001:0db8::1]:9443"), Some("https://[2001:db8::1]:9443"), false));
+        assert!(check("/api/session", Some("127.0.0.1:8787"), Some("http://127.0.0.1:8787"), true));
+    }
+
+    #[test]
+    fn supports_http2_authority_and_checks_conflicting_host_headers() {
+        assert!(check("https://notes.home.arpa:9443/api/session", None, Some("https://notes.home.arpa:9443"), false));
+        assert!(check("https://notes.home.arpa:9443/api/session", Some("NOTES.HOME.ARPA:9443"), Some("https://notes.home.arpa:9443"), false));
+        assert!(!check("https://notes.home.arpa:9443/api/session", Some("other.home.arpa:9443"), Some("https://notes.home.arpa:9443"), false));
+        assert!(!check("http://notes.home.arpa:9443/api/session", None, Some("https://notes.home.arpa:9443"), false));
+        assert!(!check("https://notes.home.arpa:9443/api/session", None, Some("http://notes.home.arpa:9443"), false));
+        let mut duplicate = Request::builder().uri("/api/session")
+            .header(HOST, "notes.home.arpa:9443")
+            .header(ORIGIN, "https://notes.home.arpa:9443")
+            .body(Body::empty()).unwrap();
+        duplicate.headers_mut().append(HOST, HeaderValue::from_static("notes.home.arpa:9443"));
+        assert!(!origin_allowed(&duplicate, false));
+    }
+
+    #[test]
+    fn refuses_cross_origin_and_malformed_origins_or_authorities() {
+        let host = Some("notes.home.arpa:9443");
+        for origin in [
+            "https://attacker.invalid:9443",
+            "https://notes.home.arpa:9444",
+            "http://notes.home.arpa:9443",
+            "https://notes.home.arpa:9443/",
+            "https://user@notes.home.arpa:9443",
+            "https://notes.home.arpa:99999",
+            "null",
+            "https://notes.home.arpa:9443, https://notes.home.arpa:9443",
+        ] {
+            assert!(!check("/api/session", host, Some(origin), false), "{origin}");
+        }
+        for bad_host in ["", ":9443", "notes.home.arpa:", "notes.home.arpa:abc",
+                         "notes.home.arpa:65536", "user@notes.home.arpa:9443",
+                         "notes.home.arpa/path", "[not-ipv6]:9443"] {
+            assert!(!check("/api/session", Some(bad_host), Some("https://notes.home.arpa:9443"), false), "{bad_host}");
+        }
+        assert!(!check("/api/session", None, Some("https://notes.home.arpa:9443"), false));
+        let mut forwarded = Request::builder().uri("/api/session")
+            .header("x-forwarded-host", "notes.home.arpa:9443")
+            .header("x-forwarded-proto", "https")
+            .header(ORIGIN, "https://notes.home.arpa:9443")
+            .body(Body::empty()).unwrap();
+        assert!(!origin_allowed(&forwarded, false));
+        forwarded.headers_mut().insert(HOST, HeaderValue::from_static("notes.home.arpa:9443"));
+        forwarded.headers_mut().append(ORIGIN, HeaderValue::from_static("https://notes.home.arpa:9443"));
+        assert!(!origin_allowed(&forwarded, false));
+        assert!(check("/api/session", None, None, false), "requests without Origin retain existing behavior");
+    }
 }

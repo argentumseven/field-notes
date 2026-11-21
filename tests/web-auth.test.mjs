@@ -26,9 +26,9 @@ test('production TLS/HTTP2 preserves browser authentication when cookies are spl
    }catch{await delay(25)}
   }
   assert(client,'TLS server became ready');assert.equal(client.socket.alpnProtocol,'h2');assert.equal(client.socket.getProtocol(),'TLSv1.3');
-  async function request(path,{body,cookie,csrf}={}){
+  async function request(path,{body,cookie,csrf,authority,originHeader,forwarded}={}){
    return await new Promise((resolve,reject)=>{
-    const headers={':method':body===undefined?'GET':'POST',':path':path,...(cookie?{cookie}:{}),...(body!==undefined?{origin,'content-type':'application/json'}:{}),...(csrf?{'x-field-csrf':csrf}:{})};
+    const headers={':method':body===undefined?'GET':'POST',':path':path,...(authority?{':authority':authority}:{}),...(cookie?{cookie}:{}),...(body!==undefined?{'content-type':'application/json'}:{}),...(body!==undefined||originHeader?{origin:originHeader||origin}:{}),...(csrf?{'x-field-csrf':csrf}:{}),...(forwarded?{'x-forwarded-host':forwarded,'x-forwarded-proto':'https'}:{})};
     const stream=client.request(headers);let received,bytes='';
     stream.on('response',headers=>received=headers);stream.setEncoding('utf8');stream.on('data',part=>bytes+=part);stream.on('error',reject);stream.on('end',()=>resolve({status:received[':status'],headers:received,data:JSON.parse(bytes)}));stream.end(body===undefined?undefined:JSON.stringify(body));
    });
@@ -45,6 +45,17 @@ test('production TLS/HTTP2 preserves browser authentication when cookies are spl
   assert.equal((await request('/api/reauth',{cookie:split,csrf:login.data.csrf,body:{password}})).status,200);
   assert.equal((await request('/api/session',{cookie:[cookie,'field_session='+'0'.repeat(64)]})).status,401,'conflicting session cookies are rejected');
   assert.equal((await request('/api/session',{cookie:[cookie,cookie]})).status,200,'identical repeated cookies are unambiguous');
+  // HTTP/2 :authority, rather than the configured enrollment IP, is the
+  // browser-origin reference. Multiple LAN DNS aliases need no allowlist.
+  for(const alias of ['notes.home.arpa','planner.home.arpa']){
+   const authority=`${alias}:${admin}`;
+   assert.equal((await request('/api/session',{cookie,authority,originHeader:`https://${authority}`})).status,200);
+  }
+  assert.equal((await request('/api/session',{cookie,authority:`NOTES.HOME.ARPA:${admin}`,originHeader:`https://notes.home.arpa:${admin}`})).status,200);
+  assert.equal((await request('/api/session',{cookie,authority:`notes.home.arpa:${admin}`,originHeader:`https://attacker.invalid:${admin}`})).status,403);
+  assert.equal((await request('/api/session',{cookie,authority:`notes.home.arpa:${admin}`,originHeader:`http://notes.home.arpa:${admin}`})).status,403);
+  assert.equal((await request('/api/session',{cookie,authority:`notes.home.arpa:${admin}`,originHeader:`https://notes.home.arpa:${admin}/`})).status,403);
+  assert.equal((await request('/api/session',{cookie,authority:`attacker.invalid:${admin}`,originHeader:`https://notes.home.arpa:${admin}`,forwarded:`notes.home.arpa:${admin}`})).status,403);
   const plaintext=await new Promise((resolve,reject)=>{
    const socket=net.connect(admin,'127.0.0.1');let bytes='';socket.setEncoding('utf8');socket.on('connect',()=>socket.write('GET / HTTP/1.1\r\nHost: untrusted.invalid\r\n\r\n'));socket.on('data',part=>bytes+=part);socket.on('end',()=>resolve(bytes));socket.on('error',reject);
   });
