@@ -100,7 +100,12 @@ def preview(record,folder,host=None,recover=False,server_only=False):
  existing=existing_prefix/'downloads'
  if server_only:
   if release['version']!=current:raise ValueError('Server-only maintenance must retain the installed version')
-  if json.loads((existing_prefix/'release.json').read_text())!=release:raise ValueError('Server-only maintenance must retain the exact release metadata')
+  # Installed programs do not include release.json. Retain the exact source
+  # manifest and independently verify installed APK version and code.
+  checkout_release=HERE.parent/'release.json'
+  if checkout_release.exists() and json.loads(checkout_release.read_text())!=release:raise ValueError('Server-only maintenance must retain the source release metadata')
+  installed_info=verify_android(existing)
+  if installed_info['version']!=release['version'] or installed_info['version_code']!=release['android_version_code']:raise ValueError('Server-only maintenance must retain the installed APK version/code')
   # No new Android signer, APK, version code, or download metadata is permitted.
   def fingerprints(folder):
    if not folder.is_dir():raise ValueError('APK downloads missing')
