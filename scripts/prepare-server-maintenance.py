@@ -74,8 +74,16 @@ def check_base(base, installed, original):
     if digest(base / 'field-notes-server') != digest(original / 'field-notes-server'):
         raise ValueError('Preserved bundle server executable differs from installation')
     release = json.loads((base / 'release.json').read_text())
-    if release != json.loads((original / 'release.json').read_text()):
-        raise ValueError('Original release metadata differs from installation')
+    # The installed prefix contains the executable and downloads, but does
+    # not contain release.json. Compare the preserved bundle against this
+    # checkout and the installed Android artifact identity instead.
+    checkout_release = pathlib.Path(__file__).resolve().parent.parent / 'release.json'
+    if release != json.loads(checkout_release.read_text()):
+        raise ValueError('Preserved bundle release metadata differs from this source checkout')
+    installed_apk = json.loads((original / 'downloads' / 'android.json').read_text())
+    if (release['version'] != installed_apk['version'] or
+            release['android_version_code'] != installed_apk['version_code']):
+        raise ValueError('Preserved bundle version/code differs from installed APK')
     if files(base / 'downloads') != files(original / 'downloads'):
         raise ValueError('Preserved bundle APK/download metadata differs from installation')
     return old
