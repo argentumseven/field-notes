@@ -69,13 +69,13 @@ def build_from_source(host,record,root=HERE.parent,runner=subprocess.run,recover
 def wrapper(config):
  return '#!/usr/bin/env bash\nset -euo pipefail\nexec python3 -B "$(dirname "${BASH_SOURCE[0]}")/upgrade-server.py" --config '+shlex.quote(config)+' "$@"\n'
 
-def bundle_info(folder,current,recover=False):
+def bundle_info(folder,current,recover=False,server_only=False):
  folder=pathlib.Path(folder).resolve();release=json.loads((folder/'release.json').read_text())
  if release['schema']!=2 or release['protocol']!=1:raise ValueError('This upgrader supports only compatible schema 2/protocol 1; use a separately reviewed migration')
  def version(value):
   if not re.fullmatch(r'\d+\.\d+\.\d+',value):raise ValueError('Invalid release version')
   return tuple(map(int,value.split('.')))
- if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0','0.8.1','0.9.0','0.9.1','0.10.0','0.11.0','0.11.1','0.11.2','0.11.3','0.11.4','0.11.5','0.11.6','0.11.7','0.11.8','0.11.9','0.11.10','0.11.11') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not recover):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
+ if current not in ('0.3.0','0.3.1','0.3.2','0.3.3','0.3.4','0.3.5','0.3.6','0.3.7','0.4.0','0.5.0','0.6.0','0.7.0','0.8.0','0.8.1','0.9.0','0.9.1','0.10.0','0.11.0','0.11.1','0.11.2','0.11.3','0.11.4','0.11.5','0.11.6','0.11.7','0.11.8','0.11.9','0.11.10','0.11.11') or version(release['version'])<version(current) or (version(release['version'])==version(current) and not (recover or server_only)):raise ValueError('Only a newer compatible container release may be applied; downgrades and same-version replacements are refused')
  info=verify_android(folder/'downloads',release['version'])
  if info['version_code']!=release['android_version_code']:raise ValueError('APK version code differs from release')
  index=json.loads((folder/'images.json').read_text())
@@ -90,12 +90,27 @@ def bundle_info(folder,current,recover=False):
  if actual!=expected:raise ValueError('Offline image archive checksum mismatch')
  return release,info,index
 
-def preview(record,folder,host=None,recover=False):
+def preview(record,folder,host=None,recover=False,server_only=False):
  if record is None or record['phase'] not in (('installed','installing') if recover else ('installed',)) or record['runtime']!='containers' or record['legacy']:raise ValueError('Upgrade requires an installed inventoried container deployment; native/partial installations are not adopted')
  current=record['docker']['tags']['app'].split(':')[1]
- release,apk,images=bundle_info(folder,current,recover)
+ if server_only and recover:raise ValueError('Server-only maintenance requires intact old rollback images; do not combine with runtime recovery')
+ release,apk,images=bundle_info(folder,current,recover,server_only)
  old=validate(record['docker']['settings'])
- existing=(host.path(record['prefix']) if host else pathlib.Path(record['prefix']))/'downloads'
+ existing_prefix=host.path(record['prefix']) if host else pathlib.Path(record['prefix'])
+ existing=existing_prefix/'downloads'
+ if server_only:
+  if release['version']!=current:raise ValueError('Server-only maintenance must retain the installed version')
+  if json.loads((existing_prefix/'release.json').read_text())!=release:raise ValueError('Server-only maintenance must retain the exact release metadata')
+  # No new Android signer, APK, version code, or download metadata is permitted.
+  def fingerprints(folder):
+   if not folder.is_dir():raise ValueError('APK downloads missing')
+   paths=list(folder.rglob('*'))
+   if not paths or any(p.is_symlink() or not (p.is_file() or p.is_dir()) for p in paths):raise ValueError('Unsafe APK downloads')
+   return {str(p.relative_to(folder)):hashlib.file_digest(p.open('rb'),'sha256').hexdigest() for p in paths if p.is_file()}
+  if fingerprints(existing)!=fingerprints(pathlib.Path(folder)/'downloads'):raise ValueError('Server-only maintenance must reuse the exact installed APK and download metadata')
+  if images['app']['id']==old['images']['app']:raise ValueError('Server-only maintenance app image is unchanged')
+  with (existing_prefix/'field-notes-server').open('rb') as before,(pathlib.Path(folder)/'field-notes-server').open('rb') as after:
+   if hashlib.file_digest(before,'sha256').digest()==hashlib.file_digest(after,'sha256').digest():raise ValueError('Server-only maintenance executable is unchanged')
  if existing.exists():
   old_signers={verify_android(existing)['signer_sha256']};new_signers={apk['signer_sha256']}
   if (existing/'legacy').exists():old_signers.add(verify_android(existing/'legacy')['signer_sha256'])
@@ -116,7 +131,8 @@ def preview(record,folder,host=None,recover=False):
    with previous.open('rb') as a,candidate.open('rb') as b:
     if hashlib.file_digest(a,'sha256').digest()!=hashlib.file_digest(b,'sha256').digest():raise ValueError('Same-version recovery requires the identical server executable; use a newer compatible bundle')
  new=copy.deepcopy(old);new['images']={role:entry['id'] for role,entry in images.items()}
- return dict(from_version=current,to_version=release['version'],apk_version_code=apk['version_code'],apk_signer=apk['signer_sha256'],apk_sha256=apk['sha256'],recover_runtime=recover,preserve=['database and queued server work','users/password hashes','CA and recovery master key','WireGuard hub key, phone peers and PSKs','management/UDP/API ports and network settings'],management=f"https://{old['lan_ip']}:{old['web_port']}",admin_browser_check_required=ipaddress.ip_address(old['lan_ip']) not in ipaddress.ip_network(old['lan_prefix']),settings=new,tags={role:entry['tag'] for role,entry in images.items()})
+ if server_only:new['images']['gateway']=old['images']['gateway']
+ return dict(server_only=server_only,from_version=current,to_version=release['version'],apk_version_code=apk['version_code'],apk_signer=apk['signer_sha256'],apk_sha256=apk['sha256'],recover_runtime=recover,preserve=['database and queued server work','users/password hashes','CA and recovery master key','WireGuard hub key, phone peers and PSKs','management/UDP/API ports and network settings'],management=f"https://{old['lan_ip']}:{old['web_port']}",admin_browser_check_required=ipaddress.ip_address(old['lan_ip']) not in ipaddress.ip_network(old['lan_prefix']),settings=new,tags={role:entry['tag'] for role,entry in images.items()})
 
 def write(path,data,mode=0o600):
  with tempfile.NamedTemporaryFile(dir=path.parent,prefix='.upgrade-',delete=False) as file:
@@ -146,8 +162,8 @@ def readiness(settings,apk,host):
   except (OSError,ValueError):time.sleep(.2)
  raise ValueError('New TLS service/APK did not become ready')
 
-def apply(host,record,folder,engine=None,health=readiness,recover=False):
- folder=pathlib.Path(folder).resolve();plan=preview(record,folder,host,recover);engine=engine or Engine(runner=host.runner)
+def apply(host,record,folder,engine=None,health=readiness,recover=False,server_only=False):
+ folder=pathlib.Path(folder).resolve();plan=preview(record,folder,host,recover,server_only);engine=engine or Engine(runner=host.runner)
  removal.preflight(host,record,False);old=record['docker']['settings'];engine.objects(old)
  if not recover:require_rollback_images(engine,old)
  config=host.path(record['config']);prefix=host.path(record['prefix'])
@@ -162,6 +178,11 @@ def apply(host,record,folder,engine=None,health=readiness,recover=False):
  for name in ('deployment.json','compose.json',RECORD):shutil.copy2(config/name,backup/name)
  target_record=copy.deepcopy(record);target_record['docker']={'settings':plan['settings'],'tags':plan['tags']}
  write(backup/'target-installation.json',json.dumps(target_record).encode())
+ if server_only:
+  # A Docker load can move the mutable release tags. Keep both old images
+  # addressable by immutable ID for rollback, even if their original tags move.
+  for role,image in old['images'].items():
+   engine.call(['tag',image,'field-notes-'+role+':rollback-'+image[7:19]])
  engine.call(['load','--input',str(folder/'images.tar.gz')],timeout=180);engine.verify_images(plan['settings'])
  stage=pathlib.Path(tempfile.mkdtemp(prefix='.field-notes-upgrade-',dir=prefix.parent));stage.chmod(0o755)
  try:
@@ -243,14 +264,15 @@ def apply(host,record,folder,engine=None,health=readiness,recover=False):
   if stage.exists():shutil.rmtree(stage)
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next server bundle using the public APK or the retained custom development signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Repair or upgrade a retained runtime when rollback images are missing, using a verified compatible bundle; never initializes a new workspace');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);source=parser.add_mutually_exclusive_group(required=True);source.add_argument('--bundle');source.add_argument('--build-from-source',action='store_true',help='With --apply, build the next server bundle using the public APK or the retained custom development signer');parser.add_argument('--config',default='/etc/field-notes');mode=parser.add_mutually_exclusive_group();mode.add_argument('--plan',action='store_true');mode.add_argument('--apply',action='store_true');parser.add_argument('--recover-runtime',action='store_true',help='Repair or upgrade a retained runtime when rollback images are missing, using a verified compatible bundle; never initializes a new workspace');parser.add_argument('--server-only',action='store_true',help='Replace only the app image and server executable while keeping the exact existing version, APK/downloads and gateway image; requires --bundle');args=parser.parse_args()
+ if args.server_only and (args.recover_runtime or args.build_from_source):raise ValueError('--server-only requires --bundle and intact rollback images; it cannot be combined with --recover-runtime')
  host=Host();record=load(host,args.config)
  if args.build_from_source:
   if not args.apply or os.geteuid()!=0:raise ValueError('--build-from-source requires --apply as root; it never creates a fresh installation')
   if record is None or record['phase'] not in (('installed','installing') if args.recover_runtime else ('installed',)) or record['runtime']!='containers':raise ValueError('Complete container-runtime.py check --complete-installation before upgrading')
   removal.preflight(host,record,False)
   args.bundle=str(build_from_source(host,record,recover=True) if args.recover_runtime else build_from_source(host,record))
- print(json.dumps(preview(record,args.bundle,host,args.recover_runtime),indent=2))
+ print(json.dumps(preview(record,args.bundle,host,args.recover_runtime,args.server_only),indent=2))
  removal.preflight(host,record,False)
  if not args.apply:return
  if os.geteuid()!=0:raise ValueError('--apply requires root')
@@ -258,7 +280,7 @@ def main():
  try:
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);current=load(host,args.config)
   if current!=record:raise ValueError('Installation changed during upgrade preparation')
-  print(json.dumps(apply(host,current,args.bundle,recover=args.recover_runtime),indent=2))
+  print(json.dumps(apply(host,current,args.bundle,recover=args.recover_runtime,server_only=args.server_only),indent=2))
  finally:os.close(lock)
 
 if __name__=='__main__':
