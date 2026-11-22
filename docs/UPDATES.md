@@ -194,6 +194,70 @@ to an APK built with its retained original builder key. Never silently replace
 that signer. See
 [ANDROID-DOWNLOADS.md](ANDROID-DOWNLOADS.md) for initial sideloading and releases.
 
+## Same-version server-only origin maintenance (local build)
+
+The normal upgrader intentionally rejects same-version replacements. A deliberately
+scoped `--server-only` mode accepts an explicitly prepared app-only bundle for
+an inventoried, healthy 0.11.11 installation. It does not create an Android APK,
+require a signing key, change the gateway image, or change release metadata.
+
+**Keep** the original `dist/server/linux-x86_64` image bundle intact, including
+`images.json` and `images.tar.gz`, because it is your exact rollback artifact.
+Do not run `scripts/build/containers.sh` again over the current release tag.
+
+Check the original bundle's image IDs against
+`/etc/field-notes/deployment.json`. Ensure both exact old images are present in
+Docker. The rebuilt app image must also be present by immutable sha256 ID;
+`dist/containers/images.json` records that new ID from the earlier build.
+
+Prepare the candidate as root, specifying the **exact** rebuilt app ID:
+
+```sh
+cd /usr/local/src/field-notes
+python3 scripts/prepare-server-maintenance.py \
+  --base "$PWD/dist/server/linux-x86_64" \
+  --app-image 'sha256:REPLACE_WITH_REBUILT_APP_IMAGE_ID' \
+  --output /root/field-notes-image-recovery/maintenance-origin-0.11.11
+```
+
+The preparer verifies the original image inventory, release metadata, downloaded
+APK/signature metadata, old installed executable, new image labels and content,
+then exports a new app + **original** gateway archive to a separate destination.
+It never modifies the installed deployment or the original bundle.
+
+Run a dry-run upgrade first:
+
+```sh
+python3 scripts/upgrade-server.py --plan --server-only \
+  --bundle /root/field-notes-image-recovery/maintenance-origin-0.11.11
+```
+
+The candidate must preserve `0.11.11`, the exact installed APK/download bytes,
+the original gateway image, original signing identity, source network policy,
+keys, and database. The standard upgrade preflight and rollback image checks
+remain mandatory; it also checks that the app binary changed. Review all output
+before applying, preferably during a maintenance window.
+
+```sh
+python3 scripts/upgrade-server.py --apply --server-only \
+  --bundle /root/field-notes-image-recovery/maintenance-origin-0.11.11
+```
+
+This reuses the existing encrypted pre-upgrade backup, immutable image validation,
+atomic installation inventory replacement, service restart and readiness tests.
+The prior image IDs are additionally tagged `rollback-<digest>` before loading
+the candidate. It retains rollback metadata and attempts to restart the old
+runtime if the new one fails. Do not delete or prune the old images.
+
+Verify the new application container's immutable image ID and test browser
+sign-in from an allowed LAN client. If the system host is outside the allowed
+admin CIDR, self-connectivity is not a valid management test.
+
+**If the production service is currently down or old images are missing**, use
+the separate guarded recovery procedure, not `--server-only`. This mode is
+not a general same-version binary replacement and is not a replacement for
+the original Android-signing workflow.
+
 ## Upgrade the Linux server while keeping identities
 
 Extract the new server bundle on the Debian/Ubuntu server, then from its root:
