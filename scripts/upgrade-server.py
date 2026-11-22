@@ -106,8 +106,9 @@ def preview(record,folder,host=None,recover=False,server_only=False):
    if not folder.is_dir():raise ValueError('APK downloads missing')
    paths=list(folder.rglob('*'))
    if not paths or any(p.is_symlink() or not (p.is_file() or p.is_dir()) for p in paths):raise ValueError('Unsafe APK downloads')
-   return {str(p.relative_to(folder)):hashlib.file_digest(p.open('rb'),'sha256').hexdigest() for p in paths if p.is_file()}
+   return {str(p.relative_to(folder)):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths if p.is_file()}
   if fingerprints(existing)!=fingerprints(pathlib.Path(folder)/'downloads'):raise ValueError('Server-only maintenance must reuse the exact installed APK and download metadata')
+  if images['gateway']['id']!=old['images']['gateway']:raise ValueError('Server-only maintenance must retain the exact gateway image')
   if images['app']['id']==old['images']['app']:raise ValueError('Server-only maintenance app image is unchanged')
   with (existing_prefix/'field-notes-server').open('rb') as before,(pathlib.Path(folder)/'field-notes-server').open('rb') as after:
    if hashlib.file_digest(before,'sha256').digest()==hashlib.file_digest(after,'sha256').digest():raise ValueError('Server-only maintenance executable is unchanged')
